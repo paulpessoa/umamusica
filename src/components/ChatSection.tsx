@@ -300,15 +300,12 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
           pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
         }
 
-        let binary = "";
         const bytes = new Uint8Array(pcm16.buffer);
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
+        const base64 = btoa(String.fromCharCode.apply(null, bytes as any));
 
         wsRef.current.send(JSON.stringify({
           realtimeInput: {
-            audio: { data: btoa(binary), mimeType: "audio/pcm;rate=16000" }
+            audio: { data: base64, mimeType: "audio/pcm;rate=16000" }
           }
         }));
       };
@@ -425,13 +422,45 @@ Instruções importantes de voz:
                 silenceDurationMs: 600
               }
             },
-            systemInstruction: { parts: [{ text: systemInstructionText }] }
+            systemInstruction: { parts: [{ text: systemInstructionText }] },
+            tools: [{
+              functionDeclarations: [{
+                name: "comporMusica",
+                description: "Finaliza a entrevista e inicia a composição/geração da música personalizada com base nas informações coletadas. Chame esta função apenas quando o usuário disser que terminou de passar as informações, que quer compor, gerar a música ou finalizar a chamada.",
+                parameters: {
+                  type: "OBJECT",
+                  properties: {}
+                }
+              }]
+            }]
           }
         }));
       };
 
       ws.onmessage = async (event) => {
         const data = JSON.parse(event.data instanceof Blob ? await event.data.text() : event.data);
+
+        // Handle Gemini Live Function Call / Tool Call
+        if (data.toolCall?.functionCalls) {
+          const call = data.toolCall.functionCalls[0];
+          if (call.name === "comporMusica") {
+            console.log("[Agente Live] Gemini solicitou comporMusica via Function Call");
+            try {
+              ws.send(JSON.stringify({
+                toolResponse: {
+                  functionResponses: [{
+                    response: { output: { success: true } },
+                    id: call.id
+                  }]
+                }
+              }));
+            } catch (e) {}
+            stopContinuousSpeech();
+            setIsLiveCallActive(false);
+            triggerCompose();
+            return;
+          }
+        }
 
         if (data.setupComplete) {
           setupCompletedRef.current = true;
@@ -835,7 +864,7 @@ Instruções importantes de voz:
                 </div>
 
                 {/* Central content area: Single column minimalist layout */}
-                <div className="flex-1 flex flex-col justify-between items-center p-6 min-h-0 z-10 overflow-y-auto space-y-6">
+                <div className="flex-1 flex flex-col justify-between items-center p-6 min-h-0 z-10 overflow-hidden space-y-6">
                   
                   {/* Top status */}
                   <div className="text-center space-y-1">
