@@ -64,8 +64,9 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
         body: JSON.stringify({ messages: updatedMessages, email }),
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (response.ok) {
-        const data = await response.json();
         setMessages((prev) => [
           ...prev,
           {
@@ -75,21 +76,22 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
           },
         ]);
       } else {
-        throw new Error("API error");
+        // Show specific rate limit or server error message directly in chat
+        setMessages((prev) => [
+          ...prev,
+          {
+            sender: "ai",
+            text: data.error || "Opa, tive um pequeno problema para responder agora. Pode tentar novamente em alguns instantes?",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ]);
       }
     } catch {
-      const fallbackReplies = [
-        "Que história maravilhosa! Que estilo musical combina mais? (Sertanejo, Pop, MPB, Samba...)",
-        "Me conta memórias ou detalhes divertidos para colocar no refrão!",
-        "Prefere que a música seja emocionante ou bem alegre e divertida?",
-        "Entendido! Quer concluir e compor agora?",
-      ];
-      const idx = Math.min(messages.filter((m) => m.sender === "user").length, fallbackReplies.length - 1);
       setMessages((prev) => [
         ...prev,
         {
           sender: "ai",
-          text: fallbackReplies[idx],
+          text: "Não consegui contato com o compositor virtual. Verifique se o servidor está online ou sua internet ativa.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -141,54 +143,71 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
         if (!reader.result) return;
         const base64data = (reader.result as string).split(",")[1];
 
-        const response = await fetch("/api/chat-voice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audio: base64data,
-            mimeType: "audio/webm",
-            messages,
-            email,
-          }),
-        });
+        try {
+          const response = await fetch("/api/chat-voice", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audio: base64data,
+              mimeType: "audio/webm",
+              messages,
+              email,
+            }),
+          });
 
-        if (response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
+
+          if (response.ok) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                sender: "user",
+                text: `🎙️ ${data.userTranscript || "Mensagem de voz"}`,
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              },
+              {
+                sender: "ai",
+                text: data.aiResponse || "Muito legal! Me conta mais?",
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              },
+            ]);
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              {
+                sender: "user",
+                text: "🎙️ [Mensagem de voz enviada]",
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              },
+              {
+                sender: "ai",
+                text: data.error || "Tive um problema para processar seu áudio. Digite sua resposta ou tente gravar novamente.",
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              },
+            ]);
+          }
+        } catch {
           setMessages((prev) => [
             ...prev,
             {
               sender: "user",
-              text: `🎙️ ${data.userTranscript || "Mensagem de voz"}`,
+              text: "🎙️ [Mensagem de voz enviada]",
               timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             },
             {
               sender: "ai",
-              text: data.aiResponse || "Muito legal! Me conta mais?",
+              text: "Não consegui contato com o servidor para enviar o áudio. Verifique sua conexão de rede.",
               timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             },
           ]);
-        } else {
-          throw new Error("Voice API error");
+        } finally {
+          setIsProcessingAudio(false);
+          setIsTyping(false);
         }
-        setIsProcessingAudio(false);
-        setIsTyping(false);
       };
     } catch {
       setIsProcessingAudio(false);
       setIsTyping(false);
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: "user",
-          text: "🎙️ [Mensagem de voz]",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-        {
-          sender: "ai",
-          text: "Interessante! Me conta mais detalhes sobre essa história?",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
     }
   };
 

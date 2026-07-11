@@ -21,6 +21,29 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// Simple in-memory rate limiting to prevent email spam & API abuse
+const ipLimits: Record<string, { count: number; resetAt: number }> = {};
+function rateLimit(limit: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+    const now = Date.now();
+
+    if (!ipLimits[ip as string] || ipLimits[ip as string].resetAt < now) {
+      ipLimits[ip as string] = { count: 1, resetAt: now + windowMs };
+      return next();
+    }
+
+    ipLimits[ip as string].count++;
+    if (ipLimits[ip as string].count > limit) {
+      return res.status(429).json({
+        error: "Muitas requisições. Por favor, aguarde alguns minutos antes de tentar novamente.",
+        retryAfter: Math.round((ipLimits[ip as string].resetAt - now) / 1000)
+      });
+    }
+    next();
+  };
+}
+
 // Initialize Gemini SDK
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
@@ -80,7 +103,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // ─── OTP Email Verification ────────────────────────────────
-app.post("/api/send-otp", async (req, res) => {
+app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
   try {
     const { email } = req.body;
     if (!email || !email.includes("@")) {
@@ -170,7 +193,7 @@ app.post("/api/verify-otp", async (req, res) => {
 });
 
 // ─── Chat Interview (Text) ────────────────────────────────
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", rateLimit(60, 60 * 60 * 1000), async (req, res) => {
   try {
     const { messages, email } = req.body;
     if (!messages || !Array.isArray(messages)) {
@@ -210,7 +233,7 @@ Instruções:
 });
 
 // ─── Chat Voice (Audio message — like WhatsApp) ────────────
-app.post("/api/chat-voice", async (req, res) => {
+app.post("/api/chat-voice", rateLimit(30, 60 * 60 * 1000), async (req, res) => {
   try {
     const { audio, mimeType, messages, email } = req.body;
     if (!audio) {

@@ -75,13 +75,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setView("verify");
       } else {
-        setOtpError("Erro ao enviar código. Tente novamente.");
+        setOtpError(data.error || "Erro ao enviar código. Tente novamente.");
       }
     } catch {
-      setOtpError("Erro de conexão. Tente novamente.");
+      setOtpError("Sem conexão com o servidor. Verifique sua internet.");
     } finally {
       setOtpSending(false);
     }
@@ -100,13 +101,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: otpCode }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setView("chat");
       } else {
-        setOtpError("Código inválido ou expirado");
+        setOtpError(data.error || "Código inválido ou expirado");
       }
     } catch {
-      setOtpError("Erro de conexão");
+      setOtpError("Erro de conexão com o servidor.");
     } finally {
       setOtpVerifying(false);
     }
