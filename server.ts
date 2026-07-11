@@ -121,21 +121,28 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
 
     // Send via Resend
     const resendKey = process.env.RESEND_KEY;
-    const fromEmail = process.env.RESEND_FROM || "UnaMusica <onboarding@resend.dev>";
+    
+    // Fallback safely to onboarding@resend.dev if domain not verified yet
+    let fromEmail = process.env.RESEND_FROM || "onboarding@resend.dev";
+    if (fromEmail.includes("@qisites.com.br")) {
+      // In case we want a quick automatic fallback on code, or we let it try the configured one
+      console.log("[Resend] Sending email using configured domain:", fromEmail);
+    }
+
     if (resendKey) {
-      await fetch("https://api.resend.com/emails", {
+      const emailRes = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${resendKey}`,
         },
         body: JSON.stringify({
-          from: `UnaMusica <${fromEmail}>`,
+          from: fromEmail.includes("<") ? fromEmail : `UnaMusica <${fromEmail}>`,
           to: email,
           subject: "🎵 Seu código de verificação — UnaMusica",
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
-              <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Musica</h2>
+              <h2 style="color: #FF5A5F; margin-bottom: 8px;">UnaMusica.com.br</h2>
               <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
               <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
                 <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
@@ -145,7 +152,8 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
           `,
         }),
       });
-      console.log(`[OTP] Code sent to ${email}`);
+      const resBody = await emailRes.text();
+      console.log(`[Resend OTP] HTTP Status: ${emailRes.status} | Response: ${resBody}`);
     } else {
       console.log(`[OTP] RESEND_KEY not set. Code for ${email}: ${code}`);
     }
@@ -609,24 +617,24 @@ Retorne JSON válido.
 
     // Send email with download link (via our API, never expose Supabase URL)
     const resendKey = process.env.RESEND_KEY;
-    const fromEmail = process.env.RESEND_FROM || "onboarding@resend.dev";
+    let fromEmail = process.env.RESEND_FROM || "onboarding@resend.dev";
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
 
     if (resendKey) {
       try {
-        await fetch("https://api.resend.com/emails", {
+        const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${resendKey}`,
           },
           body: JSON.stringify({
-            from: `UnaMusica <${fromEmail}>`,
+            from: fromEmail.includes("<") ? fromEmail : `UnaMusica <${fromEmail}>`,
             to: order.email,
             subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
             html: `
               <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-                <h2 style="color: #FF5A5F; text-align: center;">1Musica</h2>
+                <h2 style="color: #FF5A5F; text-align: center;">UnaMusica.com.br</h2>
                 <p>Olá!</p>
                 <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
                 <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
@@ -639,13 +647,13 @@ Retorne JSON válido.
                 <div style="text-align: center; margin: 20px 0;">
                   <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
                 </div>
-                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
-                <p style="font-size: 11px; color: #999; text-align: center;">1Musica — Transformando memórias em música por R$ 1,00</p>
+                <p style="font-size: 11px; color: #999; text-align: center;">UnaMusica.com.br — Transformando memórias em música por R$ 1,00</p>
               </div>
             `,
           }),
         });
-        console.log("[Email] Confirmation sent to", order.email);
+        const resBody = await emailRes.text();
+        console.log(`[Resend Completion] HTTP Status: ${emailRes.status} | Response: ${resBody}`);
       } catch (emailErr) {
         console.error("[Email] Failed:", emailErr);
       }

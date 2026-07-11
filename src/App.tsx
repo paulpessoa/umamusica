@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sparkles, Music, Star, ChevronRight, Mail, Shield, Play, Pause, Heart, Lock, FileText, ArrowLeft } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import MobileFrame from "./components/MobileFrame";
@@ -9,7 +9,7 @@ import { ChatMessage } from "./types";
 
 type ViewState = "landing" | "verify" | "chat" | "checkout" | "success";
 
-// Example songs data for landing page (lazy load audio only on click)
+// Example songs data for landing page
 const exampleSongs = [
   {
     id: 1,
@@ -17,8 +17,7 @@ const exampleSongs = [
     genre: "Bossa Nova",
     story: "Homenagem aos avós pelos 60 anos de união",
     author: "Marina L.",
-    // Audio file path: /assets/examples/bodas-de-diamante.mp3
-    // Add the actual file later
+    audioUrl: "/assets/examples/bodas_de_diamante.mp3"
   },
   {
     id: 2,
@@ -26,6 +25,7 @@ const exampleSongs = [
     genre: "Pop Rock",
     story: "Canção para o namorado, celebrando a formatura",
     author: "Ana B.",
+    audioUrl: "/assets/examples/amor_de_faculdade.mp3"
   },
   {
     id: 3,
@@ -33,6 +33,7 @@ const exampleSongs = [
     genre: "Sertanejo",
     story: "Música animada para o pai pelos 60 anos",
     author: "Rodrigo S.",
+    audioUrl: "/assets/examples/sertanejo-do-paizao.mp3"
   },
 ];
 
@@ -49,6 +50,23 @@ export default function App() {
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [playingExampleId, setPlayingExampleId] = useState<number | null>(null);
+
+  const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Play/Pause effect for landing page examples
+  useEffect(() => {
+    if (!exampleAudioRef.current) return;
+
+    if (playingExampleId === null) {
+      exampleAudioRef.current.pause();
+    } else {
+      const selected = exampleSongs.find(s => s.id === playingExampleId);
+      if (selected) {
+        exampleAudioRef.current.src = selected.audioUrl;
+        exampleAudioRef.current.play().catch(e => console.log("Failed to play example:", e));
+      }
+    }
+  }, [playingExampleId]);
 
   // Deep-link support
   useEffect(() => {
@@ -458,6 +476,12 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Hidden Audio Player for Landing Page examples */}
+      <audio
+        ref={exampleAudioRef}
+        onEnded={() => setPlayingExampleId(null)}
+        style={{ display: "none" }}
+      />
     </MobileFrame>
   );
 }
