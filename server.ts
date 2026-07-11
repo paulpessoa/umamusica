@@ -15,6 +15,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// Disable caching for all API responses to prevent 304 Not Modified browser caching issues
+app.use("/api", (req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  next();
+});
+
 // Initialize Gemini SDK with telemetry header
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
@@ -662,7 +668,7 @@ ${cleanLyrics}
       
       console.log("Generating custom full-length TTS vocals with Gemini...");
       const ttsResponse = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.5-flash",
         contents: [{ parts: [{ text: `Recite de forma artística, calorosa, emocionante, compassada e compassiva como um cantor ou poeta em português do Brasil: ${dedicationText}` }] }],
         config: {
           responseModalities: ["AUDIO"],

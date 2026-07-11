@@ -44,6 +44,7 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [playingExampleId, setPlayingExampleId] = useState<number | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Shared audio state for synchronizing slideshow
   const [isPlaying, setIsPlaying] = useState(false);
@@ -71,7 +72,7 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
           setOrder(data);
 
           // If payment was confirmed but song is not generated yet, trigger composition
-          if (data.status === "paid") {
+          if (data.status === "paid" && !isGenerating) {
             triggerComposition();
           }
 
@@ -103,6 +104,8 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
   }, [order]);
 
   const triggerComposition = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
     try {
       setErrorMessage(null);
       await fetch(`/api/orders/${orderId}/generate`, {
@@ -111,6 +114,7 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
       });
     } catch (e) {
       setErrorMessage("Ocorreu um pequeno atraso na composição. Estamos tentando novamente...");
+      setIsGenerating(false);
     }
   };
 

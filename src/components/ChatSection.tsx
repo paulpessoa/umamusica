@@ -559,11 +559,17 @@ Instruções importantes de voz:
 
   useEffect(() => {
     if (isLiveCallActive) {
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
       startContinuousSpeech();
     } else {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
       stopContinuousSpeech();
     }
     return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
       stopContinuousSpeech();
     };
   }, [isLiveCallActive]);
