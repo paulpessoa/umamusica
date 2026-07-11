@@ -7,27 +7,27 @@ interface MobileFrameProps {
 
 export default function MobileFrame({ children }: MobileFrameProps) {
   return (
-    <div 
-      id="mobile-frame-container" 
+    <div
+      id="mobile-frame-container"
       className="min-h-screen bg-[#F8F9FA] lg:bg-[#F3F4F6] flex items-stretch lg:items-center justify-center py-0 lg:py-8 px-0 lg:px-6 selection:bg-[#FF5A5F] selection:text-white font-sans text-gray-800 antialiased overflow-x-hidden"
     >
       <div className="flex flex-col lg:flex-row w-full max-w-6xl min-h-screen lg:min-h-[750px] lg:h-[85vh] lg:max-h-[900px] bg-white lg:rounded-3xl lg:shadow-[0_25px_60px_rgba(0,0,0,0.06)] overflow-visible lg:overflow-hidden lg:border lg:border-gray-100/80">
-        
+
         {/* LEFT BRAND PANEL (Visible on lg screens) */}
         <div className="hidden lg:flex flex-col justify-between lg:w-1/2 lg:shrink-0 p-14 bg-[#FFF4F2] relative overflow-hidden">
           {/* Subtle background circles */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-white rounded-full opacity-40 blur-3xl pointer-events-none"></div>
-          
+
           <div className="relative z-10">
             <div className="flex items-center space-x-2 mb-10">
               <div className="w-10 h-10 bg-[#FF5A5F] rounded-xl flex items-center justify-center shadow-md shadow-[#FF5A5F]/20">
                 <Music className="w-5 h-5 text-white" />
               </div>
               <span className="text-2xl font-black tracking-tight text-gray-900">
-                UnaMusica<span className="text-[#FF5A5F]">.com.br</span>
+                UmaMusica<span className="text-[#FF5A5F]">.com.br</span>
               </span>
             </div>
-            
+
             <h1 className="text-5xl font-extrabold text-gray-950 leading-tight mb-6 tracking-tight">
               Sua vida virou <span className="text-[#FF5A5F] relative">música.<span className="absolute left-0 bottom-1 w-full h-1.5 bg-[#FF5A5F]/15 rounded-full"></span></span>
             </h1>
@@ -54,19 +54,19 @@ export default function MobileFrame({ children }: MobileFrameProps) {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-900">Liberação Pix Imediata</p>
-                <p className="text-xs text-gray-500">Geração automática pelo estúdio via AbacatePay</p>
+                <p className="text-xs text-gray-500">Pagamento seguro via MercadoPago</p>
               </div>
             </div>
           </div>
 
           <div className="text-xs text-gray-400 relative z-10">
-            © 2026 UnaMusica • Feito para emocionar ❤️
+            © 2026 UmaMusica • Feito para emocionar ❤️
           </div>
         </div>
 
         {/* RIGHT APP FRAME / MOBILE container */}
         <div className="flex-1 min-w-0 lg:w-1/2 lg:shrink-0 flex flex-col bg-white relative min-h-screen lg:min-h-0 lg:h-full">
-          
+
           {/* Floating Live Indicator Badge on desktop view */}
           <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md shadow-sm rounded-full py-1.5 px-3 border border-gray-100 hidden lg:flex items-center space-x-2 z-50">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
@@ -74,8 +74,8 @@ export default function MobileFrame({ children }: MobileFrameProps) {
           </div>
 
           {/* Interactive Responsive Content Container */}
-          <div 
-            id="phone-frame" 
+          <div
+            id="phone-frame"
             className="relative w-full flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0"
           >
             {/* Inner Brand Header Bar */}
@@ -86,7 +86,7 @@ export default function MobileFrame({ children }: MobileFrameProps) {
                 </div>
                 <div>
                   <span className="font-bold text-base text-gray-900 tracking-tight">
-                    UnaMusica
+                    UmaMusica
                   </span>
                   <span className="text-[#FF5A5F] font-bold text-sm ml-0.5">.com.br</span>
                 </div>

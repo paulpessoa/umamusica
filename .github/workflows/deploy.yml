@@ -59,6 +59,13 @@ jobs:
             --max-instances=3
             --set-env-vars=NODE_ENV=production
             --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            --set-env-vars=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            --set-env-vars=SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+            --set-env-vars=ML_TOKEN=${{ secrets.ML_TOKEN }}
+            --set-env-vars=ML_P_KEY=${{ secrets.ML_P_KEY }}
+            --set-env-vars=RESEND_KEY=${{ secrets.RESEND_KEY }}
+            --set-env-vars=RESEND_FROM=contato@qisites.com.br
+            --set-env-vars=APP_URL=${{ vars.APP_URL }}
 
       - name: Show Output
         run: |

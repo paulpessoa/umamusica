@@ -1,8 +1,10 @@
 {
-  "name": "UnaMusica",
+  "name": "UmaMusica",
   "description": "Micro-SaaS para geração de músicas personalizadas via IA",
   "requestFramePermissions": [
     "microphone"
   ],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

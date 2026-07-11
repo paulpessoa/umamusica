@@ -5,7 +5,7 @@ test("deve completar o fluxo completo de criacao de musica, chat e checkout simu
   page.on("pageerror", (exception) => {
     console.error(`[PAGE ERROR] Uncaught exception: "${exception.message}"\nStack:\n${exception.stack}`);
   });
-  
+
   page.on("console", (msg) => {
     console.log(`[PAGE CONSOLE] [${msg.type()}]: ${msg.text()}`);
   });
@@ -82,12 +82,12 @@ test("deve completar o fluxo completo de criacao de musica, chat e checkout simu
 
   // 2. Navegar para a página inicial
   await page.goto("/");
-  await expect(page).toHaveTitle(/UnaMusica/i);
+  await expect(page).toHaveTitle(/UmaMusica/i);
 
   // 3. Preencher e-mail e iniciar criação
   const emailInput = page.locator('input[type="email"]');
   await emailInput.fill("paul@example.com");
-  
+
   const startButton = page.locator('button:has-text("Criar Música Agora")');
   await startButton.click();
 
@@ -114,7 +114,7 @@ test("deve completar o fluxo completo de criacao de musica, chat e checkout simu
 
   // 6. Verificar a tela de checkout e simular pagamento Pix
   await expect(page.locator("text=Quase lá! Componha por R$ 1,00")).toBeVisible();
-  
+
   const simulatePaymentButton = page.locator('button:has-text("Simular Pagamento Pix")');
   await expect(simulatePaymentButton).toBeVisible();
   await simulatePaymentButton.click();

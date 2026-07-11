@@ -260,7 +260,7 @@ export default function CheckoutSection({
       <footer className="pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
         <div className="flex items-center gap-1">
           <Shield className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Pagamento Seguro por AbacatePay</span>
+          <span>Pagamento Seguro via MercadoPago</span>
         </div>
         <div className="flex items-center gap-1">
           <span>Garantia de Entrega 🎧</span>

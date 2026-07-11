@@ -1,53 +1,52 @@
 import express from "express";
-import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import { createClient } from "@supabase/supabase-js";
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js";
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
-app.use(express.json());
+app.use(express.json({ limit: "25mb" }));
 
-// Disable caching for all API responses to prevent 304 Not Modified browser caching issues
+// Disable caching for all API responses
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
   next();
 });
 
-// Initialize Gemini SDK with telemetry header
+// Initialize Gemini SDK
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
   httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
+    headers: { "User-Agent": "aistudio-build" },
   },
 });
 
-// Helper to call generateContent with automatic fallback on 429/503 errors
+// Initialize Supabase client (service role — server-only, NEVER expose to frontend)
+const supabase = createClient(
+  process.env.SUPABASE_URL || "",
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+);
+
+// Helper to call generateContent with automatic fallback on quota errors
 async function generateContentWithFallback(params: {
   model: string;
   contents: any[];
   config?: any;
 }) {
-  const modelsToTry = [
-    params.model,
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite"
-  ];
-
+  const modelsToTry = [params.model, "gemini-flash-latest", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 
   for (const modelName of modelsToTry) {
     try {
-      console.log(`[Fallback Engine] Trying generateContent with model: ${modelName}...`);
+      console.log(`[AI] Trying model: ${modelName}...`);
       return await ai.models.generateContent({
         model: modelName,
         contents: params.contents,
@@ -55,67 +54,122 @@ async function generateContentWithFallback(params: {
       });
     } catch (error: any) {
       lastError = error;
-      const isQuotaOrUnavailable = 
-        error?.status === "RESOURCE_EXHAUSTED" || 
+      const isQuotaOrUnavailable =
+        error?.status === "RESOURCE_EXHAUSTED" ||
         error?.status === "UNAVAILABLE" ||
         error?.message?.includes("quota") ||
-        error?.message?.includes("demand") ||
         error?.message?.includes("429") ||
-        error?.message?.includes("503") ||
-        (error?.code === 429 || error?.code === 503);
-
+        error?.message?.includes("503");
       if (isQuotaOrUnavailable) {
-        console.warn(`[Fallback Engine] Model ${modelName} failed due to quota/temporary unavailability. Error: ${error.message || error}`);
-        continue; // Try next model in list
+        console.warn(`[AI] Model ${modelName} quota exceeded, trying next...`);
+        continue;
       }
-      throw error; // Rethrow actual non-quota errors immediately
+      throw error;
     }
   }
-
-  console.warn(`[Fallback Engine] All fallback models failed. Re-throwing last error.`);
   throw lastError;
 }
 
-// Local file database path for persistence
-const DB_PATH = path.join(process.cwd(), "unamusica_orders.json");
-
-// Load orders from disk on startup
-let orders: Record<string, Order> = {};
-if (fs.existsSync(DB_PATH)) {
-  try {
-    const raw = fs.readFileSync(DB_PATH, "utf8");
-    orders = JSON.parse(raw);
-    console.log(`Loaded ${Object.keys(orders).length} orders from local DB.`);
-  } catch (e) {
-    console.error("Failed to load orders from disk:", e);
-    orders = {};
-  }
-}
-
-// Helper to save orders to disk
-function saveDb() {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(orders, null, 2), "utf8");
-  } catch (e) {
-    console.error("Failed to save orders to disk:", e);
-  }
-}
-
-// ----------------------------------------------------
+// ============================================================
 // API ROUTES
-// ----------------------------------------------------
+// ============================================================
 
 // Health Check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Endpoint to expose Gemini API Key safely for Live WebSocket (Now Protected)
-app.get("/api/gemini-key", (req, res) => {
-  res.json({ apiKey: "PROTECTED" });
+// ─── OTP Email Verification ────────────────────────────────
+app.post("/api/send-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Email inválido" });
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
+    // Store OTP in Supabase
+    await supabase.from("otp_codes").insert({
+      email: email.toLowerCase().trim(),
+      code,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    // Send via Resend
+    const resendKey = process.env.RESEND_KEY;
+    const fromEmail = process.env.RESEND_FROM || "UnaMusica <onboarding@resend.dev>";
+    if (resendKey) {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${resendKey}`,
+        },
+        body: JSON.stringify({
+          from: `UnaMusica <${fromEmail}>`,
+          to: email,
+          subject: "🎵 Seu código de verificação — UnaMusica",
+          html: `
+            <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
+              <h2 style="color: #FF5A5F; margin-bottom: 8px;">UnaMusica.com.br</h2>
+              <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
+              <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
+              </div>
+              <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
+            </div>
+          `,
+        }),
+      });
+      console.log(`[OTP] Code sent to ${email}`);
+    } else {
+      console.log(`[OTP] RESEND_KEY not set. Code for ${email}: ${code}`);
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("OTP Send Error:", error.message || error);
+    res.status(500).json({ error: "Erro ao enviar código de verificação" });
+  }
 });
 
-// Chat Interview Endpoint
+app.post("/api/verify-otp", async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ error: "Email e código são obrigatórios" });
+    }
+
+    const { data, error } = await supabase
+      .from("otp_codes")
+      .select("*")
+      .eq("email", email.toLowerCase().trim())
+      .eq("code", code)
+      .eq("verified", false)
+      .gte("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      return res.status(400).json({ error: "Código inválido ou expirado" });
+    }
+
+    // Mark as verified
+    await supabase
+      .from("otp_codes")
+      .update({ verified: true })
+      .eq("id", data[0].id);
+
+    res.json({ success: true, verified: true });
+  } catch (error: any) {
+    console.error("OTP Verify Error:", error.message || error);
+    res.status(500).json({ error: "Erro ao verificar código" });
+  }
+});
+
+// ─── Chat Interview (Text) ────────────────────────────────
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages, email } = req.body;
@@ -125,15 +179,15 @@ app.post("/api/chat", async (req, res) => {
 
     const systemInstruction = `
 Você é o Compositor Virtual do UnaMusica.com.br, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
-Seu objetivo é conduzir uma entrevista de onboarding profunda, calorosa e engajadora com o usuário para capturar absolutamente todas as informações necessárias para gerar a base da música, contextos detalhados, apelidos, memórias marcantes, piadas internas e histórias reais.
+Seu objetivo é conduzir uma entrevista rápida, calorosa e engajadora com o usuário para capturar todas as informações necessárias para gerar a música: contextos detalhados, apelidos, memórias marcantes, piadas internas e histórias reais.
 
-Instruções da Entrevista e Comportamento:
-1. Questione o máximo de coisas possíveis de forma interativa e amigável. Explore detalhes poéticos e curiosidades sobre a história.
-2. Interaja sempre com extrema cordialidade e afeto, adaptando-se ativamente ao estilo de conversação do usuário (seja descontraído com quem usa emojis e gírias, ou mais polido e respeitoso com quem escreve de forma formal).
-3. Faça apenas uma pergunta clara e instigante de cada vez para manter o bate-papo dinâmico e amigável.
+Instruções:
+1. Faça perguntas de forma interativa e amigável. Explore detalhes poéticos e curiosidades.
+2. Adapte-se ao estilo do usuário (descontraído com quem usa emojis, polido com quem é formal).
+3. Faça apenas uma pergunta clara por vez para manter a conversa dinâmica.
 4. Responda sempre em Português do Brasil.
-5. ATENÇÃO - SEGURANÇA E POLÍTICAS: Se o usuário introduzir termos ofensivos, linguagem de ódio, conotações violentas, sexuais explícitas ou qualquer coisa que claramente fira as diretrizes e políticas de segurança do Gemini, você deve ADVERTIR o usuário de forma clara e educada. Explique que o uso de conteúdo impróprio ou ofensivo poderá impedir a música de ser gerada e recomende que ele entre em contato com o suporte em caso de dúvidas ou erros.
-6. Quando tiver coletado uma quantidade excelente de informações e o usuário estiver satisfeito, parabenize-o calorosamente e indique que ele já pode avançar clicando no botão 'Finalizar e Compor'.
+5. Se o usuário usar termos ofensivos ou conteúdo impróprio, advirta educadamente que isso pode impedir a geração da música.
+6. Quando tiver informações suficientes e o usuário estiver satisfeito, parabenize-o e diga que ele já pode clicar em "Finalizar e Compor".
 `;
 
     const chatContents = messages.map((m: any) => ({
@@ -141,150 +195,37 @@ Instruções da Entrevista e Comportamento:
       parts: [{ text: m.text }],
     }));
 
-    // Add system instruction as part of config with the requested gemini-3.5-flash model
     const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
-      config: {
-        systemInstruction,
-        temperature: 0.8,
-      },
+      config: { systemInstruction, temperature: 0.8 },
     });
 
-    const aiText = response.text || "Desculpe, deu um pequeno compasso desafinado aqui. Pode repetir?";
+    const aiText = response.text || "Desculpe, pode repetir?";
     res.json({ text: aiText });
   } catch (error: any) {
-    console.warn("Chat API Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao processar conversa de composição" });
+    console.warn("Chat Error:", error.message || error);
+    res.status(500).json({ error: "Erro ao processar conversa" });
   }
 });
 
-// Continuous Live Speech Conversation Endpoint
-app.post("/api/chat-continuous", async (req, res) => {
-  try {
-    const { messages, text, email } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: "Texto do usuário é obrigatório" });
-    }
-
-    const systemInstruction = `
-Você é o Compositor Virtual do UnaMusica.com.br, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
-Seu objetivo é entrevistar o usuário em uma chamada contínua de voz para capturar o máximo de informações possíveis, incluindo contextos, memórias e sentimentos.
-
-Instruções da Chamada:
-1. Questione o máximo de coisas possíveis de forma natural e empática para conseguir a base poética da canção.
-2. Seja extremamente cordial e amigável. Adapte-se ao tom de voz e estilo do usuário de forma receptiva.
-3. Responda com frases curtas (máximo 1-2 frases) para que o diálogo por voz pareça uma ligação de telefone real e fluida.
-4. Faça apenas uma pergunta clara por vez de maneira espontânea.
-5. ATENÇÃO - SEGURANÇA E POLÍTICAS: Se o usuário falar termos ofensivos, ódio ou conteúdo impróprio que fira as políticas de segurança do Gemini, você deve ADVERTIR o usuário educadamente, explicando que termos impróprios podem impedir a geração da música e que ele deverá entrar em contato com o suporte em caso de erro.
-6. Se todos os detalhes principais tiverem sido coletados e o usuário se sentir satisfeito, mude imediatamente 'triggerCompose' para true e encerre a chamada de forma super simpática (ex: "Que fantástico! Eu tenho absolutamente tudo o que preciso para compor uma obra-prima. Vou desligar para iniciar a produção da sua canção!"). Caso contrário, mantenha 'triggerCompose' como false.
-`;
-
-    // Map existing messages to Gemini format, and append the latest user text
-    const chatContents = (messages || [])
-      .filter((m: any) => m.text && m.text.trim())
-      .map((m: any) => ({
-        role: m.sender === "user" ? "user" : "model",
-        parts: [{ text: m.text }],
-      }));
-
-    chatContents.push({
-      role: "user",
-      parts: [{ text: text }]
-    });
-
-    console.log("Processing Continuous Live Speech message with gemini-3.5-flash...");
-    const response = await generateContentWithFallback({
-      model: "gemini-3.5-flash",
-      contents: chatContents,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            aiResponse: { type: Type.STRING },
-            triggerCompose: { type: Type.BOOLEAN }
-          },
-          required: ["aiResponse", "triggerCompose"]
-        }
-      }
-    });
-
-    const dataText = response.text?.trim() || "{}";
-    let parsedData: { aiResponse?: string; triggerCompose?: boolean } = {};
-    try {
-      parsedData = JSON.parse(dataText);
-    } catch (parseErr) {
-      console.warn("Failed to parse Live text response JSON:", parseErr);
-      parsedData = {
-        aiResponse: dataText || "Que incrível! Me conta mais?",
-        triggerCompose: false
-      };
-    }
-
-    const aiResponseText = parsedData.aiResponse || "Entendido! Vamos em frente.";
-    const triggerCompose = !!parsedData.triggerCompose;
-
-    // Synthesize response voice
-    let aiAudioUrl = "";
-    try {
-      console.log("Synthesizing voice for Continuous Live response...");
-      const ttsResponse = await ai.models.generateContent({
-        model: "gemini-3.1-flash-tts-preview",
-        contents: [{ parts: [{ text: `Fale de forma calorosa, simpática e amigável em português do Brasil: ${aiResponseText}` }] }],
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Kore" }
-            }
-          }
-        }
-      });
-
-      const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        aiAudioUrl = `data:audio/mp3;base64,${base64Audio}`;
-        console.log("Vocal synthesis completed successfully!");
-      }
-    } catch (ttsErr: any) {
-      console.warn("Continuous Vocal synthesis failed (skipping audio response gracefully):", ttsErr.message || ttsErr);
-    }
-
-    res.json({
-      aiResponse: aiResponseText,
-      aiAudio: aiAudioUrl,
-      triggerCompose
-    });
-  } catch (error: any) {
-    console.warn("Chat Continuous API Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao processar conversação contínua de voz" });
-  }
-});
-
-// Live Voice Chat Interview Endpoint
+// ─── Chat Voice (Audio message — like WhatsApp) ────────────
 app.post("/api/chat-voice", async (req, res) => {
   try {
     const { audio, mimeType, messages, email } = req.body;
     if (!audio) {
-      return res.status(400).json({ error: "Áudio do usuário é obrigatório" });
+      return res.status(400).json({ error: "Áudio é obrigatório" });
     }
 
     const systemInstruction = `
-Você é o Compositor Virtual do UnaMusica.com.br, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
-Seu objetivo é entrevistar o usuário enviando respostas por voz para coletar o máximo de informações possíveis para a canção (detalhes, apelidos, memórias marcantes, piadas e sentimentos).
-
-Instruções da Entrevista:
-1. Questione o máximo de coisas possíveis de forma calorosa e interativa. Seja um ótimo ouvinte e explore a história!
-2. Interaja sempre com muita cordialidade e afeto. Adapte o seu estilo ao estilo demonstrado pelo usuário.
-3. Responda de forma curta e objetiva (máximo 2-3 frases) para manter a conversa ágil.
-4. Faça apenas uma pergunta por vez.
-5. ATENÇÃO - SEGURANÇA E POLÍTICAS: Se o usuário falar termos ofensivos, ódio ou conteúdo impróprio que fira as políticas de segurança do Gemini, você deve ADVERTIR o usuário de forma clara e educada, explicando que o uso de termos impróprios poderá impedir a geração da música e que ele deverá entrar em contato com o suporte em caso de erro.
-6. Se todos os detalhes essenciais foram coletados e o usuário estiver satisfeito, defina 'triggerCompose' como true e encerre de forma linda. Caso contrário, defina 'triggerCompose' como false.
+Você é o Compositor Virtual do UnaMusica.com.br. Você recebeu um áudio do usuário.
+Transcreva o áudio e continue a entrevista para coletar informações para a música personalizada.
+Responda de forma curta (2-3 frases) e faça uma pergunta por vez.
+Responda em Português do Brasil.
+Se o usuário usar termos impróprios, advirta educadamente.
+Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo).
 `;
 
-    // Map existing messages to Gemini format, excluding empty text or formatting
     const chatContents = (messages || [])
       .filter((m: any) => m.text && m.text.trim())
       .map((m: any) => ({
@@ -292,97 +233,56 @@ Instruções da Entrevista:
         parts: [{ text: m.text }],
       }));
 
-    // Append the user's voice message as the final user content with the base64 audio
-    const audioPart = {
-      inlineData: {
-        mimeType: mimeType || "audio/webm",
-        data: audio
-      }
-    };
-    const textPart = {
-      text: "Transcreva o áudio acima em português do Brasil e formule sua resposta calorosa para continuar a entrevista de composição."
-    };
-
     chatContents.push({
       role: "user",
-      parts: [audioPart, textPart]
+      parts: [
+        { inlineData: { mimeType: mimeType || "audio/webm", data: audio } },
+        { text: "Transcreva o áudio acima em português do Brasil e continue a entrevista de composição." },
+      ],
     });
 
-    console.log("Analyzing live voice message with gemini-3.5-flash...");
     const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
       config: {
-        systemInstruction: systemInstruction + "\nAdicionalmente, você deve retornar um objeto JSON with três campos obrigatórios: 'userTranscript' (transcrição do áudio recebido), 'aiResponse' (sua resposta de acompanhamento curta) e 'triggerCompose' (un booleano indicando se todos os detalhes essenciais foram coletados).",
+        systemInstruction,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             userTranscript: { type: Type.STRING },
             aiResponse: { type: Type.STRING },
-            triggerCompose: { type: Type.BOOLEAN }
+            triggerCompose: { type: Type.BOOLEAN },
           },
-          required: ["userTranscript", "aiResponse", "triggerCompose"]
-        }
-      }
+          required: ["userTranscript", "aiResponse", "triggerCompose"],
+        },
+      },
     });
 
     const dataText = response.text?.trim() || "{}";
-    let parsedData: { userTranscript?: string; aiResponse?: string; triggerCompose?: boolean } = {};
+    let parsedData: any = {};
     try {
       parsedData = JSON.parse(dataText);
-    } catch (parseErr) {
-      console.warn("Failed to parse Voice Chat JSON response, attempting raw recovery:", parseErr);
+    } catch {
       parsedData = {
-        userTranscript: "Áudio enviado pelo usuário",
-        aiResponse: dataText || "Interessante! Me conta mais detalhes sobre essa história?",
-        triggerCompose: false
+        userTranscript: "Áudio enviado",
+        aiResponse: dataText || "Interessante! Me conta mais?",
+        triggerCompose: false,
       };
     }
 
-    const userTranscript = parsedData.userTranscript || "Áudio enviado";
-    const aiResponseText = parsedData.aiResponse || "Entendido! Vamos em frente.";
-    const triggerCompose = !!parsedData.triggerCompose;
-
-    // Generate TTS for the AI response to speak back to the user
-    let aiAudioUrl = "";
-    try {
-      console.log("Synthesizing live assistant vocal response...");
-      const ttsResponse = await ai.models.generateContent({
-        model: "gemini-3.1-flash-tts-preview",
-        contents: [{ parts: [{ text: `Fale de forma calorosa, simpática e amigável em português do Brasil: ${aiResponseText}` }] }],
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Kore" }
-            }
-          }
-        }
-      });
-
-      const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        aiAudioUrl = `data:audio/mp3;base64,${base64Audio}`;
-        console.log("Assistant voice successfully synthesized!");
-      }
-    } catch (ttsErr: any) {
-      console.warn("Vocal synthesis for Live assistant response failed (skipping audio response gracefully):", ttsErr.message || ttsErr);
-    }
-
     res.json({
-      userTranscript,
-      aiResponse: aiResponseText,
-      aiAudio: aiAudioUrl,
-      triggerCompose
+      userTranscript: parsedData.userTranscript || "Áudio enviado",
+      aiResponse: parsedData.aiResponse || "Entendido! Vamos em frente.",
+      triggerCompose: !!parsedData.triggerCompose,
     });
   } catch (error: any) {
-    console.warn("Chat Voice API Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao processar mensagem de voz do chat" });
+    console.warn("Voice Chat Error:", error.message || error);
+    res.status(500).json({ error: "Erro ao processar áudio" });
   }
 });
 
-// Checkout and Pix Creation (AbacatePay Integration or Sandbox fallback)
+// ─── Checkout (MercadoPago Pix) ────────────────────────────
 app.post("/api/checkout", async (req, res) => {
   try {
     const { email, chatTranscript, structuredPrompt } = req.body;
@@ -391,220 +291,210 @@ app.post("/api/checkout", async (req, res) => {
     }
 
     const orderId = "order_" + Math.random().toString(36).substr(2, 9);
-    const paymentId = "pay_" + Math.random().toString(36).substr(2, 15);
+    let paymentId = "pay_" + Math.random().toString(36).substr(2, 15);
+    let paymentQr = "";
+    let paymentCopiaCola = "";
 
-    // Mock Pix payloads for high visual fidelity
-    const randomPixKey = `00020126580014br.gov.bcb.pix0136unamusica-pay-${orderId}-pix-1.0052040000530398654041.005802BR5915UnaMusica%20IA6009Sao%20Paulo62070503***6304D1A8`;
-    
-    // We can use a free SVG QR code generator or render a client side QR canvas.
-    // For extreme reliability, we provide a clean, visual canvas-friendly string or a public QR api URL.
-    const paymentQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(randomPixKey)}`;
-
-    // Real AbacatePay Implementation Check (checks both ABACATE_PAY_KEY and ABACATEPAY_API_KEY)
-    const apiKey = process.env.ABACATE_PAY_KEY || process.env.ABACATEPAY_API_KEY;
-    let realPaymentId = paymentId;
-    let realQrCode = paymentQrUrl;
-    let realCopiaCola = randomPixKey;
-
-    if (apiKey) {
+    // Try MercadoPago Pix
+    const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST;
+    if (mpToken) {
       try {
-        console.log("Generating Pix Billing using AbacatePay v2 Transparent Checkout...");
-        const response = await fetch("https://api.abacatepay.com/v2/transparents/create", {
+        console.log("[MercadoPago] Creating Pix payment...");
+        const mpResponse = await fetch("https://api.mercadopago.com/v1/payments", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`
+            Authorization: `Bearer ${mpToken}`,
+            "X-Idempotency-Key": orderId,
           },
           body: JSON.stringify({
-            method: "PIX",
-            data: {
-              amount: 100, // R$ 1,00 in cents
-              expiresIn: 600, // 10 minutes
-              description: "Música Personalizada UnaMusica",
-              externalId: orderId,
-              metadata: {
-                orderId,
-                email
-              }
-            }
-          })
+            transaction_amount: 1.0,
+            description: "Música Personalizada — UnaMusica.com.br",
+            payment_method_id: "pix",
+            payer: { email },
+            external_reference: orderId,
+          }),
         });
 
-        if (response.ok) {
-          const result: any = await response.json();
-          if (result && result.data) {
-            realPaymentId = result.data.id;
-            realQrCode = result.data.brCodeBase64 || paymentQrUrl;
-            realCopiaCola = result.data.brCode || randomPixKey;
-            console.log("Real AbacatePay v2 Pix Billing created:", realPaymentId);
-          } else {
-            console.warn("AbacatePay v2 billing response parsed but structure was unexpected:", result);
-          }
+        if (mpResponse.ok) {
+          const mpData: any = await mpResponse.json();
+          paymentId = mpData.id?.toString() || paymentId;
+          paymentQr = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || "";
+          paymentCopiaCola = mpData.point_of_interaction?.transaction_data?.qr_code || "";
+          console.log(`[MercadoPago] Pix created: ${paymentId}`);
         } else {
-          const errBody = await response.text();
-          console.warn(`AbacatePay v2 billing generation returned non-200 status (${response.status}):`, errBody);
+          const errBody = await mpResponse.text();
+          console.warn(`[MercadoPago] Error ${mpResponse.status}:`, errBody);
         }
       } catch (e: any) {
-        console.warn("Failed to connect to AbacatePay. Switched gracefully to Sandbox mode:", e.message || e);
+        console.warn("[MercadoPago] Connection failed:", e.message);
       }
     }
 
-    const newOrder: Order = {
+    // Fallback QR for testing
+    if (!paymentQr) {
+      const mockPix = `00020126580014br.gov.bcb.pix0136unamusica-${orderId}52040000530398654041.005802BR`;
+      paymentQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPix)}`;
+      paymentCopiaCola = mockPix;
+    }
+
+    // Save order in Supabase
+    const newOrder = {
       id: orderId,
       email,
       chat_transcript: chatTranscript || [],
       structured_prompt: structuredPrompt || null,
-      song_metadata: null,
-      payment_id: realPaymentId,
-      payment_qr: realQrCode,
-      payment_copia_e_cola: realCopiaCola,
-      status: "pending_payment",
-      audio_url: null,
-      upsell_paid: false,
-      video_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      payment_id: paymentId,
+      payment_qr: paymentQr,
+      payment_copia_e_cola: paymentCopiaCola,
+      status: "pending_payment" as MusicStatus,
     };
 
-    orders[orderId] = newOrder;
-    saveDb();
+    const { error: insertError } = await supabase.from("orders").insert(newOrder);
+    if (insertError) {
+      console.error("[Supabase] Insert error:", insertError);
+    }
 
     res.json({
       orderId,
-      paymentId: realPaymentId,
-      paymentQr: realQrCode,
-      paymentCopiaCola: realCopiaCola,
-      status: "pending_payment"
+      paymentId,
+      paymentQr,
+      paymentCopiaCola,
+      status: "pending_payment",
     });
   } catch (error) {
-    console.error("Checkout API Error:", error);
-    res.status(500).json({ error: "Erro ao gerar cobrança do Pix" });
+    console.error("Checkout Error:", error);
+    res.status(500).json({ error: "Erro ao gerar cobrança Pix" });
   }
 });
 
-// Get Order Status
-app.get("/api/orders/:id", (req, res) => {
-  const order = orders[req.params.id];
-  if (!order) {
+// ─── Get Order Status ──────────────────────────────────────
+app.get("/api/orders/:id", async (req, res) => {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", req.params.id)
+    .single();
+
+  if (error || !data) {
     return res.status(404).json({ error: "Pedido não encontrado" });
   }
-  res.json(order);
+  res.json(data);
 });
 
-// Simulate Pix Payment Confirmation
+// ─── Simulate Payment (Testing) ────────────────────────────
 app.post("/api/orders/:id/simulate-payment", async (req, res) => {
   try {
-    const order = orders[req.params.id];
-    if (!order) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "paid", updated_at: new Date().toISOString() })
+      .eq("id", req.params.id);
+
+    if (error) {
       return res.status(404).json({ error: "Pedido não encontrado" });
     }
-
-    order.status = "paid";
-    order.updated_at = new Date().toISOString();
-    orders[order.id] = order;
-    saveDb();
-
     res.json({ status: "paid", success: true });
   } catch (error) {
-    res.status(500).json({ error: "Erro ao confirmar simulação de Pix" });
+    res.status(500).json({ error: "Erro ao simular pagamento" });
   }
 });
 
-// Apply Gift Coupon Code
+// ─── Apply Coupon ──────────────────────────────────────────
 app.post("/api/orders/:id/apply-coupon", async (req, res) => {
   try {
-    const order = orders[req.params.id];
-    if (!order) {
-      return res.status(404).json({ error: "Pedido não encontrado" });
-    }
-
     const { coupon } = req.body;
     if (coupon && coupon.trim().toUpperCase() === "CUPOM-PRESENTE") {
-      order.status = "paid";
-      order.updated_at = new Date().toISOString();
-      orders[order.id] = order;
-      saveDb();
+      await supabase
+        .from("orders")
+        .update({ status: "paid", updated_at: new Date().toISOString() })
+        .eq("id", req.params.id);
       res.json({ success: true, status: "paid", message: "Cupom aplicado com sucesso!" });
     } else {
       res.status(400).json({ error: "Cupom inválido ou expirado" });
     }
   } catch (error) {
-    console.error("Apply Coupon Error:", error);
-    res.status(500).json({ error: "Erro ao aplicar cupom de presente" });
+    res.status(500).json({ error: "Erro ao aplicar cupom" });
   }
 });
 
-// Simulate AbacatePay Webhook Receiver
-app.post("/api/webhook/abacatepay", (req, res) => {
+// ─── MercadoPago Webhook ───────────────────────────────────
+app.post("/api/webhook/mercadopago", async (req, res) => {
   try {
-    const payload = req.body;
-    console.log("AbacatePay Webhook received:", JSON.stringify(payload));
+    const { action, data: webhookData } = req.body;
+    console.log("[Webhook MP] Received:", action);
 
-    const event = payload.event;
-    const billing = payload.data;
+    if (action === "payment.updated" || action === "payment.created") {
+      const paymentId = webhookData?.id;
+      if (!paymentId) return res.json({ received: true });
 
-    if (event === "billing.paid" && billing) {
-      const paymentId = billing.id;
-      // Search for corresponding order
-      const order = Object.values(orders).find(o => o.payment_id === paymentId);
-      if (order) {
-        order.status = "paid";
-        order.updated_at = new Date().toISOString();
-        orders[order.id] = order;
-        saveDb();
-        console.log(`Order ${order.id} paid via webhook!`);
+      // Fetch payment details from MercadoPago
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST;
+      if (mpToken) {
+        const paymentRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+          headers: { Authorization: `Bearer ${mpToken}` },
+        });
+        if (paymentRes.ok) {
+          const payment: any = await paymentRes.json();
+          if (payment.status === "approved") {
+            const externalRef = payment.external_reference;
+            if (externalRef) {
+              await supabase
+                .from("orders")
+                .update({ status: "paid", updated_at: new Date().toISOString() })
+                .eq("id", externalRef);
+              console.log(`[Webhook MP] Order ${externalRef} paid!`);
+            }
+          }
+        }
       }
     }
-
     res.json({ received: true });
   } catch (error) {
     console.error("Webhook Error:", error);
-    res.status(500).json({ error: "Webhook process failed" });
+    res.status(500).json({ error: "Webhook failed" });
   }
 });
 
-// core generator endpoint for lyrics, melodies, and synthetic music elements using Gemini API
+// ─── Generate Music ────────────────────────────────────────
 app.post("/api/orders/:id/generate", async (req, res) => {
   try {
-    const order = orders[req.params.id];
-    if (!order) {
+    const { data: order, error: fetchError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+
+    if (fetchError || !order) {
       return res.status(404).json({ error: "Pedido não encontrado" });
     }
 
-    order.status = "processing";
-    order.updated_at = new Date().toISOString();
-    orders[order.id] = order;
-    saveDb();
+    await supabase
+      .from("orders")
+      .update({ status: "processing", updated_at: new Date().toISOString() })
+      .eq("id", order.id);
 
-    // 1. Analyze the transcript to craft the perfect personalized music
-    const transcriptText = order.chat_transcript
-      .map(m => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
+    // Analyze transcript
+    const transcriptText = (order.chat_transcript || [])
+      .map((m: any) => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
       .join("\n");
 
     const analysisPrompt = `
-Gere as informações completas para uma música personalizada e emocionante baseada na seguinte entrevista:
+Gere as informações completas para uma música personalizada baseada nesta entrevista:
 ---
 ${transcriptText}
 ---
 
-Extraia e crie os seguintes campos estruturados:
-1. Title: Título lindo e cativante da música (máximo de 5 palavras, em português).
-2. Artist Name: Nome artístico virtual apropriado para o gênero (ex: "Dupla Lucas & Thiago" para sertanejo, "Mariana Luz" para MPB).
-3. Style: O estilo musical principal selecionado.
-4. Tempo: Se é Lenta, Média ou Rápida.
-5. Vibe: Uma ou duas palavras que definem o tom emocional (ex: "Emocionante", "Engraçada e Festiva", "Romântica").
-6. Lyrics: A letra COMPLETA da música (em português do Brasil). Deve possuir:
-   - Introdução instrumental indicada por [Intro]
-   - Verso 1 (contando os detalhes específicos informados na entrevista)
-   - Pré-Refrão (criando tensão emocional)
-   - Refrão (forte, emocionante, repetitivo e memorável)
-   - Verso 2 (outros detalhes e memórias)
-   - Refrão final
-   - Outro indicado por [Outro]
-7. Key Memories: Uma lista das principais memórias utilizadas na letra.
-8. Dedicated To: O nome ou apelido da pessoa homenageada.
+Campos obrigatórios:
+1. Title: Título cativante (máx 5 palavras, português).
+2. Artist Name: Nome artístico virtual.
+3. Style: Estilo musical.
+4. Tempo: Lenta, Média ou Rápida.
+5. Vibe: Tom emocional (ex: "Emocionante", "Romântica").
+6. Lyrics: Letra COMPLETA com [Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro].
+7. Key Memories: Lista das memórias utilizadas.
+8. Dedicated To: Nome/apelido da pessoa homenageada.
 
-Retorne em formato JSON válido conforme especificado.
+Retorne JSON válido.
 `;
 
     const modelResponse = await ai.models.generateContent({
@@ -621,148 +511,183 @@ Retorne em formato JSON válido conforme especificado.
             tempo: { type: Type.STRING },
             vibe: { type: Type.STRING },
             lyrics: { type: Type.STRING },
-            keyMemories: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            },
-            dedicatedTo: { type: Type.STRING }
+            keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
+            dedicatedTo: { type: Type.STRING },
           },
-          required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"]
-        }
-      }
+          required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"],
+        },
+      },
     });
 
-    const songDataStr = modelResponse.text?.trim() || "{}";
     let songMetadata: SongMetadata;
     try {
-      songMetadata = JSON.parse(songDataStr);
-    } catch (e) {
-      console.error("Failed to parse Gemini metadata response, using backup structure");
+      songMetadata = JSON.parse(modelResponse.text?.trim() || "{}");
+    } catch {
       songMetadata = {
         title: "Sua Canção Especial",
         artistName: "Cantor Virtual UnaMusica",
         style: "Acústico / MPB",
         tempo: "Média",
         vibe: "Emocionante",
-        lyrics: "[Intro]\n(Sons suaves de violão)\n\n[Verso 1]\nLembro daquele dia em que rimos tanto\nSua voz encheu a sala com encanto\nAs memórias gravadas no meu coração\nGanham vida agora nesta canção...\n\n[Refrão]\nVocê é luz, você é meu abrigo\nO melhor da vida é estar contigo\nPor todo esse amor, eu te agradeço\nSua amizade não tem preço...\n\n[Outro]\n(Acordes suaves terminando)",
-        keyMemories: ["Sua risada", "Seu carinho", "A nossa cumplicidade"],
-        dedicatedTo: "Alguém Especial"
+        lyrics: "[Intro]\n(Sons suaves de violão)\n\n[Verso 1]\nLembro daquele dia em que rimos tanto\nSua voz encheu a sala com encanto...\n\n[Refrão]\nVocê é luz, você é meu abrigo\nO melhor da vida é estar contigo...\n\n[Outro]\n(Acordes suaves)",
+        keyMemories: ["Sua risada", "Seu carinho"],
+        dedicatedTo: "Alguém Especial",
       };
     }
 
-    // 2. Generate actual custom music using Google DeepMind's Lyria 3 model!
-    let audioUrl = "";
+    // Try generating music with Lyria
+    let audioStoragePath: string | null = null;
     try {
       const cleanLyrics = songMetadata.lyrics
         .replace(/\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi, "")
-        .replace(/\((.*?)\)/g, "") // remove performance notes
+        .replace(/\((.*?)\)/g, "")
         .trim();
 
-      const lyriaPrompt = `Uma canção cantada em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Dedicada a ${songMetadata.dedicatedTo}. Letra da música: ${cleanLyrics}`;
-      
-      console.log("Generating custom high-fidelity music track using Lyria 3 Pro (up to 3 min)...");
+      const lyriaPrompt = `Uma canção cantada em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Dedicada a ${songMetadata.dedicatedTo}. Letra: ${cleanLyrics}`;
+
+      console.log("[Lyria] Generating music...");
       const lyriaResponse = await (ai as any).interactions.create({
         model: "models/lyria-3-pro-preview",
-        input: lyriaPrompt
+        input: lyriaPrompt,
       });
 
-      if (lyriaResponse && lyriaResponse.output_audio && lyriaResponse.output_audio.data) {
-        audioUrl = `data:${lyriaResponse.output_audio.mime_type};base64,${lyriaResponse.output_audio.data}`;
-        console.log("Successfully generated real custom music track using Lyria!");
-      } else {
-        console.warn("Lyria API call succeeded but did not return audio data in the expected structure:", lyriaResponse);
+      if (lyriaResponse?.output_audio?.data) {
+        // Upload to Supabase Storage
+        const audioBuffer = Buffer.from(lyriaResponse.output_audio.data, "base64");
+        const filePath = `${order.id}.mp3`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("songs")
+          .upload(filePath, audioBuffer, {
+            contentType: lyriaResponse.output_audio.mime_type || "audio/mpeg",
+            upsert: true,
+          });
+
+        if (!uploadError) {
+          audioStoragePath = filePath;
+          console.log(`[Lyria] Audio uploaded to storage: ${filePath}`);
+        } else {
+          console.error("[Storage] Upload error:", uploadError);
+        }
       }
     } catch (lyriaErr) {
-      console.error("Lyria music generation failed, fallback to visual music synth:", lyriaErr);
+      console.warn("[Lyria] Music generation failed:", lyriaErr);
     }
 
-    order.song_metadata = songMetadata;
-    order.audio_url = audioUrl || "mock_acoustic_guitar_track";
-    order.status = "completed";
-    order.updated_at = new Date().toISOString();
-    orders[order.id] = order;
-    saveDb();
+    // Update order as completed
+    await supabase
+      .from("orders")
+      .update({
+        song_metadata: songMetadata,
+        audio_storage_path: audioStoragePath,
+        status: "completed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.id);
 
-    // Here we would also configure Resend transactional email.
-    const resendApiKey = process.env.RESEND_KEY || process.env.RESEND_API_KEY;
-    if (resendApiKey) {
+    // Send email with download link (via our API, never expose Supabase URL)
+    const resendKey = process.env.RESEND_KEY;
+    const fromEmail = process.env.RESEND_FROM || "onboarding@resend.dev";
+    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+
+    if (resendKey) {
       try {
-        console.log("Resend API Key found. Attempting to send transactional confirmation email...");
         await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${resendApiKey}`
+            Authorization: `Bearer ${resendKey}`,
           },
           body: JSON.stringify({
-            from: "UnaMusica <onboarding@resend.dev>",
+            from: `UnaMusica <${fromEmail}>`,
             to: order.email,
-            subject: `🎵 Sua música "${songMetadata.title}" está pronta para tocar!`,
+            subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
             html: `
-              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 12px;">
-                <h2 style="color: #FF4D4D; text-align: center;">UnaMusica.com.br</h2>
+              <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+                <h2 style="color: #FF5A5F; text-align: center;">UnaMusica.com.br</h2>
                 <p>Olá!</p>
-                <p>Nossa inteligência artificial acabou de finalizar a composição de sua música personalizada: <strong>"${songMetadata.title}"</strong>!</p>
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
+                <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
                   <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
                   <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
                 </div>
-                <p>Para ouvir a música, ver a letra completa e fazer o download, clique no botão abaixo:</p>
                 <div style="text-align: center; margin: 30px 0;">
-                  <a href="${process.env.APP_URL || 'http://localhost:3000'}/?orderId=${order.id}" style="background-color: #FF4D4D; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir Minha Música 🎵</a>
+                  <a href="${appUrl}/api/orders/${order.id}/download" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Baixar Música 🎵</a>
                 </div>
-                <p style="font-size: 12px; color: #999; text-align: center; margin-top: 40px;">UnaMusica • Transbordando emoções através da música por R$ 1,00</p>
+                <div style="text-align: center; margin: 20px 0;">
+                  <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
+                </div>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+                <p style="font-size: 11px; color: #999; text-align: center;">UnaMusica.com.br — Transformando memórias em música por R$ 1,00</p>
               </div>
-            `
-          })
+            `,
+          }),
         });
-        console.log("Email sent successfully!");
+        console.log("[Email] Confirmation sent to", order.email);
       } catch (emailErr) {
-        console.error("Failed to send transactional email:", emailErr);
+        console.error("[Email] Failed:", emailErr);
       }
     }
 
-    res.json(order);
+    // Re-fetch updated order for response
+    const { data: updatedOrder } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", order.id)
+      .single();
+
+    res.json(updatedOrder || { ...order, song_metadata: songMetadata, status: "completed" });
   } catch (error) {
-    console.error("Generate API Error:", error);
-    res.status(500).json({ error: "Erro ao compor a música com a IA" });
+    console.error("Generate Error:", error);
+    res.status(500).json({ error: "Erro ao compor a música" });
   }
 });
 
-// Upsell photo video confirmation
-app.post("/api/orders/:id/upsell", (req, res) => {
+// ─── Download (Signed URL — never expose Supabase directly) ─
+app.get("/api/orders/:id/download", async (req, res) => {
   try {
-    const order = orders[req.params.id];
-    if (!order) {
-      return res.status(404).json({ error: "Pedido não encontrado" });
+    const { data: order } = await supabase
+      .from("orders")
+      .select("audio_storage_path, song_metadata, status")
+      .eq("id", req.params.id)
+      .single();
+
+    if (!order || order.status !== "completed") {
+      return res.status(404).json({ error: "Música não encontrada ou ainda em processamento" });
     }
 
-    order.upsell_paid = true;
-    order.video_url = "completed_slideshow_video";
-    order.updated_at = new Date().toISOString();
-    orders[order.id] = order;
-    saveDb();
+    if (!order.audio_storage_path) {
+      return res.status(404).json({ error: "Arquivo de áudio não disponível" });
+    }
 
-    res.json(order);
+    // Generate signed URL (expires in 60 minutes)
+    const { data: signedUrl, error } = await supabase.storage
+      .from("songs")
+      .createSignedUrl(order.audio_storage_path, 3600);
+
+    if (error || !signedUrl) {
+      return res.status(500).json({ error: "Erro ao gerar link de download" });
+    }
+
+    res.redirect(signedUrl.signedUrl);
   } catch (error) {
-    res.status(500).json({ error: "Erro ao registrar upsell" });
+    console.error("Download Error:", error);
+    res.status(500).json({ error: "Erro no download" });
   }
 });
 
-// ----------------------------------------------------
-// VITE DEV SERVER AND PRODUCTION SERVING
-// ----------------------------------------------------
+// ============================================================
+// VITE DEV / PRODUCTION SERVING
+// ============================================================
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    // Mount Vite dev server
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    // Serve static files in production
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
@@ -770,80 +695,8 @@ async function startServer() {
     });
   }
 
-  const httpServer = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`UnaMusica.com.br full-stack server running on http://localhost:${PORT}`);
-  });
-
-  // WebSocket Server Setup for securing Gemini Live API keys
-  const wss = new WebSocketServer({ noServer: true });
-
-  httpServer.on("upgrade", (request, socket, head) => {
-    const urlObj = new URL(request.url || "", `http://${request.headers.host}`);
-    if (urlObj.pathname === "/api/live-chat") {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit("connection", ws, request);
-      });
-    } else {
-      socket.destroy();
-    }
-  });
-
-  wss.on("connection", (clientWs) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error("[Proxy WS] GEMINI_API_KEY not configured on server.");
-      clientWs.close(4000, "API key not configured");
-      return;
-    }
-
-    const MODEL = "gemini-2.5-flash"; // Must match the client-side LIVE_MODEL in ChatSection.tsx
-    const GOOGLE_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-
-    console.log("[Proxy WS] Connecting to Gemini Live API...");
-    const googleWs = new WebSocket(GOOGLE_WS_URL);
-
-    let isClientClosed = false;
-    let isGoogleClosed = false;
-
-    clientWs.on("message", (message) => {
-      if (googleWs.readyState === WebSocket.OPEN && !isGoogleClosed) {
-        googleWs.send(message);
-      }
-    });
-
-    googleWs.on("open", () => {
-      console.log("[Proxy WS] Connected to Gemini Live API");
-    });
-
-    googleWs.on("message", (message) => {
-      if (clientWs.readyState === WebSocket.OPEN && !isClientClosed) {
-        clientWs.send(message);
-      }
-    });
-
-    clientWs.on("close", () => {
-      console.log("[Proxy WS] Client disconnected");
-      isClientClosed = true;
-      if (!isGoogleClosed) {
-        googleWs.close();
-      }
-    });
-
-    googleWs.on("close", (code, reason) => {
-      console.log(`[Proxy WS] Gemini disconnected. Code: ${code}, Reason: ${reason}`);
-      isGoogleClosed = true;
-      if (!isClientClosed) {
-        clientWs.close(code, reason.toString());
-      }
-    });
-
-    clientWs.on("error", (err) => {
-      console.error("[Proxy WS] Client error:", err);
-    });
-
-    googleWs.on("error", (err) => {
-      console.error("[Proxy WS] Gemini error:", err);
-    });
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`UnaMusica server running on http://localhost:${PORT}`);
   });
 }
 

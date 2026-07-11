@@ -24,10 +24,10 @@ export interface Order {
   structured_prompt: string | null;
   song_metadata: SongMetadata | null;
   payment_id: string;
-  payment_qr: string; // Base64 or copyable payload
+  payment_qr: string;
   payment_copia_e_cola: string;
   status: MusicStatus;
-  audio_url: string | null;
+  audio_storage_path: string | null;  // Supabase storage path (never exposed to user)
   upsell_paid: boolean;
   video_url: string | null;
   created_at: string;
