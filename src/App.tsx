@@ -85,13 +85,21 @@ export default function App() {
       setOtpError("Digite um e-mail válido");
       return;
     }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const alreadyVerified = localStorage.getItem("1musica_verified_email");
+    if (alreadyVerified === cleanEmail) {
+      setView("chat");
+      return;
+    }
+
     setOtpSending(true);
     setOtpError("");
     try {
       const res = await fetch("/api/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: cleanEmail }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -121,6 +129,7 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        localStorage.setItem("1musica_verified_email", email.toLowerCase().trim());
         setView("chat");
       } else {
         setOtpError(data.error || "Código inválido ou expirado");

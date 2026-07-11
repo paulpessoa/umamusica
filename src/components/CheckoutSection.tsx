@@ -142,16 +142,23 @@ export default function CheckoutSection({
         
         {/* QR Code container */}
         <div className="relative w-44 h-44 bg-white rounded-2xl p-2.5 flex items-center justify-center shadow-sm border border-gray-100">
-          <img 
-            src={paymentQr} 
-            alt="Pix QR Code" 
-            className="w-full h-full object-contain"
-            referrerPolicy="no-referrer"
-          />
+          {paymentQr ? (
+            <img 
+              src={paymentQr.startsWith("data:") ? paymentQr : `data:image/png;base64,${paymentQr}`} 
+              alt="Pix QR Code" 
+              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="text-gray-300 flex flex-col items-center justify-center text-[10px]">
+              <RefreshCw className="w-6 h-6 animate-spin text-gray-400 mb-1" />
+              <span>Gerando QR Code...</span>
+            </div>
+          )}
         </div>
 
         {/* Expiration warning */}
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+        <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
           <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
           <span>O Pix expira em: </span>
           <span className="font-bold text-amber-600 font-mono">
