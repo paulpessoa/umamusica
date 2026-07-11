@@ -368,16 +368,8 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
     setLiveAISubtitle("");
 
     try {
-      const keyRes = await fetch("/api/gemini-key");
-      const keyData = await keyRes.json();
-      const apiKey = keyData.apiKey;
-
-      if (!apiKey) {
-        throw new Error("Chave da API do Gemini não configurada.");
-      }
-
-      const MODEL = "models/gemini-2.5-flash-native-audio-latest";
-      const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/api/live-chat`;
 
       if (!audioContextOutRef.current) {
         audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -385,7 +377,8 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
       audioContextOutRef.current.resume();
       nextPlayTimeRef.current = audioContextOutRef.current.currentTime;
 
-      const ws = new WebSocket(WS_URL);
+      console.log("[Agente Live] Conectando ao proxy local:", wsUrl);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       const systemInstructionText = `
@@ -537,8 +530,8 @@ Instruções importantes de voz:
         setLiveUserSubtitle("Erro na conexão...");
       };
 
-      ws.onclose = () => {
-        console.log("[Agente Live] WS close");
+      ws.onclose = (event) => {
+        console.log(`[Agente Live] WS close. Code: ${event.code}, Reason: ${event.reason}`);
         if (!isStoppingRef.current) {
           stopContinuousSpeech();
         }

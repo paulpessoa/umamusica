@@ -1,4 +1,5 @@
 import express from "express";
+import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
@@ -103,9 +104,9 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Endpoint to expose Gemini API Key safely for Live WebSocket
+// Endpoint to expose Gemini API Key safely for Live WebSocket (Now Protected)
 app.get("/api/gemini-key", (req, res) => {
-  res.json({ apiKey: process.env.GEMINI_API_KEY || "" });
+  res.json({ apiKey: "PROTECTED" });
 });
 
 // Chat Interview Endpoint
@@ -839,8 +840,80 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const httpServer = app.listen(PORT, "0.0.0.0", () => {
     console.log(`UnaMusica.com.br full-stack server running on http://localhost:${PORT}`);
+  });
+
+  // WebSocket Server Setup for securing Gemini Live API keys
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", (request, socket, head) => {
+    const urlObj = new URL(request.url || "", `http://${request.headers.host}`);
+    if (urlObj.pathname === "/api/live-chat") {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  wss.on("connection", (clientWs) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("[Proxy WS] GEMINI_API_KEY not configured on server.");
+      clientWs.close(4000, "API key not configured");
+      return;
+    }
+
+    const MODEL = "models/gemini-2.0-flash-exp";
+    const GOOGLE_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+
+    console.log("[Proxy WS] Connecting to Gemini Live API...");
+    const googleWs = new WebSocket(GOOGLE_WS_URL);
+
+    let isClientClosed = false;
+    let isGoogleClosed = false;
+
+    clientWs.on("message", (message) => {
+      if (googleWs.readyState === WebSocket.OPEN && !isGoogleClosed) {
+        googleWs.send(message);
+      }
+    });
+
+    googleWs.on("open", () => {
+      console.log("[Proxy WS] Connected to Gemini Live API");
+    });
+
+    googleWs.on("message", (message) => {
+      if (clientWs.readyState === WebSocket.OPEN && !isClientClosed) {
+        clientWs.send(message);
+      }
+    });
+
+    clientWs.on("close", () => {
+      console.log("[Proxy WS] Client disconnected");
+      isClientClosed = true;
+      if (!isGoogleClosed) {
+        googleWs.close();
+      }
+    });
+
+    googleWs.on("close", (code, reason) => {
+      console.log(`[Proxy WS] Gemini disconnected. Code: ${code}, Reason: ${reason}`);
+      isGoogleClosed = true;
+      if (!isClientClosed) {
+        clientWs.close(code, reason.toString());
+      }
+    });
+
+    clientWs.on("error", (err) => {
+      console.error("[Proxy WS] Client error:", err);
+    });
+
+    googleWs.on("error", (err) => {
+      console.error("[Proxy WS] Gemini error:", err);
+    });
   });
 }
 
