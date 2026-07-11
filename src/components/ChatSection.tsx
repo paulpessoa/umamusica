@@ -355,6 +355,8 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
     setMessages((prev) => [...prev, userMsg]);
   };
 
+  const LIVE_MODEL = "gemini-2.5-flash";
+
   const startContinuousSpeech = async () => {
     isStoppingRef.current = false;
     setupCompletedRef.current = false;
@@ -364,8 +366,25 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
     currentAIResponseRef.current = "";
 
     setCallStatus("connecting");
-    setLiveUserSubtitle("Conectando ao Gemini...");
+    setLiveUserSubtitle("Solicitando microfone...");
     setLiveAISubtitle("");
+
+    // Request microphone permission BEFORE connecting WebSocket
+    try {
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+      });
+      testStream.getTracks().forEach(t => t.stop()); // release immediately, startMic will re-acquire
+    } catch (micErr) {
+      console.error("[Agente Live] Microphone permission denied:", micErr);
+      setCallStatus("idle");
+      setIsLiveCallActive(false);
+      setLiveUserSubtitle("Permissão de microfone negada.");
+      alert("Para usar o Modo Entrevista Live, é necessário permitir o acesso ao microfone.");
+      return;
+    }
+
+    setLiveUserSubtitle("Conectando ao Gemini...");
 
     try {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -401,7 +420,7 @@ Instruções importantes de voz:
         console.log("[Agente Live] WebSocket open");
         ws.send(JSON.stringify({
           setup: {
-            model: MODEL,
+            model: LIVE_MODEL,
             generationConfig: {
               responseModalities: ["AUDIO"],
               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }

@@ -796,7 +796,7 @@ async function startServer() {
       return;
     }
 
-    const MODEL = "models/gemini-2.0-flash-exp";
+    const MODEL = "gemini-2.5-flash"; // Must match the client-side LIVE_MODEL in ChatSection.tsx
     const GOOGLE_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
     console.log("[Proxy WS] Connecting to Gemini Live API...");
