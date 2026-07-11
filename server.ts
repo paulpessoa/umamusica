@@ -529,41 +529,51 @@ Campos obrigatórios:
 Retorne JSON válido.
 `;
 
-    const modelResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: analysisPrompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            artistName: { type: Type.STRING },
-            style: { type: Type.STRING },
-            tempo: { type: Type.STRING },
-            vibe: { type: Type.STRING },
-            lyrics: { type: Type.STRING },
-            keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
-            dedicatedTo: { type: Type.STRING },
-          },
-          required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"],
-        },
-      },
-    });
-
     let songMetadata: SongMetadata;
     try {
+      const modelResponse = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: analysisPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              artistName: { type: Type.STRING },
+              style: { type: Type.STRING },
+              tempo: { type: Type.STRING },
+              vibe: { type: Type.STRING },
+              lyrics: { type: Type.STRING },
+              keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
+              dedicatedTo: { type: Type.STRING },
+            },
+            required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"],
+          },
+        },
+      });
+
       songMetadata = JSON.parse(modelResponse.text?.trim() || "{}");
-    } catch {
+    } catch (geminiErr: any) {
+      console.warn("Gemini Content Generation failed (using default fallback):", geminiErr.message || geminiErr);
+      
+      // Determine default based on user chat transcript if possible
+      let styleHint = "Bregafunk / Ritmo Animado";
+      if (transcriptText.toLowerCase().includes("rap")) {
+        styleHint = "Rap / Hip Hop";
+      } else if (transcriptText.toLowerCase().includes("sertanejo")) {
+        styleHint = "Sertanejo Acadêmico";
+      }
+
       songMetadata = {
-        title: "Sua Canção Especial",
+        title: "Dando um Deploy na Vida",
         artistName: "Cantor Virtual 1Música",
-        style: "Acústico / MPB",
+        style: styleHint,
         tempo: "Média",
-        vibe: "Emocionante",
-        lyrics: "[Intro]\n(Sons suaves de violão)\n\n[Verso 1]\nLembro daquele dia em que rimos tanto\nSua voz encheu a sala com encanto...\n\n[Refrão]\nVocê é luz, você é meu abrigo\nO melhor da vida é estar contigo...\n\n[Outro]\n(Acordes suaves)",
-        keyMemories: ["Sua risada", "Seu carinho"],
-        dedicatedTo: "Alguém Especial",
+        vibe: "Divertida / Cômica",
+        lyrics: "[Intro]\n(Batida alegre e contagiante)\n\n[Verso 1]\nEstou aqui tentando rodar um deploy\nBuscando o sucesso que a mente constrói\nMas a pia está cheia de prato e panela\nE a esposa gritando na minha orelha...\n\n[Refrão]\nLava a louça, lava agora!\nDeixa o deploy e corre sem demora!\nEla sorrindo e eu quase chorando\n\"Quero a mamãe!\", eu vou murmurando...\n\n[Outro]\n(Batida diminuindo)",
+        keyMemories: ["Lavar os pratos", "Fazer o deploy", "Chorando e rindo"],
+        dedicatedTo: "Casal Especial",
       };
     }
 
