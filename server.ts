@@ -4,6 +4,7 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
+import nodemailer from "nodemailer";
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js";
 
 // Load environment variables
@@ -11,6 +12,17 @@ dotenv.config();
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
+
+// Initialize SMTP transporter using environment variables (standardized for any SMTP provider)
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || "smtp.zoho.com",
+  port: parseInt(process.env.SMTP_PORT || "465", 10),
+  secure: process.env.SMTP_SECURE !== "false", // true for port 465, false for 587
+  auth: {
+    user: process.env.SMTP_USER || "",
+    pass: process.env.SMTP_PASS || "",
+  },
+});
 
 app.use(express.json({ limit: "25mb" }));
 
@@ -119,25 +131,12 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
       expires_at: expiresAt.toISOString(),
     });
 
-    // Send via Resend
-    const resendKey = process.env.RESEND_KEY;
-    
-    // Fallback safely to onboarding@resend.dev if domain not verified yet
-    let fromEmail = process.env.RESEND_FROM || "onboarding@resend.dev";
-    if (fromEmail.includes("@qisites.com.br")) {
-      // In case we want a quick automatic fallback on code, or we let it try the configured one
-      console.log("[Resend] Sending email using configured domain:", fromEmail);
-    }
-
-    if (resendKey) {
-      const emailRes = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${resendKey}`,
-        },
-        body: JSON.stringify({
-          from: fromEmail.includes("<") ? fromEmail : `UnaMusica <${fromEmail}>`,
+    // Send via SMTP
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      try {
+        const fromEmail = process.env.SMTP_USER;
+        await transporter.sendMail({
+          from: `"UnaMusica" <${fromEmail}>`,
           to: email,
           subject: "🎵 Seu código de verificação — UnaMusica",
           html: `
@@ -150,12 +149,13 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
               <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
             </div>
           `,
-        }),
-      });
-      const resBody = await emailRes.text();
-      console.log(`[Resend OTP] HTTP Status: ${emailRes.status} | Response: ${resBody}`);
+        });
+        console.log(`[SMTP OTP] Code sent to ${email}`);
+      } catch (smtpErr: any) {
+        console.error("[SMTP OTP] Failed to send email:", smtpErr.message || smtpErr);
+      }
     } else {
-      console.log(`[OTP] RESEND_KEY not set. Code for ${email}: ${code}`);
+      console.log(`[OTP] SMTP credentials not set. Code for ${email}: ${code}`);
     }
 
     res.json({ success: true });
@@ -615,48 +615,41 @@ Retorne JSON válido.
       })
       .eq("id", order.id);
 
-    // Send email with download link (via our API, never expose Supabase URL)
-    const resendKey = process.env.RESEND_KEY;
-    let fromEmail = process.env.RESEND_FROM || "onboarding@resend.dev";
+    // Send email with download link (via SMTP)
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
 
-    if (resendKey) {
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const emailRes = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${resendKey}`,
-          },
-          body: JSON.stringify({
-            from: fromEmail.includes("<") ? fromEmail : `UnaMusica <${fromEmail}>`,
-            to: order.email,
-            subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
-            html: `
-              <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-                <h2 style="color: #FF5A5F; text-align: center;">UnaMusica.com.br</h2>
-                <p>Olá!</p>
-                <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
-                <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
-                  <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
-                  <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
-                </div>
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${appUrl}/api/orders/${order.id}/download" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Baixar Música 🎵</a>
-                </div>
-                <div style="text-align: center; margin: 20px 0;">
-                  <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
-                </div>
-                <p style="font-size: 11px; color: #999; text-align: center;">UnaMusica.com.br — Transformando memórias em música por R$ 1,00</p>
+        const fromEmail = process.env.SMTP_USER;
+        await transporter.sendMail({
+          from: `"UnaMusica" <${fromEmail}>`,
+          to: order.email,
+          subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
+          html: `
+            <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+              <h2 style="color: #FF5A5F; text-align: center;">UnaMusica.com.br</h2>
+              <p>Olá!</p>
+              <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
+              <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
+                <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
               </div>
-            `,
-          }),
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${appUrl}/api/orders/${order.id}/download" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Baixar Música 🎵</a>
+              </div>
+              <div style="text-align: center; margin: 20px 0;">
+                <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
+              </div>
+              <p style="font-size: 11px; color: #999; text-align: center;">UnaMusica.com.br — Transformando memórias em música por R$ 1,00</p>
+            </div>
+          `,
         });
-        const resBody = await emailRes.text();
-        console.log(`[Resend Completion] HTTP Status: ${emailRes.status} | Response: ${resBody}`);
-      } catch (emailErr) {
-        console.error("[Email] Failed:", emailErr);
+        console.log(`[SMTP Completion] Email sent to ${order.email}`);
+      } catch (smtpErr: any) {
+        console.error("[SMTP Completion] Failed to send email:", smtpErr.message || smtpErr);
       }
+    } else {
+      console.log(`[SMTP Completion] SMTP credentials not set. Email not sent for ${order.email}`);
     }
 
     // Re-fetch updated order for response
