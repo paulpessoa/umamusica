@@ -402,88 +402,24 @@ app.post("/api/checkout", async (req, res) => {
 
     if (apiKey) {
       try {
-        console.log("AbacatePay API Key detected. Setting up dynamic customer...");
-        
-        let customerIdToUse = "cust_unamusica_client";
-        try {
-          // Attempt to create customer first
-          const custResponse = await fetch("https://api.abacatepay.com/v1/customer/create", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              email,
-              name: "Cliente UnaMusica",
-              cellphone: "99999999999",
-              taxId: "00000000000"
-            })
-          });
-
-          if (custResponse.ok) {
-            const custResult: any = await custResponse.json();
-            if (custResult && custResult.data && custResult.data.id) {
-              customerIdToUse = custResult.data.id;
-              console.log("AbacatePay customer created successfully:", customerIdToUse);
-            }
-          } else {
-            const errText = await custResponse.text();
-            console.log(`Customer creation returned status ${custResponse.status}. Attempting to locate existing customer...`);
-            
-            // Fallback: list customers to find existing
-            let listResponse = await fetch("https://api.abacatepay.com/v1/customer", {
-              headers: { "Authorization": `Bearer ${apiKey}` }
-            });
-            if (!listResponse.ok) {
-              listResponse = await fetch("https://api.abacatepay.com/v1/customer/list", {
-                headers: { "Authorization": `Bearer ${apiKey}` }
-              });
-            }
-
-            if (listResponse.ok) {
-              const listResult: any = await listResponse.json();
-              if (listResult && listResult.data) {
-                const list = Array.isArray(listResult.data) 
-                  ? listResult.data 
-                  : (Array.isArray(listResult.data.customers) ? listResult.data.customers : []);
-                const existingCust = list.find((c: any) => c.email === email);
-                if (existingCust && existingCust.id) {
-                  customerIdToUse = existingCust.id;
-                  console.log("Located existing AbacatePay customer ID:", customerIdToUse);
-                }
-              }
-            } else {
-              console.warn("Listing customers failed:", listResponse.status);
-            }
-          }
-        } catch (custErr: any) {
-          console.warn("Failed to find or create customer dynamically:", custErr.message || custErr);
-        }
-
-        console.log(`Generating Pix Billing with Customer ID: ${customerIdToUse}...`);
-        const response = await fetch("https://api.abacatepay.com/v1/billing/create", {
+        console.log("Generating Pix Billing using AbacatePay v2 Transparent Checkout...");
+        const response = await fetch("https://api.abacatepay.com/v2/transparents/create", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            frequency: "ONE_TIME",
-            methods: ["PIX"],
-            products: [
-              {
-                name: "Música Personalizada UnaMusica",
-                quantity: 1,
-                price: 100 // R$ 1,00 in cents
+            method: "PIX",
+            data: {
+              amount: 100, // R$ 1,00 in cents
+              expiresIn: 600, // 10 minutes
+              description: "Música Personalizada UnaMusica",
+              externalId: orderId,
+              metadata: {
+                orderId,
+                email
               }
-            ],
-            returnUrl: process.env.APP_URL || `http://localhost:3000`,
-            completionUrl: process.env.APP_URL || `http://localhost:3000`,
-            customerId: customerIdToUse,
-            metadata: {
-              orderId,
-              email
             }
           })
         });
@@ -492,13 +428,15 @@ app.post("/api/checkout", async (req, res) => {
           const result: any = await response.json();
           if (result && result.data) {
             realPaymentId = result.data.id;
-            realQrCode = result.data.pix?.qrCodeUrl || paymentQrUrl;
-            realCopiaCola = result.data.pix?.copiaECola || randomPixKey;
-            console.log("Real AbacatePay Pix Billing created:", realPaymentId);
+            realQrCode = result.data.brCodeBase64 || paymentQrUrl;
+            realCopiaCola = result.data.brCode || randomPixKey;
+            console.log("Real AbacatePay v2 Pix Billing created:", realPaymentId);
+          } else {
+            console.warn("AbacatePay v2 billing response parsed but structure was unexpected:", result);
           }
         } else {
           const errBody = await response.text();
-          console.warn(`AbacatePay API billing generation returned non-200 status (${response.status}):`, errBody);
+          console.warn(`AbacatePay v2 billing generation returned non-200 status (${response.status}):`, errBody);
         }
       } catch (e: any) {
         console.warn("Failed to connect to AbacatePay. Switched gracefully to Sandbox mode:", e.message || e);
@@ -724,7 +662,7 @@ ${cleanLyrics}
       
       console.log("Generating custom full-length TTS vocals with Gemini...");
       const ttsResponse = await ai.models.generateContent({
-        model: "gemini-3.1-flash-tts-preview",
+        model: "gemini-2.0-flash",
         contents: [{ parts: [{ text: `Recite de forma artística, calorosa, emocionante, compassada e compassiva como um cantor ou poeta em português do Brasil: ${dedicationText}` }] }],
         config: {
           responseModalities: ["AUDIO"],
@@ -765,7 +703,7 @@ ${cleanLyrics}
             "Authorization": `Bearer ${resendApiKey}`
           },
           body: JSON.stringify({
-            from: "UnaMusica <composição@qisites.com.br>",
+            from: "UnaMusica <onboarding@resend.dev>",
             to: order.email,
             subject: `🎵 Sua música "${songMetadata.title}" está pronta para tocar!`,
             html: `

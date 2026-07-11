@@ -3,7 +3,6 @@ import { Sparkles, Music, CheckCircle2, ChevronRight, RefreshCw, VolumeX, Mail, 
 import { motion, AnimatePresence } from "motion/react";
 import { Order, SongMetadata } from "../types";
 import AudioPlayer from "./AudioPlayer";
-import UpsellSection from "./UpsellSection";
 
 const exampleSongs = [
   {
@@ -115,16 +114,6 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
     }
   };
 
-  const handleUpsellCompleted = () => {
-    setOrder((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        upsell_paid: true,
-        video_url: "completed_slideshow_video",
-      };
-    });
-  };
 
   if (!order) {
     return (
@@ -230,14 +219,7 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
               />
             )}
 
-            {/* Dynamic visual upsell section */}
-            <UpsellSection 
-              orderId={order.id} 
-              isPaid={order.upsell_paid} 
-              onUpsellCompleted={handleUpsellCompleted}
-              audioIsPlaying={isPlaying}
-              audioCurrentTime={currentTime}
-            />
+
 
             {/* Inspirations & Fictional Customer Reviews Section */}
             <div className="border-t border-gray-100 pt-6 space-y-4">
