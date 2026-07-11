@@ -650,44 +650,30 @@ Retorne em formato JSON válido conforme especificado.
       };
     }
 
-    // 2. Generate custom spoken/singing intro or backing vocals with Gemini TTS API!
-    // This provides a highly immersive, personalized audio experience with the full custom lyrics!
+    // 2. Generate actual custom music using Google DeepMind's Lyria 3 model!
     let audioUrl = "";
     try {
       const cleanLyrics = songMetadata.lyrics
         .replace(/\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi, "")
-        .replace(/\((.*?)\)/g, "") // remove parenthetical performance notes like (Sons de violão)
-        .replace(/\n\n+/g, ".\n")
+        .replace(/\((.*?)\)/g, "") // remove performance notes
         .trim();
 
-      const dedicationText = `
-Homenagem especial dedicada a ${songMetadata.dedicatedTo}. Esta canção foi composta no estilo ${songMetadata.style} para celebrar a sua linda história. Sinta cada palavra:
-
-${cleanLyrics}
-`;
+      const lyriaPrompt = `Uma canção cantada em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Dedicada a ${songMetadata.dedicatedTo}. Letra da música: ${cleanLyrics}`;
       
-      console.log("Generating custom full-length TTS vocals with Gemini...");
-      const ttsResponse = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: [{ parts: [{ text: `Recite de forma artística, calorosa, emocionante, compassada e compassiva como um cantor ou poeta em português do Brasil: ${dedicationText}` }] }],
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Kore" } // A beautiful warm voice
-            }
-          }
-        }
+      console.log("Generating custom high-fidelity music track using Lyria 3 Clip...");
+      const lyriaResponse = await (ai as any).interactions.create({
+        model: "models/lyria-3-clip-preview",
+        input: lyriaPrompt
       });
 
-      const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        // Return base64 as data URL so the client plays it directly
-        audioUrl = `data:audio/mp3;base64,${base64Audio}`;
-        console.log("Successfully generated personalized full-lyric TTS vocals!");
+      if (lyriaResponse && lyriaResponse.output_audio && lyriaResponse.output_audio.data) {
+        audioUrl = `data:${lyriaResponse.output_audio.mime_type};base64,${lyriaResponse.output_audio.data}`;
+        console.log("Successfully generated real custom music track using Lyria!");
+      } else {
+        console.warn("Lyria API call succeeded but did not return audio data in the expected structure:", lyriaResponse);
       }
-    } catch (ttsErr) {
-      console.error("Gemini TTS voice generation failed, fallback to visual music synth:", ttsErr);
+    } catch (lyriaErr) {
+      console.error("Lyria music generation failed, fallback to visual music synth:", lyriaErr);
     }
 
     order.song_metadata = songMetadata;
