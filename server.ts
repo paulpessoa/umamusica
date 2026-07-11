@@ -1,3 +1,4 @@
+// Server main entrypoint for UnaMusica platform
 import express from "express";
 import path from "path";
 import fs from "fs";
