@@ -31,6 +31,7 @@ export default function AudioPlayer({
   const [localDuration, localSetDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
 
   const isPlaying = propIsPlaying !== undefined ? propIsPlaying : localIsPlaying;
   const setIsPlaying = propSetIsPlaying !== undefined ? propSetIsPlaying : localSetIsPlaying;
@@ -48,6 +49,7 @@ export default function AudioPlayer({
     if (!hasAudio) return;
 
     if (!audioSrc) {
+      setIsAudioLoading(true);
       // Fetch signed URL via our API (never exposes Supabase)
       const downloadUrl = `/api/orders/${orderId}/download`;
       setAudioSrc(downloadUrl);
@@ -57,13 +59,21 @@ export default function AudioPlayer({
     setTimeout(() => {
       if (audioRef.current) {
         audioRef.current.volume = volume;
-        audioRef.current.play().catch((e) => console.log("Playback error:", e));
-        setIsPlaying(true);
+        audioRef.current.play()
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch((e) => {
+            console.log("Playback error:", e);
+            setIsAudioLoading(false);
+          });
       }
-    }, 100);
+    }, 150);
   };
 
   const togglePlay = () => {
+    if (isAudioLoading) return; // Block input while fetching audio file
+
     if (!audioRef.current || !audioSrc) {
       loadAndPlay();
       return;
@@ -83,11 +93,12 @@ export default function AudioPlayer({
   };
 
   const handleLoadedMetadata = () => {
+    setIsAudioLoading(false); // Stop loader once audio metadata/duration is loaded
     if (audioRef.current) setDuration(audioRef.current.duration || 45);
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || isAudioLoading) return;
     const seekValue = parseFloat(e.target.value);
     audioRef.current.currentTime = seekValue;
     setCurrentTime(seekValue);
@@ -100,6 +111,7 @@ export default function AudioPlayer({
   };
 
   const formatTime = (time: number) => {
+    if (isAudioLoading && time === 0) return "Carregando...";
     if (isNaN(time)) return "00:00";
     const mins = Math.floor(time / 60);
     const secs = Math.floor(time % 60);
@@ -163,21 +175,26 @@ export default function AudioPlayer({
     };
   }, [isPlaying]);
 
-  // Lyrics renderer
+  // Lyrics renderer with support for literal '\n' string escapes
   const renderLyrics = () => {
     if (!metadata.lyrics) return null;
-    return metadata.lyrics.split("\n").map((line, index) => {
-      if (line.trim().startsWith("[") && line.trim().endsWith("]")) {
+    
+    // Normalize literal "\n" strings into real newlines
+    const normalizedLyrics = metadata.lyrics.replace(/\\n/g, "\n");
+
+    return normalizedLyrics.split("\n").map((line, index) => {
+      const cleanLine = line.trim();
+      if (cleanLine.startsWith("[") && cleanLine.endsWith("]")) {
         return (
           <h4 key={index} className="text-[#FF5A5F] font-bold text-xs mt-4 mb-2 uppercase tracking-widest font-mono flex items-center justify-center gap-1.5">
             <span className="w-1.5 h-1.5 bg-[#FF5A5F] rounded-full animate-pulse"></span>
-            {line}
+            {cleanLine}
           </h4>
         );
       }
       return (
-        <p key={index} className="text-sm text-gray-600 leading-relaxed min-h-[1.5rem] select-all">
-          {line}
+        <p key={index} className="text-sm text-gray-600 leading-relaxed min-h-[1.5rem] select-all whitespace-pre-wrap">
+          {cleanLine || "\u00A0"}
         </p>
       );
     });
@@ -189,7 +206,7 @@ export default function AudioPlayer({
       <div className="flex flex-col items-center justify-center space-y-4">
         <div className="relative w-40 h-40 flex items-center justify-center">
           <motion.div
-            animate={{ rotate: isPlaying ? 360 : 0 }}
+            animate={{ rotate: isPlaying && !isAudioLoading ? 360 : 0 }}
             transition={{ repeat: Infinity, duration: 12, ease: "linear" }}
             className="absolute inset-0 bg-gray-900 rounded-full border-4 border-gray-800 shadow-lg flex items-center justify-center overflow-hidden"
           >
@@ -197,7 +214,7 @@ export default function AudioPlayer({
             <div className="absolute inset-5 border border-gray-800/25 rounded-full"></div>
             <div className="absolute inset-8 border border-gray-800/30 rounded-full"></div>
             <div className="w-16 h-16 bg-gradient-to-tr from-[#FF5A5F] to-amber-400 rounded-full flex items-center justify-center relative shadow-inner">
-              <Disc className="w-8 h-8 text-white/90 animate-pulse" />
+              <Disc className={`w-8 h-8 text-white/90 ${isPlaying && !isAudioLoading ? "animate-pulse" : ""}`} />
               <div className="w-4 h-4 bg-gray-950 rounded-full absolute"></div>
             </div>
           </motion.div>
@@ -243,7 +260,8 @@ export default function AudioPlayer({
           max={duration || 100}
           value={currentTime}
           onChange={handleSeek}
-          className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#FF5A5F]"
+          disabled={isAudioLoading}
+          className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#FF5A5F] disabled:opacity-50"
         />
         <div className="flex items-center justify-between text-[11px] font-mono text-gray-400">
           <span>{formatTime(currentTime)}</span>
@@ -262,16 +280,23 @@ export default function AudioPlayer({
             step={0.05}
             value={volume}
             onChange={handleVolumeChange}
-            className="w-full h-1 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-400"
+            disabled={isAudioLoading}
+            className="w-full h-1 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-400 disabled:opacity-50"
           />
         </div>
 
         <button
           onClick={togglePlay}
-          disabled={!hasAudio}
-          className="w-14 h-14 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-200 text-white rounded-full flex items-center justify-center shadow-md shadow-[#FF5A5F]/15 transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+          disabled={!hasAudio || isAudioLoading}
+          className="w-14 h-14 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white rounded-full flex items-center justify-center shadow-md shadow-[#FF5A5F]/15 transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0"
         >
-          {isPlaying ? <Pause className="w-6 h-6 fill-white" /> : <Play className="w-6 h-6 fill-white ml-0.5" />}
+          {isAudioLoading ? (
+            <RefreshCw className="w-6 h-6 animate-spin text-[#FF5A5F]" />
+          ) : isPlaying ? (
+            <Pause className="w-6 h-6 fill-white" />
+          ) : (
+            <Play className="w-6 h-6 fill-white ml-0.5" />
+          )}
         </button>
 
         {/* Download via API (signed URL) */}
@@ -279,7 +304,7 @@ export default function AudioPlayer({
           href={`/api/orders/${orderId}/download`}
           target="_blank"
           rel="noopener noreferrer"
-          className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio ? "opacity-40 pointer-events-none" : ""}`}
+          className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio || isAudioLoading ? "opacity-40 pointer-events-none" : ""}`}
           title="Baixar Música"
         >
           <Download className="w-4 h-4" />
