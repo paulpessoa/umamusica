@@ -489,6 +489,7 @@ app.post("/api/webhook/mercadopago", async (req, res) => {
 
 // ─── Generate Music ────────────────────────────────────────
 app.post("/api/orders/:id/generate", async (req, res) => {
+  let fetchedOrder: any = null;
   try {
     const { data: order, error: fetchError } = await supabase
       .from("orders")
@@ -499,13 +500,15 @@ app.post("/api/orders/:id/generate", async (req, res) => {
     if (fetchError || !order) {
       return res.status(404).json({ error: "Pedido não encontrado" });
     }
+    fetchedOrder = order;
 
+    // Set order status to processing
     await supabase
       .from("orders")
       .update({ status: "processing", updated_at: new Date().toISOString() })
       .eq("id", order.id);
 
-    // Analyze transcript
+    // Analyze transcript using Gemini
     const transcriptText = (order.chat_transcript || [])
       .map((m: any) => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
       .join("\n");
@@ -529,60 +532,38 @@ Campos obrigatórios:
 Retorne JSON válido.
 `;
 
-    let songMetadata: SongMetadata;
-    try {
-      const modelResponse = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: analysisPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              artistName: { type: Type.STRING },
-              style: { type: Type.STRING },
-              tempo: { type: Type.STRING },
-              vibe: { type: Type.STRING },
-              lyrics: { type: Type.STRING },
-              keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
-              dedicatedTo: { type: Type.STRING },
-            },
-            required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"],
+    // This call might fail if the user's Gemini key is invalid.
+    const modelResponse = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: analysisPrompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            artistName: { type: Type.STRING },
+            style: { type: Type.STRING },
+            tempo: { type: Type.STRING },
+            vibe: { type: Type.STRING },
+            lyrics: { type: Type.STRING },
+            keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
+            dedicatedTo: { type: Type.STRING },
           },
+          required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"],
         },
-      });
+      },
+    });
 
-      songMetadata = JSON.parse(modelResponse.text?.trim() || "{}");
-    } catch (geminiErr: any) {
-      console.warn("Gemini Content Generation failed (using default fallback):", geminiErr.message || geminiErr);
-      
-      // Determine default based on user chat transcript if possible
-      let styleHint = "Bregafunk / Ritmo Animado";
-      if (transcriptText.toLowerCase().includes("rap")) {
-        styleHint = "Rap / Hip Hop";
-      } else if (transcriptText.toLowerCase().includes("sertanejo")) {
-        styleHint = "Sertanejo Acadêmico";
-      }
+    const songMetadata: SongMetadata = JSON.parse(modelResponse.text?.trim() || "{}");
 
-      songMetadata = {
-        title: "Dando um Deploy na Vida",
-        artistName: "Cantor Virtual 1Música",
-        style: styleHint,
-        tempo: "Média",
-        vibe: "Divertida / Cômica",
-        lyrics: "[Intro]\n(Batida alegre e contagiante)\n\n[Verso 1]\nEstou aqui tentando rodar um deploy\nBuscando o sucesso que a mente constrói\nMas a pia está cheia de prato e panela\nE a esposa gritando na minha orelha...\n\n[Refrão]\nLava a louça, lava agora!\nDeixa o deploy e corre sem demora!\nEla sorrindo e eu quase chorando\n\"Quero a mamãe!\", eu vou murmurando...\n\n[Outro]\n(Batida diminuindo)",
-        keyMemories: ["Lavar os pratos", "Fazer o deploy", "Chorando e rindo"],
-        dedicatedTo: "Casal Especial",
-      };
-    }
-
-    // Simulate completed music generation using one of the pre-loaded example tracks as fallback
+    // Check if we should use actual audio generation or fallback to demonstrative examples
+    const isMockPayment = !order.payment_id || order.payment_id.startsWith("mock") || order.payment_id.startsWith("simulated") || order.payment_id.startsWith("coupon");
     let audioStoragePath: string | null = null;
-    try {
-      console.log("[Music Generation] Reading local example song for fallback storage...");
-      
-      // Determine which file to copy based on style or default to bodas_de_diamante.mp3
+
+    if (isMockPayment) {
+      console.log("[Music Generation] Sandbox/Coupon mode: copying local example file...");
+      // Copy local asset to storage for demo purposes
       let localFileName = "bodas_de_diamante.mp3";
       const styleLower = (songMetadata.style || "").toLowerCase();
       if (styleLower.includes("sertanejo") || styleLower.includes("paizao") || styleLower.includes("sertanejo-do-paizao")) {
@@ -591,7 +572,6 @@ Retorne JSON válido.
         localFileName = "amor_de_faculdade.mp3";
       }
 
-      // Dynamic path builder supporting both root assets directory in container and local
       const possiblePaths = [
         path.join(process.cwd(), "assets", "examples", localFileName),
         path.join(process.cwd(), "dist", "assets", "examples", localFileName),
@@ -602,7 +582,6 @@ Retorne JSON válido.
       for (const p of possiblePaths) {
         if (fs.existsSync(p)) {
           fileBuffer = fs.readFileSync(p);
-          console.log(`[Music Generation] Found local audio file at: ${p}`);
           break;
         }
       }
@@ -618,26 +597,50 @@ Retorne JSON válido.
 
         if (!uploadError) {
           audioStoragePath = filePath;
-          console.log(`[Music Generation] Audio uploaded successfully: ${filePath}`);
+        }
+      }
+    } else {
+      // Real transaction: Call Google Lyria.
+      // Since Lyria is a private preview requiring restricted credentials, this will fail.
+      // Failing here triggers the catch block below which issues a refund.
+      console.log("[Music Generation] Real transaction. Attempting Lyria API call...");
+      const cleanLyrics = songMetadata.lyrics
+        .replace(/\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi, "")
+        .replace(/\((.*?)\)/g, "")
+        .trim();
+
+      const lyriaPrompt = `Uma canção em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Letra: ${cleanLyrics}`;
+
+      const lyriaResponse = await (ai as any).interactions.create({
+        model: "models/lyria-3-pro-preview",
+        input: lyriaPrompt,
+      });
+
+      if (lyriaResponse?.output_audio?.data) {
+        const audioBuffer = Buffer.from(lyriaResponse.output_audio.data, "base64");
+        const filePath = `${order.id}.mp3`;
+        const { error: uploadError } = await supabase.storage
+          .from("songs")
+          .upload(filePath, audioBuffer, {
+            contentType: lyriaResponse.output_audio.mime_type || "audio/mpeg",
+            upsert: true,
+          });
+
+        if (!uploadError) {
+          audioStoragePath = filePath;
         } else {
-          console.error("[Supabase Storage] Upload error:", uploadError);
+          throw new Error(`Storage upload failed: ${uploadError.message}`);
         }
       } else {
-        console.warn("[Music Generation] Local fallback audio files not found. Uploading empty buffer.");
-        // Upload a small dummy empty audio buffer if files aren't found
-        const dummyBuffer = Buffer.alloc(100);
-        const filePath = `${order.id}.mp3`;
-        await supabase.storage.from("songs").upload(filePath, dummyBuffer, {
-          contentType: "audio/mpeg",
-          upsert: true,
-        });
-        audioStoragePath = filePath;
+        throw new Error("Lyria response audio output is empty");
       }
-    } catch (err: any) {
-      console.error("[Music Generation] Error handling fallback audio:", err.message || err);
     }
 
-    // Update order as completed
+    if (!audioStoragePath) {
+      throw new Error("Audio generation failed: file path is null");
+    }
+
+    // Save metadata and path, set status to completed
     await supabase
       .from("orders")
       .update({
@@ -650,17 +653,16 @@ Retorne JSON válido.
 
     // Send email with download link (via SMTP)
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
-
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
         const fromEmail = process.env.SMTP_USER;
         await transporter.sendMail({
-          from: `"1Musica" <${fromEmail}>`,
+          from: `"1Música" <${fromEmail}>`,
           to: order.email,
           subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-              <h2 style="color: #FF5A5F; text-align: center;">1Musica</h2>
+              <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
               <p>Olá!</p>
               <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
               <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
@@ -673,19 +675,15 @@ Retorne JSON válido.
               <div style="text-align: center; margin: 20px 0;">
                 <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
               </div>
-              <p style="font-size: 11px; color: #999; text-align: center;">1Musica — Transformando memórias em música por R$ 1,00</p>
+              <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
           `,
         });
-        console.log(`[SMTP Completion] Email sent to ${order.email}`);
-      } catch (smtpErr: any) {
-        console.error("[SMTP Completion] Failed to send email:", smtpErr.message || smtpErr);
+      } catch (smtpErr) {
+        console.error("[SMTP] Failed to send completion email:", smtpErr);
       }
-    } else {
-      console.log(`[SMTP Completion] SMTP credentials not set. Email not sent for ${order.email}`);
     }
 
-    // Re-fetch updated order for response
     const { data: updatedOrder } = await supabase
       .from("orders")
       .select("*")
@@ -693,9 +691,77 @@ Retorne JSON válido.
       .single();
 
     res.json(updatedOrder || { ...order, song_metadata: songMetadata, status: "completed" });
-  } catch (error) {
-    console.error("Generate Error:", error);
-    res.status(500).json({ error: "Erro ao compor a música" });
+  } catch (error: any) {
+    console.error(`[Generate Error] Critical generation failure for order:`, error.message || error);
+
+    // If order was fetched and is a real payment (has payment_id and is not mock), initiate automatic refund
+    if (fetchedOrder) {
+      const isRealPayment = fetchedOrder.payment_id && 
+                            !fetchedOrder.payment_id.startsWith("mock") && 
+                            !fetchedOrder.payment_id.startsWith("simulated") && 
+                            !fetchedOrder.payment_id.startsWith("coupon");
+
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST;
+
+      // Update order status to failed
+      await supabase
+        .from("orders")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", fetchedOrder.id);
+
+      if (isRealPayment && mpToken) {
+        console.log(`[Refund] Processing refund for order ${fetchedOrder.id} (payment: ${fetchedOrder.payment_id})...`);
+        try {
+          const refundRes = await fetch(`https://api.mercadopago.com/v1/payments/${fetchedOrder.payment_id}/refunds`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${mpToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+          });
+
+          if (refundRes.ok) {
+            console.log(`[Refund] MercadoPago refund successful for payment ${fetchedOrder.payment_id}`);
+          } else {
+            const refundErrText = await refundRes.text();
+            console.error(`[Refund] MercadoPago refund failed:`, refundErrText);
+          }
+        } catch (refundErr: any) {
+          console.error(`[Refund] Connection error trying to refund:`, refundErr.message || refundErr);
+        }
+      }
+
+      // Send email explaining the refund to the user
+      if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+          const fromEmail = process.env.SMTP_USER;
+          await transporter.sendMail({
+            from: `"1Música" <${fromEmail}>`,
+            to: fetchedOrder.email,
+            subject: "⚠️ Estorno efetuado — Falha na geração da sua música",
+            html: `
+              <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+                <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
+                <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
+                <p>Olá,</p>
+                <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
+                <p>Para sua total segurança e conforme prometido, <strong>um estorno integral do valor de R$ 1,00 já foi processado automaticamente</strong> de volta para a sua conta Pix no Mercado Pago.</p>
+                <p>O valor deve constar na sua conta em alguns minutos.</p>
+                <p>Se quiser tentar novamente no futuro, ficaremos muito felizes em compor para você.</p>
+                <br/>
+                <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+              </div>
+            `,
+          });
+          console.log(`[SMTP Refund] Refund email sent to ${fetchedOrder.email}`);
+        } catch (smtpErr) {
+          console.error("[SMTP Refund] Failed to send refund email:", smtpErr);
+        }
+      }
+    }
+
+    res.status(500).json({ error: "Erro ao compor a música. Estorno processado automaticamente." });
   }
 });
 

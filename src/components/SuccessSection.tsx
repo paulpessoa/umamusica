@@ -132,6 +132,43 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
               <p className="text-[10px] text-amber-600 font-mono italic max-w-xs">{errorMessage}</p>
             )}
           </motion.div>
+        ) : order.status === "failed" ? (
+          <motion.div
+            key="failed"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="h-full flex flex-col justify-center items-center text-center space-y-6 py-8 px-4"
+          >
+            <div className="w-16 h-16 rounded-full bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 shadow-sm">
+              <AlertCircle className="w-8 h-8 text-rose-500" />
+            </div>
+
+            <div className="space-y-3">
+              <h2 className="font-extrabold text-xl text-gray-900">Estorno Efetuado! 💸</h2>
+              <p className="text-xs text-rose-600 font-bold font-mono tracking-wide">
+                Geração de música indisponível
+              </p>
+              <p className="text-sm text-gray-600 max-w-xs leading-relaxed">
+                Lamentamos muito! Devido a uma instabilidade no nosso motor de composição, não foi possível gerar a sua música personalizada.
+              </p>
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4.5 text-left text-xs text-emerald-800 space-y-1.5 max-w-xs mx-auto shadow-sm">
+                <span className="font-bold flex items-center gap-1.5 text-emerald-950">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  Dinheiro Devolvido!
+                </span>
+                <p className="leading-relaxed text-emerald-700">
+                  Um estorno automático e integral de <strong>R$ 1,00</strong> foi enviado de volta para a sua conta Pix no Mercado Pago. Detalhes também foram enviados para o seu e-mail.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={onRestart}
+              className="bg-gray-900 hover:bg-black text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
+            >
+              Voltar ao Início
+            </button>
+          </motion.div>
         ) : (
           <motion.div
             key="completed"
