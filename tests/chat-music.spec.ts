@@ -82,7 +82,7 @@ test("deve completar o fluxo completo de criacao de musica, chat e checkout simu
 
   // 2. Navegar para a página inicial
   await page.goto("/");
-  await expect(page).toHaveTitle(/UmaMusica/i);
+  await expect(page).toHaveTitle(/1Musica/i);
 
   // 3. Preencher e-mail e iniciar criação
   const emailInput = page.locator('input[type="email"]');

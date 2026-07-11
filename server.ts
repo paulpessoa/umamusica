@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js";
 
@@ -136,7 +135,7 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
           subject: "🎵 Seu código de verificação — UnaMusica",
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
-              <h2 style="color: #FF5A5F; margin-bottom: 8px;">UnaMusica.com.br</h2>
+              <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Musica</h2>
               <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
               <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
                 <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
@@ -201,7 +200,7 @@ app.post("/api/chat", rateLimit(60, 60 * 60 * 1000), async (req, res) => {
     }
 
     const systemInstruction = `
-Você é o Compositor Virtual do UnaMusica.com.br, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
+Você é o Compositor Virtual do 1Musica, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
 Seu objetivo é conduzir uma entrevista rápida, calorosa e engajadora com o usuário para capturar todas as informações necessárias para gerar a música: contextos detalhados, apelidos, memórias marcantes, piadas internas e histórias reais.
 
 Instruções:
@@ -241,7 +240,7 @@ app.post("/api/chat-voice", rateLimit(30, 60 * 60 * 1000), async (req, res) => {
     }
 
     const systemInstruction = `
-Você é o Compositor Virtual do UnaMusica.com.br. Você recebeu um áudio do usuário.
+Você é o Compositor Virtual do 1Musica. Você recebeu um áudio do usuário.
 Transcreva o áudio e continue a entrevista para coletar informações para a música personalizada.
 Responda de forma curta (2-3 frases) e faça uma pergunta por vez.
 Responda em Português do Brasil.
@@ -332,7 +331,7 @@ app.post("/api/checkout", async (req, res) => {
           },
           body: JSON.stringify({
             transaction_amount: 1.0,
-            description: "Música Personalizada — UnaMusica.com.br",
+            description: "Música Personalizada — 1Musica",
             payment_method_id: "pix",
             payer: { email },
             external_reference: orderId,
@@ -627,7 +626,7 @@ Retorne JSON válido.
             subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
             html: `
               <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-                <h2 style="color: #FF5A5F; text-align: center;">UnaMusica.com.br</h2>
+                <h2 style="color: #FF5A5F; text-align: center;">1Musica</h2>
                 <p>Olá!</p>
                 <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
                 <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
@@ -641,7 +640,7 @@ Retorne JSON válido.
                   <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
                 </div>
                 <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
-                <p style="font-size: 11px; color: #999; text-align: center;">UnaMusica.com.br — Transformando memórias em música por R$ 1,00</p>
+                <p style="font-size: 11px; color: #999; text-align: center;">1Musica — Transformando memórias em música por R$ 1,00</p>
               </div>
             `,
           }),
@@ -705,7 +704,8 @@ app.get("/api/orders/:id/download", async (req, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    const { createServer } = await import("vite");
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });

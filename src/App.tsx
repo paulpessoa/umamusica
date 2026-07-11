@@ -403,7 +403,7 @@ export default function App() {
                 <button onClick={() => setShowTerms(false)} className="text-gray-400 hover:text-gray-600 text-2xl cursor-pointer">×</button>
               </div>
               <div className="p-6 overflow-y-auto text-sm text-gray-600 leading-relaxed space-y-4">
-                <p><strong>1. Aceitação dos Termos</strong><br />Ao utilizar o UnaMusica.com.br, você concorda com estes Termos de Uso. O serviço é oferecido por QiSites.</p>
+                <p><strong>1. Aceitação dos Termos</strong><br />Ao utilizar o 1Musica, você concorda com estes Termos de Uso. O serviço é oferecido por QiSites.</p>
                 <p><strong>2. Descrição do Serviço</strong><br />O UnaMusica utiliza inteligência artificial para criar músicas personalizadas com base em informações fornecidas pelo usuário, pelo valor de R$ 1,00 (um real) por música.</p>
                 <p><strong>3. Cadastro e E-mail</strong><br />O usuário deve fornecer um e-mail válido e verificado para receber o link de download da música. O UnaMusica não se responsabiliza por e-mails incorretos ou inacessíveis.</p>
                 <p><strong>4. Pagamento</strong><br />O pagamento é processado via Pix (MercadoPago). Após confirmação, a composição é gerada automaticamente. Não há reembolso após a geração da música.</p>

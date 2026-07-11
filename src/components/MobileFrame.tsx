@@ -24,7 +24,7 @@ export default function MobileFrame({ children }: MobileFrameProps) {
                 <Music className="w-5 h-5 text-white" />
               </div>
               <span className="text-2xl font-black tracking-tight text-gray-900">
-                UmaMusica<span className="text-[#FF5A5F]">.com.br</span>
+                1Musica<span className="text-[#FF5A5F]">.com.br</span>
               </span>
             </div>
 
@@ -60,7 +60,7 @@ export default function MobileFrame({ children }: MobileFrameProps) {
           </div>
 
           <div className="text-xs text-gray-400 relative z-10">
-            © 2026 UmaMusica • Feito para emocionar ❤️
+            © 2026 1Musica • Feito para emocionar ❤️
           </div>
         </div>
 
@@ -86,7 +86,7 @@ export default function MobileFrame({ children }: MobileFrameProps) {
                 </div>
                 <div>
                   <span className="font-bold text-base text-gray-900 tracking-tight">
-                    UmaMusica
+                    1Musica
                   </span>
                   <span className="text-[#FF5A5F] font-bold text-sm ml-0.5">.com.br</span>
                 </div>
