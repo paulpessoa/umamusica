@@ -660,9 +660,9 @@ Retorne em formato JSON válido conforme especificado.
 
       const lyriaPrompt = `Uma canção cantada em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Dedicada a ${songMetadata.dedicatedTo}. Letra da música: ${cleanLyrics}`;
       
-      console.log("Generating custom high-fidelity music track using Lyria 3 Clip...");
+      console.log("Generating custom high-fidelity music track using Lyria 3 Pro (up to 3 min)...");
       const lyriaResponse = await (ai as any).interactions.create({
-        model: "models/lyria-3-clip-preview",
+        model: "models/lyria-3-pro-preview",
         input: lyriaPrompt
       });
 
