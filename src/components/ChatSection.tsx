@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Sparkles, Mic, MicOff, Loader2, PenTool, RefreshCw } from "lucide-react";
+import { Send, Sparkles, Mic, MicOff, Loader2, PenTool, RefreshCw, ChevronLeft, Gift, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChatMessage } from "../types";
 
@@ -12,8 +12,16 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       sender: "ai",
-      text: `Olá! 🎵 Eu sou o seu Compositor Virtual. Vou te ajudar a transformar sua história em uma música inesquecível por apenas R$ 1,00!\n\nVocê pode digitar ou segurar o 🎙️ para gravar um áudio.\n\nPra começar: **para quem é essa música** e qual a **ocasião especial**?`,
+      text: `Olá! Eu sou o seu Compositor Virtual. Vou te ajudar a transformar sua história em uma música inesquecível por apenas R$ 1,00!\n\nPra começar, escolha abaixo ou descreva com suas palavras:`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      options: [
+        "💑 Homenagem romântica",
+        "👩‍👦 Presente para a mãe",
+        "🎂 Aniversário especial",
+        "🤝 Agradecimento a amigo",
+        "👨 Música para o pai",
+        "🎓 Formatura / conquista",
+      ],
     },
   ]);
   const [inputValue, setInputValue] = useState("");
@@ -28,19 +36,25 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const suggestions = [
-    "Homenagem p/ Mãe 👩‍👦",
-    "Aniversário do Amor 🎂",
-    "Agradecimento p/ Amigo 🤝",
-    "Sertanejo 🤠",
-    "MPB Acústico 🎸",
-    "Samba 🥁",
-  ];
-
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  // ─── Parse quick options from AI text ─────────────────
+  // The AI can include a line like: [OPCOES: "Opção 1" | "Opção 2" | "Opção 3"]
+  const parseAiResponse = (text: string): { cleanText: string; options?: string[] } => {
+    const optionsMatch = text.match(/\[OPCOES:\s*(.+?)\]/s);
+    if (optionsMatch) {
+      const options = optionsMatch[1]
+        .split("|")
+        .map((o) => o.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean);
+      const cleanText = text.replace(/\[OPCOES:\s*.+?\]/s, "").trim();
+      return { cleanText, options };
+    }
+    return { cleanText: text };
+  };
 
   // ─── Send Text Message ──────────────────────────────────
   const handleSendMessage = async (textToSend: string) => {
@@ -67,17 +81,19 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        setMessages((prev) => [
+        const { cleanText, options } = parseAiResponse(data.text);
+        setMessages((prev: ChatMessage[]) => [
           ...prev,
           {
             sender: "ai",
-            text: data.text,
+            text: cleanText,
+            options,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           },
         ]);
       } else {
         // Show specific rate limit or server error message directly in chat
-        setMessages((prev) => [
+        setMessages((prev: ChatMessage[]) => [
           ...prev,
           {
             sender: "ai",
@@ -87,7 +103,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
         ]);
       }
     } catch {
-      setMessages((prev) => [
+      setMessages((prev: ChatMessage[]) => [
         ...prev,
         {
           sender: "ai",
@@ -246,24 +262,38 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
           >
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-200 bg-white">
-              {messages.map((msg, index) => (
+              {messages.map((msg: ChatMessage, index: number) => (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3 }}
-                  className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
-                      msg.sender === "user"
-                        ? "bg-[#FF5A5F] text-white rounded-br-none"
-                        : "bg-gray-50 text-gray-800 rounded-bl-none border border-gray-100"
-                    }`}
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${msg.sender === "user"
+                      ? "bg-[#FF5A5F] text-white rounded-br-none"
+                      : "bg-gray-50 text-gray-800 rounded-bl-none border border-gray-100"
+                      }`}
                   >
                     <p className="whitespace-pre-line">{msg.text}</p>
                     <span className="block text-[10px] opacity-60 text-right mt-1.5 font-mono">{msg.timestamp}</span>
                   </div>
+                  {/* Quick-reply option buttons (only on latest AI message) */}
+                  {msg.sender === "ai" && msg.options && msg.options.length > 0 && index === messages.length - 1 && (
+                    <div className="flex flex-wrap gap-2 mt-2 max-w-[90%]">
+                      {msg.options.map((opt, oi) => (
+                        <button
+                          key={oi}
+                          onClick={() => handleSendMessage(opt)}
+                          disabled={isTyping || isRecording}
+                          className="text-xs bg-white border border-[#FF5A5F]/30 text-[#FF5A5F] font-semibold px-3 py-1.5 rounded-full hover:bg-[#FFF0F0] active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               ))}
 
@@ -279,21 +309,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Suggestions */}
-            {messages.length < 5 && !isTyping && (
-              <div className="px-4 py-2 bg-white border-t border-gray-100 overflow-x-auto whitespace-nowrap flex items-center gap-2 scrollbar-none">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Sugestões:</span>
-                {suggestions.map((sug, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSendMessage(sug.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "").trim())}
-                    className="inline-flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-xs text-gray-600 border border-gray-200/60 hover:border-[#FF5A5F]/40 px-3 py-1.5 rounded-full transition-colors"
-                  >
-                    {sug}
-                  </button>
-                ))}
-              </div>
-            )}
+
 
             {/* Bottom Controls */}
             <div className="p-4 bg-white border-t border-gray-100 space-y-3">
@@ -304,8 +320,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
                   onClick={triggerCompose}
                   className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-3 px-4 rounded-xl shadow-md shadow-[#FF5A5F]/15 flex items-center justify-center gap-2 text-sm tracking-wide transition-all cursor-pointer"
                 >
-                  <Sparkles className="w-4 h-4 animate-spin" />
-                  Concluir e Compor Música 🎵
+                  Concluir e Compor Música
                 </motion.button>
               )}
 
@@ -319,13 +334,12 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
                   onTouchStart={startRecording}
                   onTouchEnd={stopRecording}
                   disabled={isProcessingAudio || isTyping}
-                  className={`p-3 rounded-xl transition-all duration-200 flex items-center justify-center cursor-pointer shrink-0 ${
-                    isRecording
-                      ? "bg-red-500 text-white animate-pulse scale-110"
-                      : isProcessingAudio
+                  className={`p-3 rounded-xl transition-all duration-200 flex items-center justify-center cursor-pointer shrink-0 ${isRecording
+                    ? "bg-red-500 text-white animate-pulse scale-110"
+                    : isProcessingAudio
                       ? "bg-gray-100 text-gray-400"
                       : "bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200"
-                  }`}
+                    }`}
                   title={isRecording ? "Solte para enviar" : "Segure para gravar"}
                 >
                   {isProcessingAudio ? (
@@ -401,16 +415,15 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
                 disabled={!freeformText.trim()}
                 className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 text-sm transition-all cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" />
-                Criar Minha Música 🎵
+                Criar Minha Música
+                <ChevronRight className="w-4 h-4" />
               </button>
 
               <button
                 onClick={() => setShowFreeform(false)}
                 className="w-full bg-gray-50 hover:bg-gray-100 text-xs text-gray-600 font-semibold py-3 px-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Voltar para o Chat
+                Voltar para o conversa
               </button>
             </div>
           </motion.div>

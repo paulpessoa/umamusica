@@ -1,18 +1,18 @@
 // Server main entrypoint for 1Música platform
-import express from "express";
-import path from "path";
-import fs from "fs";
-import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
-import { createClient } from "@supabase/supabase-js";
-import nodemailer from "nodemailer";
-import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js";
+import express from "express"
+import path from "path"
+import fs from "fs"
+import dotenv from "dotenv"
+import { GoogleGenAI, Type } from "@google/genai"
+import { createClient } from "@supabase/supabase-js"
+import nodemailer from "nodemailer"
+import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 
 // Load environment variables
-dotenv.config();
+dotenv.config()
 
-const app = express();
-const PORT = parseInt(process.env.PORT || "3000", 10);
+const app = express()
+const PORT = parseInt(process.env.PORT || "3000", 10)
 
 // Initialize SMTP transporter using environment variables (standardized for any SMTP provider)
 const transporter = nodemailer.createTransport({
@@ -21,88 +21,98 @@ const transporter = nodemailer.createTransport({
   secure: process.env.SMTP_SECURE !== "false", // true for port 465, false for 587
   auth: {
     user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || "",
-  },
-});
+    pass: process.env.SMTP_PASS || ""
+  }
+})
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "25mb" }))
 
 // Disable caching for all API responses
 app.use("/api", (req, res, next) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
-  next();
-});
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+  next()
+})
 
 // Simple in-memory rate limiting to prevent email spam & API abuse
-const ipLimits: Record<string, { count: number; resetAt: number }> = {};
+const ipLimits: Record<string, { count: number; resetAt: number }> = {}
 function rateLimit(limit: number, windowMs: number) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-    const now = Date.now();
+  return (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    const ip =
+      req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown"
+    const now = Date.now()
 
     if (!ipLimits[ip as string] || ipLimits[ip as string].resetAt < now) {
-      ipLimits[ip as string] = { count: 1, resetAt: now + windowMs };
-      return next();
+      ipLimits[ip as string] = { count: 1, resetAt: now + windowMs }
+      return next()
     }
 
-    ipLimits[ip as string].count++;
+    ipLimits[ip as string].count++
     if (ipLimits[ip as string].count > limit) {
       return res.status(429).json({
-        error: "Muitas requisições. Por favor, aguarde alguns minutos antes de tentar novamente.",
+        error:
+          "Muitas requisições. Por favor, aguarde alguns minutos antes de tentar novamente.",
         retryAfter: Math.round((ipLimits[ip as string].resetAt - now) / 1000)
-      });
+      })
     }
-    next();
-  };
+    next()
+  }
 }
 
 // Initialize Gemini SDK
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
   httpOptions: {
-    headers: { "User-Agent": "aistudio-build" },
-  },
-});
+    headers: { "User-Agent": "aistudio-build" }
+  }
+})
 
 // Initialize Supabase client (service role — server-only, NEVER expose to frontend)
 const supabase = createClient(
   process.env.SUPABASE_URL || "",
   process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+)
 
 // Helper to call generateContent with automatic fallback on quota errors
 async function generateContentWithFallback(params: {
-  model: string;
-  contents: any[];
-  config?: any;
+  model: string
+  contents: any[]
+  config?: any
 }) {
-  const modelsToTry = [params.model, "gemini-flash-latest", "gemini-3.1-flash-lite"];
-  let lastError: any = null;
+  const modelsToTry = [
+    params.model,
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite"
+  ]
+  let lastError: any = null
 
   for (const modelName of modelsToTry) {
     try {
-      console.log(`[AI] Trying model: ${modelName}...`);
+      console.log(`[AI] Trying model: ${modelName}...`)
       return await ai.models.generateContent({
         model: modelName,
         contents: params.contents,
-        config: params.config,
-      });
+        config: params.config
+      })
     } catch (error: any) {
-      lastError = error;
+      lastError = error
       const isQuotaOrUnavailable =
         error?.status === "RESOURCE_EXHAUSTED" ||
         error?.status === "UNAVAILABLE" ||
         error?.message?.includes("quota") ||
         error?.message?.includes("429") ||
-        error?.message?.includes("503");
+        error?.message?.includes("503")
       if (isQuotaOrUnavailable) {
-        console.warn(`[AI] Model ${modelName} quota exceeded, trying next...`);
-        continue;
+        console.warn(`[AI] Model ${modelName} quota exceeded, trying next...`)
+        continue
       }
-      throw error;
+      throw error
     }
   }
-  throw lastError;
+  throw lastError
 }
 
 // ============================================================
@@ -111,35 +121,35 @@ async function generateContentWithFallback(params: {
 
 // Health Check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
+  res.json({ status: "ok", timestamp: new Date().toISOString() })
+})
 
 // ─── OTP Email Verification ────────────────────────────────
 app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body
     if (!email || !email.includes("@")) {
-      return res.status(400).json({ error: "Email inválido" });
+      return res.status(400).json({ error: "Email inválido" })
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const code = Math.floor(100000 + Math.random() * 900000).toString()
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 min
 
     // Store OTP in Supabase
     await supabase.from("otp_codes").insert({
       email: email.toLowerCase().trim(),
       code,
-      expires_at: expiresAt.toISOString(),
-    });
+      expires_at: expiresAt.toISOString()
+    })
 
     // Send via SMTP
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = process.env.SMTP_USER;
+        const fromEmail = process.env.SMTP_USER
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: email,
-          subject: "🎵 Seu código de verificação — 1Música",
+          subject: "Seu código de verificação — 1Música",
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
               <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
@@ -149,28 +159,31 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
               </div>
               <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
             </div>
-          `,
-        });
-        console.log(`[SMTP OTP] Code sent to ${email}`);
+          `
+        })
+        console.log(`[SMTP OTP] Code sent to ${email}`)
       } catch (smtpErr: any) {
-        console.error("[SMTP OTP] Failed to send email:", smtpErr.message || smtpErr);
+        console.error(
+          "[SMTP OTP] Failed to send email:",
+          smtpErr.message || smtpErr
+        )
       }
     } else {
-      console.log(`[OTP] SMTP credentials not set. Code for ${email}: ${code}`);
+      console.log(`[OTP] SMTP credentials not set. Code for ${email}: ${code}`)
     }
 
-    res.json({ success: true });
+    res.json({ success: true })
   } catch (error: any) {
-    console.error("OTP Send Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao enviar código de verificação" });
+    console.error("OTP Send Error:", error.message || error)
+    res.status(500).json({ error: "Erro ao enviar código de verificação" })
   }
-});
+})
 
 app.post("/api/verify-otp", async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const { email, code } = req.body
     if (!email || !code) {
-      return res.status(400).json({ error: "Email e código são obrigatórios" });
+      return res.status(400).json({ error: "Email e código são obrigatórios" })
     }
 
     const { data, error } = await supabase
@@ -181,31 +194,31 @@ app.post("/api/verify-otp", async (req, res) => {
       .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(1)
 
     if (error || !data || data.length === 0) {
-      return res.status(400).json({ error: "Código inválido ou expirado" });
+      return res.status(400).json({ error: "Código inválido ou expirado" })
     }
 
     // Mark as verified
     await supabase
       .from("otp_codes")
       .update({ verified: true })
-      .eq("id", data[0].id);
+      .eq("id", data[0].id)
 
-    res.json({ success: true, verified: true });
+    res.json({ success: true, verified: true })
   } catch (error: any) {
-    console.error("OTP Verify Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao verificar código" });
+    console.error("OTP Verify Error:", error.message || error)
+    res.status(500).json({ error: "Erro ao verificar código" })
   }
-});
+})
 
 // ─── Chat Interview (Text) ────────────────────────────────
 app.post("/api/chat", rateLimit(60, 60 * 60 * 1000), async (req, res) => {
   try {
-    const { messages, email } = req.body;
+    const { messages, email } = req.body
     if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: "Mensagens inválidas" });
+      return res.status(400).json({ error: "Mensagens inválidas" })
     }
 
     const systemInstruction = `
@@ -219,33 +232,33 @@ Instruções:
 4. Responda sempre em Português do Brasil.
 5. Se o usuário usar termos ofensivos ou conteúdo impróprio, advirta educadamente que isso pode impedir a geração da música.
 6. Quando tiver informações suficientes e o usuário estiver satisfeito, parabenize-o e diga que ele já pode clicar em "Finalizar e Compor".
-`;
+`
 
     const chatContents = messages.map((m: any) => ({
       role: m.sender === "user" ? "user" : "model",
-      parts: [{ text: m.text }],
-    }));
+      parts: [{ text: m.text }]
+    }))
 
     const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
-      config: { systemInstruction, temperature: 0.8 },
-    });
+      config: { systemInstruction, temperature: 0.8 }
+    })
 
-    const aiText = response.text || "Desculpe, pode repetir?";
-    res.json({ text: aiText });
+    const aiText = response.text || "Desculpe, pode repetir?"
+    res.json({ text: aiText })
   } catch (error: any) {
-    console.warn("Chat Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao processar conversa" });
+    console.warn("Chat Error:", error.message || error)
+    res.status(500).json({ error: "Erro ao processar conversa" })
   }
-});
+})
 
 // ─── Chat Voice (Audio message — like WhatsApp) ────────────
 app.post("/api/chat-voice", rateLimit(30, 60 * 60 * 1000), async (req, res) => {
   try {
-    const { audio, mimeType, messages, email } = req.body;
+    const { audio, mimeType, messages, email } = req.body
     if (!audio) {
-      return res.status(400).json({ error: "Áudio é obrigatório" });
+      return res.status(400).json({ error: "Áudio é obrigatório" })
     }
 
     const systemInstruction = `
@@ -255,22 +268,24 @@ Responda de forma curta (2-3 frases) e faça uma pergunta por vez.
 Responda em Português do Brasil.
 Se o usuário usar termos impróprios, advirta educadamente.
 Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo).
-`;
+`
 
     const chatContents = (messages || [])
       .filter((m: any) => m.text && m.text.trim())
       .map((m: any) => ({
         role: m.sender === "user" ? "user" : "model",
-        parts: [{ text: m.text }],
-      }));
+        parts: [{ text: m.text }]
+      }))
 
     chatContents.push({
       role: "user",
       parts: [
         { inlineData: { mimeType: mimeType || "audio/webm", data: audio } },
-        { text: "Transcreva o áudio acima em português do Brasil e continue a entrevista de composição." },
-      ],
-    });
+        {
+          text: "Transcreva o áudio acima em português do Brasil e continue a entrevista de composição."
+        }
+      ]
+    })
 
     const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
@@ -283,90 +298,95 @@ Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo
           properties: {
             userTranscript: { type: Type.STRING },
             aiResponse: { type: Type.STRING },
-            triggerCompose: { type: Type.BOOLEAN },
+            triggerCompose: { type: Type.BOOLEAN }
           },
-          required: ["userTranscript", "aiResponse", "triggerCompose"],
-        },
-      },
-    });
+          required: ["userTranscript", "aiResponse", "triggerCompose"]
+        }
+      }
+    })
 
-    const dataText = response.text?.trim() || "{}";
-    let parsedData: any = {};
+    const dataText = response.text?.trim() || "{}"
+    let parsedData: any = {}
     try {
-      parsedData = JSON.parse(dataText);
+      parsedData = JSON.parse(dataText)
     } catch {
       parsedData = {
         userTranscript: "Áudio enviado",
         aiResponse: dataText || "Interessante! Me conta mais?",
-        triggerCompose: false,
-      };
+        triggerCompose: false
+      }
     }
 
     res.json({
       userTranscript: parsedData.userTranscript || "Áudio enviado",
       aiResponse: parsedData.aiResponse || "Entendido! Vamos em frente.",
-      triggerCompose: !!parsedData.triggerCompose,
-    });
+      triggerCompose: !!parsedData.triggerCompose
+    })
   } catch (error: any) {
-    console.warn("Voice Chat Error:", error.message || error);
-    res.status(500).json({ error: "Erro ao processar áudio" });
+    console.warn("Voice Chat Error:", error.message || error)
+    res.status(500).json({ error: "Erro ao processar áudio" })
   }
-});
+})
 
 // ─── Checkout (MercadoPago Pix) ────────────────────────────
 app.post("/api/checkout", async (req, res) => {
   try {
-    const { email, chatTranscript, structuredPrompt } = req.body;
+    const { email, chatTranscript, structuredPrompt } = req.body
     if (!email) {
-      return res.status(400).json({ error: "Email é obrigatório" });
+      return res.status(400).json({ error: "Email é obrigatório" })
     }
 
-    const orderId = "order_" + Math.random().toString(36).substr(2, 9);
-    let paymentId = "pay_" + Math.random().toString(36).substr(2, 15);
-    let paymentQr = "";
-    let paymentCopiaCola = "";
+    const orderId = "order_" + Math.random().toString(36).substr(2, 9)
+    let paymentId = "pay_" + Math.random().toString(36).substr(2, 15)
+    let paymentQr = ""
+    let paymentCopiaCola = ""
 
     // Try MercadoPago Pix
-    const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST;
+    const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
     if (mpToken) {
       try {
-        console.log("[MercadoPago] Creating Pix payment...");
-        const mpResponse = await fetch("https://api.mercadopago.com/v1/payments", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${mpToken}`,
-            "X-Idempotency-Key": orderId,
-          },
-          body: JSON.stringify({
-            transaction_amount: 1.0,
-            description: "Música Personalizada — 1Música",
-            payment_method_id: "pix",
-            payer: { email },
-            external_reference: orderId,
-          }),
-        });
+        console.log("[MercadoPago] Creating Pix payment...")
+        const mpResponse = await fetch(
+          "https://api.mercadopago.com/v1/payments",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${mpToken}`,
+              "X-Idempotency-Key": orderId
+            },
+            body: JSON.stringify({
+              transaction_amount: 1.0,
+              description: "Música Personalizada — 1Música",
+              payment_method_id: "pix",
+              payer: { email },
+              external_reference: orderId
+            })
+          }
+        )
 
         if (mpResponse.ok) {
-          const mpData: any = await mpResponse.json();
-          paymentId = mpData.id?.toString() || paymentId;
-          paymentQr = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || "";
-          paymentCopiaCola = mpData.point_of_interaction?.transaction_data?.qr_code || "";
-          console.log(`[MercadoPago] Pix created: ${paymentId}`);
+          const mpData: any = await mpResponse.json()
+          paymentId = mpData.id?.toString() || paymentId
+          paymentQr =
+            mpData.point_of_interaction?.transaction_data?.qr_code_base64 || ""
+          paymentCopiaCola =
+            mpData.point_of_interaction?.transaction_data?.qr_code || ""
+          console.log(`[MercadoPago] Pix created: ${paymentId}`)
         } else {
-          const errBody = await mpResponse.text();
-          console.warn(`[MercadoPago] Error ${mpResponse.status}:`, errBody);
+          const errBody = await mpResponse.text()
+          console.warn(`[MercadoPago] Error ${mpResponse.status}:`, errBody)
         }
       } catch (e: any) {
-        console.warn("[MercadoPago] Connection failed:", e.message);
+        console.warn("[MercadoPago] Connection failed:", e.message)
       }
     }
 
     // Fallback QR for testing
     if (!paymentQr) {
-      const mockPix = `00020126580014br.gov.bcb.pix0136unamusica-${orderId}52040000530398654041.005802BR`;
-      paymentQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPix)}`;
-      paymentCopiaCola = mockPix;
+      const mockPix = `00020126580014br.gov.bcb.pix0136unamusica-${orderId}52040000530398654041.005802BR`
+      paymentQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPix)}`
+      paymentCopiaCola = mockPix
     }
 
     // Save order in Supabase
@@ -378,12 +398,14 @@ app.post("/api/checkout", async (req, res) => {
       payment_id: paymentId,
       payment_qr: paymentQr,
       payment_copia_e_cola: paymentCopiaCola,
-      status: "pending_payment" as MusicStatus,
-    };
+      status: "pending_payment" as MusicStatus
+    }
 
-    const { error: insertError } = await supabase.from("orders").insert(newOrder);
+    const { error: insertError } = await supabase
+      .from("orders")
+      .insert(newOrder)
     if (insertError) {
-      console.error("[Supabase] Insert error:", insertError);
+      console.error("[Supabase] Insert error:", insertError)
     }
 
     res.json({
@@ -391,13 +413,13 @@ app.post("/api/checkout", async (req, res) => {
       paymentId,
       paymentQr,
       paymentCopiaCola,
-      status: "pending_payment",
-    });
+      status: "pending_payment"
+    })
   } catch (error) {
-    console.error("Checkout Error:", error);
-    res.status(500).json({ error: "Erro ao gerar cobrança Pix" });
+    console.error("Checkout Error:", error)
+    res.status(500).json({ error: "Erro ao gerar cobrança Pix" })
   }
-});
+})
 
 // ─── Get Order Status ──────────────────────────────────────
 app.get("/api/orders/:id", async (req, res) => {
@@ -405,13 +427,13 @@ app.get("/api/orders/:id", async (req, res) => {
     .from("orders")
     .select("*")
     .eq("id", req.params.id)
-    .single();
+    .single()
 
   if (error || !data) {
-    return res.status(404).json({ error: "Pedido não encontrado" });
+    return res.status(404).json({ error: "Pedido não encontrado" })
   }
-  res.json(data);
-});
+  res.json(data)
+})
 
 // ─── Simulate Payment (Testing) ────────────────────────────
 app.post("/api/orders/:id/simulate-payment", async (req, res) => {
@@ -419,99 +441,114 @@ app.post("/api/orders/:id/simulate-payment", async (req, res) => {
     const { error } = await supabase
       .from("orders")
       .update({ status: "paid", updated_at: new Date().toISOString() })
-      .eq("id", req.params.id);
+      .eq("id", req.params.id)
 
     if (error) {
-      return res.status(404).json({ error: "Pedido não encontrado" });
+      return res.status(404).json({ error: "Pedido não encontrado" })
     }
-    res.json({ status: "paid", success: true });
+    res.json({ status: "paid", success: true })
   } catch (error) {
-    res.status(500).json({ error: "Erro ao simular pagamento" });
+    res.status(500).json({ error: "Erro ao simular pagamento" })
   }
-});
+})
 
 // ─── Apply Coupon ──────────────────────────────────────────
 app.post("/api/orders/:id/apply-coupon", async (req, res) => {
   try {
-    const { coupon } = req.body;
-    const cleanCoupon = coupon ? coupon.trim().toUpperCase() : "";
-    if (cleanCoupon === "PRESENTE" || cleanCoupon === "ESPECIAL" || cleanCoupon === "CUPOM-PRESENTE" || cleanCoupon === "CUPOM_ESPECIAL") {
+    const { coupon } = req.body
+    const cleanCoupon = coupon ? coupon.trim().toUpperCase() : ""
+    if (
+      cleanCoupon === "PRESENTE" ||
+      cleanCoupon === "ESPECIAL" ||
+      cleanCoupon === "CUPOM-PRESENTE" ||
+      cleanCoupon === "CUPOM_ESPECIAL"
+    ) {
       await supabase
         .from("orders")
         .update({ status: "paid", updated_at: new Date().toISOString() })
-        .eq("id", req.params.id);
-      res.json({ success: true, status: "paid", message: "Cupom aplicado com sucesso!" });
+        .eq("id", req.params.id)
+      res.json({
+        success: true,
+        status: "paid",
+        message: "Cupom aplicado com sucesso!"
+      })
     } else {
-      res.status(400).json({ error: "Cupom inválido ou expirado" });
+      res.status(400).json({ error: "Cupom inválido ou expirado" })
     }
   } catch (error) {
-    res.status(500).json({ error: "Erro ao aplicar cupom" });
+    res.status(500).json({ error: "Erro ao aplicar cupom" })
   }
-});
+})
 
 // ─── MercadoPago Webhook ───────────────────────────────────
 app.post("/api/webhook/mercadopago", async (req, res) => {
   try {
-    const { action, data: webhookData } = req.body;
-    console.log("[Webhook MP] Received:", action);
+    const { action, data: webhookData } = req.body
+    console.log("[Webhook MP] Received:", action)
 
     if (action === "payment.updated" || action === "payment.created") {
-      const paymentId = webhookData?.id;
-      if (!paymentId) return res.json({ received: true });
+      const paymentId = webhookData?.id
+      if (!paymentId) return res.json({ received: true })
 
       // Fetch payment details from MercadoPago
-      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST;
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (mpToken) {
-        const paymentRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-          headers: { Authorization: `Bearer ${mpToken}` },
-        });
+        const paymentRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/${paymentId}`,
+          {
+            headers: { Authorization: `Bearer ${mpToken}` }
+          }
+        )
         if (paymentRes.ok) {
-          const payment: any = await paymentRes.json();
+          const payment: any = await paymentRes.json()
           if (payment.status === "approved") {
-            const externalRef = payment.external_reference;
+            const externalRef = payment.external_reference
             if (externalRef) {
               await supabase
                 .from("orders")
-                .update({ status: "paid", updated_at: new Date().toISOString() })
-                .eq("id", externalRef);
-              console.log(`[Webhook MP] Order ${externalRef} paid!`);
+                .update({
+                  status: "paid",
+                  updated_at: new Date().toISOString()
+                })
+                .eq("id", externalRef)
+              console.log(`[Webhook MP] Order ${externalRef} paid!`)
             }
           }
         }
       }
     }
-    res.json({ received: true });
+    res.json({ received: true })
   } catch (error) {
-    console.error("Webhook Error:", error);
-    res.status(500).json({ error: "Webhook failed" });
+    console.error("Webhook Error:", error)
+    res.status(500).json({ error: "Webhook failed" })
   }
-});
+})
 
 // ─── Generate Music ────────────────────────────────────────
 app.post("/api/orders/:id/generate", async (req, res) => {
-  let fetchedOrder: any = null;
+  let fetchedOrder: any = null
   try {
     const { data: order, error: fetchError } = await supabase
       .from("orders")
       .select("*")
       .eq("id", req.params.id)
-      .single();
+      .single()
 
     if (fetchError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" });
+      return res.status(404).json({ error: "Pedido não encontrado" })
     }
-    fetchedOrder = order;
+    fetchedOrder = order
 
     // Set order status to processing
     await supabase
       .from("orders")
       .update({ status: "processing", updated_at: new Date().toISOString() })
-      .eq("id", order.id);
+      .eq("id", order.id)
 
     // Analyze transcript using Gemini
     const transcriptText = (order.chat_transcript || [])
       .map((m: any) => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
-      .join("\n");
+      .join("\n")
 
     const analysisPrompt = `
 Gere as informações completas para uma música personalizada baseada nesta entrevista:
@@ -530,7 +567,7 @@ Campos obrigatórios:
 8. Dedicated To: Nome/apelido da pessoa homenageada.
 
 Retorne JSON válido.
-`;
+`
 
     // This call might fail if the user's Gemini key is invalid.
     const modelResponse = await ai.models.generateContent({
@@ -548,96 +585,129 @@ Retorne JSON válido.
             vibe: { type: Type.STRING },
             lyrics: { type: Type.STRING },
             keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
-            dedicatedTo: { type: Type.STRING },
+            dedicatedTo: { type: Type.STRING }
           },
-          required: ["title", "artistName", "style", "tempo", "vibe", "lyrics", "keyMemories", "dedicatedTo"],
-        },
-      },
-    });
+          required: [
+            "title",
+            "artistName",
+            "style",
+            "tempo",
+            "vibe",
+            "lyrics",
+            "keyMemories",
+            "dedicatedTo"
+          ]
+        }
+      }
+    })
 
-    const songMetadata: SongMetadata = JSON.parse(modelResponse.text?.trim() || "{}");
+    const songMetadata: SongMetadata = JSON.parse(
+      modelResponse.text?.trim() || "{}"
+    )
 
     // Check if we should use actual audio generation or fallback to demonstrative examples
-    const isMockPayment = !order.payment_id || order.payment_id.startsWith("mock") || order.payment_id.startsWith("simulated") || order.payment_id.startsWith("coupon");
-    let audioStoragePath: string | null = null;
+    const isMockPayment =
+      !order.payment_id ||
+      order.payment_id.startsWith("mock") ||
+      order.payment_id.startsWith("simulated") ||
+      order.payment_id.startsWith("coupon")
+    let audioStoragePath: string | null = null
 
     if (isMockPayment) {
-      console.log("[Music Generation] Sandbox/Coupon mode: copying local example file...");
+      console.log(
+        "[Music Generation] Sandbox/Coupon mode: copying local example file..."
+      )
       // Copy local asset to storage for demo purposes
-      let localFileName = "bodas_de_diamante.mp3";
-      const styleLower = (songMetadata.style || "").toLowerCase();
-      if (styleLower.includes("sertanejo") || styleLower.includes("paizao") || styleLower.includes("sertanejo-do-paizao")) {
-        localFileName = "sertanejo-do-paizao.mp3";
-      } else if (styleLower.includes("pop") || styleLower.includes("faculdade") || styleLower.includes("amor_de_faculdade")) {
-        localFileName = "amor_de_faculdade.mp3";
+      let localFileName = "bodas_de_diamante.mp3"
+      const styleLower = (songMetadata.style || "").toLowerCase()
+      if (
+        styleLower.includes("sertanejo") ||
+        styleLower.includes("paizao") ||
+        styleLower.includes("sertanejo-do-paizao")
+      ) {
+        localFileName = "sertanejo-do-paizao.mp3"
+      } else if (
+        styleLower.includes("pop") ||
+        styleLower.includes("faculdade") ||
+        styleLower.includes("amor_de_faculdade")
+      ) {
+        localFileName = "amor_de_faculdade.mp3"
       }
 
       const possiblePaths = [
         path.join(process.cwd(), "assets", "examples", localFileName),
         path.join(process.cwd(), "dist", "assets", "examples", localFileName),
-        path.join(process.cwd(), "src", "assets", "examples", localFileName),
-      ];
+        path.join(process.cwd(), "src", "assets", "examples", localFileName)
+      ]
 
-      let fileBuffer: Buffer | null = null;
+      let fileBuffer: Buffer | null = null
       for (const p of possiblePaths) {
         if (fs.existsSync(p)) {
-          fileBuffer = fs.readFileSync(p);
-          break;
+          fileBuffer = fs.readFileSync(p)
+          break
         }
       }
 
       if (fileBuffer) {
-        const filePath = `${order.id}.mp3`;
+        const filePath = `${order.id}.mp3`
         const { error: uploadError } = await supabase.storage
           .from("songs")
           .upload(filePath, fileBuffer, {
             contentType: "audio/mpeg",
-            upsert: true,
-          });
+            upsert: true
+          })
 
         if (!uploadError) {
-          audioStoragePath = filePath;
+          audioStoragePath = filePath
         }
       }
     } else {
       // Real transaction: Call Google Lyria.
       // Since Lyria is a private preview requiring restricted credentials, this will fail.
       // Failing here triggers the catch block below which issues a refund.
-      console.log("[Music Generation] Real transaction. Attempting Lyria API call...");
+      console.log(
+        "[Music Generation] Real transaction. Attempting Lyria API call..."
+      )
       const cleanLyrics = songMetadata.lyrics
-        .replace(/\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi, "")
+        .replace(
+          /\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi,
+          ""
+        )
         .replace(/\((.*?)\)/g, "")
-        .trim();
+        .trim()
 
-      const lyriaPrompt = `Uma canção em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Letra: ${cleanLyrics}`;
+      const lyriaPrompt = `Uma canção em português no estilo ${songMetadata.style}, andamento ${songMetadata.tempo}, tom ${songMetadata.vibe}. Letra: ${cleanLyrics}`
 
       const lyriaResponse = await (ai as any).interactions.create({
         model: "models/lyria-3-pro-preview",
-        input: lyriaPrompt,
-      });
+        input: lyriaPrompt
+      })
 
       if (lyriaResponse?.output_audio?.data) {
-        const audioBuffer = Buffer.from(lyriaResponse.output_audio.data, "base64");
-        const filePath = `${order.id}.mp3`;
+        const audioBuffer = Buffer.from(
+          lyriaResponse.output_audio.data,
+          "base64"
+        )
+        const filePath = `${order.id}.mp3`
         const { error: uploadError } = await supabase.storage
           .from("songs")
           .upload(filePath, audioBuffer, {
             contentType: lyriaResponse.output_audio.mime_type || "audio/mpeg",
-            upsert: true,
-          });
+            upsert: true
+          })
 
         if (!uploadError) {
-          audioStoragePath = filePath;
+          audioStoragePath = filePath
         } else {
-          throw new Error(`Storage upload failed: ${uploadError.message}`);
+          throw new Error(`Storage upload failed: ${uploadError.message}`)
         }
       } else {
-        throw new Error("Lyria response audio output is empty");
+        throw new Error("Lyria response audio output is empty")
       }
     }
 
     if (!audioStoragePath) {
-      throw new Error("Audio generation failed: file path is null");
+      throw new Error("Audio generation failed: file path is null")
     }
 
     // Save metadata and path, set status to completed
@@ -647,19 +717,19 @@ Retorne JSON válido.
         song_metadata: songMetadata,
         audio_storage_path: audioStoragePath,
         status: "completed",
-        updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
-      .eq("id", order.id);
+      .eq("id", order.id)
 
     // Send email with download link (via SMTP)
-    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = process.env.SMTP_USER;
+        const fromEmail = process.env.SMTP_USER
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: order.email,
-          subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
+          subject: ` Sua música "${songMetadata.title}" está pronta!`,
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
               <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
@@ -670,17 +740,17 @@ Retorne JSON válido.
                 <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
               </div>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${appUrl}/?orderId=${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música 🎵</a>
+                <a href="${appUrl}/?orderId=${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
               </div>
               <div style="text-align: center; margin: 20px 0;">
                 <a href="${appUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
               </div>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
-          `,
-        });
+          `
+        })
       } catch (smtpErr) {
-        console.error("[SMTP] Failed to send completion email:", smtpErr);
+        console.error("[SMTP] Failed to send completion email:", smtpErr)
       }
     }
 
@@ -688,59 +758,80 @@ Retorne JSON válido.
       .from("orders")
       .select("*")
       .eq("id", order.id)
-      .single();
+      .single()
 
-    res.json(updatedOrder || { ...order, song_metadata: songMetadata, status: "completed" });
+    res.json(
+      updatedOrder || {
+        ...order,
+        song_metadata: songMetadata,
+        status: "completed"
+      }
+    )
   } catch (error: any) {
-    console.error(`[Generate Error] Critical generation failure for order:`, error.message || error);
+    console.error(
+      `[Generate Error] Critical generation failure for order:`,
+      error.message || error
+    )
 
     // If order was fetched and is a real payment (has payment_id and is not mock), initiate automatic refund
     if (fetchedOrder) {
-      const isRealPayment = fetchedOrder.payment_id && 
-                            !fetchedOrder.payment_id.startsWith("mock") && 
-                            !fetchedOrder.payment_id.startsWith("simulated") && 
-                            !fetchedOrder.payment_id.startsWith("coupon");
+      const isRealPayment =
+        fetchedOrder.payment_id &&
+        !fetchedOrder.payment_id.startsWith("mock") &&
+        !fetchedOrder.payment_id.startsWith("simulated") &&
+        !fetchedOrder.payment_id.startsWith("coupon")
 
-      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST;
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
 
       // Update order status to failed
       await supabase
         .from("orders")
         .update({ status: "failed", updated_at: new Date().toISOString() })
-        .eq("id", fetchedOrder.id);
+        .eq("id", fetchedOrder.id)
 
       if (isRealPayment && mpToken) {
-        console.log(`[Refund] Processing refund for order ${fetchedOrder.id} (payment: ${fetchedOrder.payment_id})...`);
+        console.log(
+          `[Refund] Processing refund for order ${fetchedOrder.id} (payment: ${fetchedOrder.payment_id})...`
+        )
         try {
-          const refundRes = await fetch(`https://api.mercadopago.com/v1/payments/${fetchedOrder.payment_id}/refunds`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${mpToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({}),
-          });
+          const refundRes = await fetch(
+            `https://api.mercadopago.com/v1/payments/${fetchedOrder.payment_id}/refunds`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${mpToken}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({})
+            }
+          )
 
           if (refundRes.ok) {
-            console.log(`[Refund] MercadoPago refund successful for payment ${fetchedOrder.payment_id}`);
+            console.log(
+              `[Refund] MercadoPago refund successful for payment ${fetchedOrder.payment_id}`
+            )
           } else {
-            const refundErrText = await refundRes.text();
-            console.error(`[Refund] MercadoPago refund failed:`, refundErrText);
+            const refundErrText = await refundRes.text()
+            console.error(`[Refund] MercadoPago refund failed:`, refundErrText)
           }
         } catch (refundErr: any) {
-          console.error(`[Refund] Connection error trying to refund:`, refundErr.message || refundErr);
+          console.error(
+            `[Refund] Connection error trying to refund:`,
+            refundErr.message || refundErr
+          )
         }
       }
 
       // Send email explaining the refund or cancellation to the user
       if (process.env.SMTP_USER && process.env.SMTP_PASS) {
         try {
-          const fromEmail = process.env.SMTP_USER;
-          const emailSubject = isRealPayment 
+          const fromEmail = process.env.SMTP_USER
+          const emailSubject = isRealPayment
             ? "⚠️ Estorno efetuado — Falha na geração da sua música"
-            : "⚠️ Pedido cancelado — Falha na geração da sua música";
+            : "⚠️ Pedido cancelado — Falha na geração da sua música"
 
-          const emailHtml = isRealPayment ? `
+          const emailHtml = isRealPayment
+            ? `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
               <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
               <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
@@ -752,7 +843,8 @@ Retorne JSON válido.
               <br/>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
-          ` : `
+          `
+            : `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
               <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
               <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
@@ -763,24 +855,28 @@ Retorne JSON válido.
               <br/>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
-          `;
+          `
 
           await transporter.sendMail({
             from: `"1Música" <${fromEmail}>`,
             to: fetchedOrder.email,
             subject: emailSubject,
-            html: emailHtml,
-          });
-          console.log(`[SMTP Refund] Failure/Refund email sent to ${fetchedOrder.email}`);
+            html: emailHtml
+          })
+          console.log(
+            `[SMTP Refund] Failure/Refund email sent to ${fetchedOrder.email}`
+          )
         } catch (smtpErr) {
-          console.error("[SMTP Refund] Failed to send failure email:", smtpErr);
+          console.error("[SMTP Refund] Failed to send failure email:", smtpErr)
         }
       }
     }
 
-    res.status(500).json({ error: "Erro ao compor a música. Estorno processado automaticamente." });
+    res.status(500).json({
+      error: "Erro ao compor a música. Estorno processado automaticamente."
+    })
   }
-});
+})
 
 // ─── Download (Signed URL — never expose Supabase directly) ─
 app.get("/api/orders/:id/download", async (req, res) => {
@@ -789,31 +885,33 @@ app.get("/api/orders/:id/download", async (req, res) => {
       .from("orders")
       .select("audio_storage_path, song_metadata, status")
       .eq("id", req.params.id)
-      .single();
+      .single()
 
     if (!order || order.status !== "completed") {
-      return res.status(404).json({ error: "Música não encontrada ou ainda em processamento" });
+      return res
+        .status(404)
+        .json({ error: "Música não encontrada ou ainda em processamento" })
     }
 
     if (!order.audio_storage_path) {
-      return res.status(404).json({ error: "Arquivo de áudio não disponível" });
+      return res.status(404).json({ error: "Arquivo de áudio não disponível" })
     }
 
     // Generate signed URL (expires in 60 minutes)
     const { data: signedUrl, error } = await supabase.storage
       .from("songs")
-      .createSignedUrl(order.audio_storage_path, 3600);
+      .createSignedUrl(order.audio_storage_path, 3600)
 
     if (error || !signedUrl) {
-      return res.status(500).json({ error: "Erro ao gerar link de download" });
+      return res.status(500).json({ error: "Erro ao gerar link de download" })
     }
 
-    res.redirect(signedUrl.signedUrl);
+    res.redirect(signedUrl.signedUrl)
   } catch (error) {
-    console.error("Download Error:", error);
-    res.status(500).json({ error: "Erro no download" });
+    console.error("Download Error:", error)
+    res.status(500).json({ error: "Erro no download" })
   }
-});
+})
 
 // ============================================================
 // VITE DEV / PRODUCTION SERVING
@@ -821,24 +919,24 @@ app.get("/api/orders/:id/download", async (req, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const { createServer } = await import("vite");
+    const { createServer } = await import("vite")
     const vite = await createServer({
       server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+      appType: "spa"
+    })
+    app.use(vite.middlewares)
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use("/assets", express.static(path.join(process.cwd(), "assets")));
-    app.use(express.static(distPath));
+    const distPath = path.join(process.cwd(), "dist")
+    app.use("/assets", express.static(path.join(process.cwd(), "assets")))
+    app.use(express.static(distPath))
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+      res.sendFile(path.join(distPath, "index.html"))
+    })
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`1Música server running on http://localhost:${PORT}`);
-  });
+    console.log(`1Música server running on http://localhost:${PORT}`)
+  })
 }
 
-startServer();
+startServer()

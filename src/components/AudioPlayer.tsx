@@ -178,7 +178,7 @@ export default function AudioPlayer({
   // Lyrics renderer with support for literal '\n' string escapes
   const renderLyrics = () => {
     if (!metadata.lyrics) return null;
-    
+
     // Normalize literal "\n" strings into real newlines
     const normalizedLyrics = metadata.lyrics.replace(/\\n/g, "\n");
 

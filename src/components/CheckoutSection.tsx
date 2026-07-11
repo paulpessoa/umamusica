@@ -129,10 +129,8 @@ export default function CheckoutSection({
         <span className="text-[10px] bg-[#FFF0F0] text-[#FF5A5F] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border border-[#FF5A5F]/10">
           Aguardando Pagamento
         </span>
-        <h2 className="font-bold text-xl text-gray-900">
-          Quase lá! Componha por R$ 1,00
-        </h2>
-        <p className="text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
+
+        <p className="text-xs pt-4 text-gray-500 max-w-xs mx-auto leading-relaxed">
           Escaneie o QR Code ou copie a chave Pix abaixo. Sua canção será gerada imediatamente após a confirmação.
         </p>
       </div>
@@ -165,41 +163,28 @@ export default function CheckoutSection({
             {formatCountdown(secondsLeft)}
           </span>
         </div>
+        <button
+          onClick={handleCopy}
+          className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-1.5 shrink-0 text-sm font-semibold shadow-sm cursor-pointer"
+        >
+          {copied ? (
+            <>
+              <Check className="w-4 h-4 text-emerald-200" />
+              <span>Copiado!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-4 h-4" />
+              <span>Copiar Pix</span>
+            </>
+          )}
+        </button>
       </div>
-
-      {/* Copia e Cola Input and Action */}
-      {/* TODO: ocultar até termos 10 usuarios usamdo apens cupons e validado o fluxo de usar cupom */}
-      {/* <div className="space-y-2">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
-          Chave Pix (Copia e Cola)
-        </label>
-        <div className="flex gap-2">
-          <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-3.5 text-xs text-gray-600 font-mono select-all truncate">
-            {paymentCopiaCola}
-          </div>
-          <button
-            onClick={handleCopy}
-            className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-1.5 shrink-0 text-sm font-semibold shadow-sm cursor-pointer"
-          >
-            {copied ? (
-              <>
-                <Check className="w-4 h-4 text-emerald-200" />
-                <span>Copiado!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4" />
-                <span>Copiar</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div> */}
 
       {/* Coupon input form */}
       <div className="bg-gray-50 border border-gray-100 p-4.5 rounded-2xl space-y-2 shadow-sm">
-        <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
-          Possui um Cupom de Presente? 🎁
+        <label className="text-xs font-bold text-gray-700 tracking-wider block">
+          Possui um Cupom de Presente?
         </label>
         <div className="flex gap-2">
           <input
@@ -216,7 +201,7 @@ export default function CheckoutSection({
           <button
             onClick={handleApplyCoupon}
             disabled={isApplyingCoupon || !couponCode.trim()}
-            className="bg-gray-900 hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 text-white px-4 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer shrink-0"
+            className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-1.5 shrink-0 text-sm font-semibold shadow-sm cursor-pointer"
           >
             {isApplyingCoupon ? "Aplicando..." : "Aplicar"}
           </button>
@@ -237,26 +222,16 @@ export default function CheckoutSection({
       {/* TESTING PANEL (EXHIBITED ONLY ON LOCALHOST) */}
       {(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && (
         <div className="bg-[#FFFDF9] border border-amber-100 p-4.5 rounded-2xl space-y-3 shadow-sm">
-          <div className="flex items-center gap-2 text-amber-600">
-            <Smartphone className="w-4 h-4 animate-pulse text-amber-500" />
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700">
-              Ambiente de Testes / Sandbox
-            </span>
-          </div>
+
           <p className="text-[11px] text-gray-600 leading-relaxed">
-            Para testar e simular o recebimento do Pix sem precisar fazer um pagamento real de R$ 1,00, clique no botão de simulação abaixo:
+            Para testar e simular o recebimento do Pix sem precisar fazer um pagamento real de R$ 1,00.
           </p>
           <button
             onClick={handleSimulatePayment}
             disabled={isSimulating}
             className="w-full bg-white hover:bg-amber-50/50 text-amber-800 font-bold py-2.5 px-3 rounded-xl border border-amber-200 hover:border-[#FF5A5F]/50 transition-all duration-200 flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
           >
-            {isSimulating ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#FF5A5F]" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            )}
-            Simular Pagamento Pix (Aprovar) ⚡
+            Simular Pagamento Pix (Aprovar)
           </button>
           {pollingError && (
             <p className="text-[10px] text-rose-500 text-center font-mono">
@@ -266,16 +241,6 @@ export default function CheckoutSection({
         </div>
       )}
 
-      {/* Safety Badges Footer */}
-      <footer className="pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
-        <div className="flex items-center gap-1">
-          <Shield className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Pagamento Seguro via MercadoPago</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span>Garantia de Entrega 🎧</span>
-        </div>
-      </footer>
 
     </div>
   );

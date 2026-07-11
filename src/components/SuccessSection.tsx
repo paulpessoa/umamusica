@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Music, CheckCircle2, ChevronRight, RefreshCw, Mail } from "lucide-react";
+import { CheckCircle2, Mail, Headphones, Radio, Zap, Volume2, Waves, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Order, SongMetadata } from "../types";
+import { Order } from "../types";
 import AudioPlayer from "./AudioPlayer";
 
 interface SuccessSectionProps {
@@ -15,11 +15,19 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [currentInstrumentIndex, setCurrentInstrumentIndex] = useState(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  const instruments = [
+    { icon: <Headphones className="w-8 h-8" />, label: "Headphones" },
+    { icon: <Volume2 className="w-8 h-8" />, label: "Speaker" },
+    { icon: <Waves className="w-8 h-8" />, label: "Waves" },
+    { icon: <Radio className="w-8 h-8" />, label: "Radio" },
+    { icon: <Zap className="w-8 h-8" />, label: "Electric" },
+  ];
   const loadingPhrases = [
     "Analisando memórias e sentimentos... 🧠",
     "Compondo versos rimados... ✍️",
@@ -28,6 +36,14 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
     "Sintetizando vocais... 🎙️",
     "Preparando seu presente... 🎁",
   ];
+
+  // Auto-rotate instruments every 1 second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentInstrumentIndex((prev: number) => (prev + 1) % instruments.length);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch order and trigger composition
   useEffect(() => {
@@ -61,10 +77,10 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
   useEffect(() => {
     if (!order || order.status !== "processing") return;
     const timer = setInterval(() => {
-      setLoadingStep((prev) => (prev < loadingPhrases.length - 1 ? prev + 1 : prev));
+      setLoadingStep((prev: number) => (prev + 1) % loadingPhrases.length);
     }, 4500);
     return () => clearInterval(timer);
-  }, [order]);
+  }, [order, loadingPhrases.length]);
 
   const triggerComposition = async () => {
     if (isGenerating) return;
@@ -140,11 +156,18 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             exit={{ opacity: 0, scale: 0.95 }}
             className="h-full flex flex-col justify-center items-center text-center space-y-8 py-12 px-2"
           >
-            <div className="relative flex items-center justify-center">
-              <div className="absolute w-28 h-28 bg-[#FFF0F0] rounded-full animate-ping"></div>
-              <div className="absolute w-24 h-24 bg-[#FFF0F0] rounded-full animate-pulse"></div>
-              <div className="w-20 h-20 bg-[#FF5A5F] rounded-full flex items-center justify-center shadow-lg shadow-[#FF5A5F]/20 z-10">
-                <Music className="w-9 h-9 text-white animate-bounce" />
+            {/* Rotating square with random instruments */}
+            <div className="relative w-32 h-32 flex items-center justify-center">
+              {/* Rotating square */}
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 6, ease: "linear" }}
+                className="absolute inset-0 rounded-2xl bg-[#FF5A5F] shadow-md shadow-[#FF5A5F]/20"
+              />
+
+              {/* Static instrument icon in center */}
+              <div className="relative z-10 w-16 h-16 flex items-center justify-center text-white">
+                {instruments[currentInstrumentIndex].icon}
               </div>
             </div>
 
@@ -154,7 +177,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 {loadingPhrases[loadingStep]}
               </p>
               <p className="text-[11px] text-gray-500 max-w-xs leading-relaxed">
-                Isso leva de 15 a 30 segundos...
+                Em menos de um minuto...
               </p>
             </div>
 
@@ -193,15 +216,15 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
               <p className="text-sm text-gray-600 max-w-xs leading-relaxed">
                 Lamentamos muito! Devido a uma instabilidade no nosso motor de composição de IA, não foi possível gerar a sua música personalizada.
               </p>
-              
+
               {order.payment_id && !order.payment_id.startsWith("mock") && !order.payment_id.startsWith("simulated") && !order.payment_id.startsWith("coupon") ? (
                 <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4.5 text-left text-xs text-emerald-800 space-y-1.5 max-w-xs mx-auto shadow-sm">
                   <span className="font-bold flex items-center gap-1.5 text-emerald-950">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Estorno Processado!
+                    Estorno Automático Processado!
                   </span>
                   <p className="leading-relaxed text-emerald-700">
-                    Um estorno automático e integral de <strong>R$ 1,00</strong> foi devolvido para a sua conta Pix no Mercado Pago. Em caso de dúvidas, fale conosco em <span className="font-bold">paulmspessoa@gmail.com</span>.
+                    Um estorno automático e integral de <strong>R$ 1,00</strong> foi devolvido para a sua conta Pix no Mercado Pago. Você não precisa fazer nada – o reembolso chegará automaticamente em sua conta. Em caso de dúvidas, entre em contato conosco em <span className="font-bold">paulmspessoa@gmail.com</span>.
                   </p>
                 </div>
               ) : (
@@ -219,7 +242,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
 
             <button
               onClick={onRestart}
-              className="bg-gray-900 hover:bg-black text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
+              className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
             >
               Voltar ao Início
             </button>
@@ -233,14 +256,12 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
           >
             {/* Success Header */}
             <div className="text-center space-y-2 bg-[#FFF4F2]/80 p-5 rounded-3xl border border-[#FF5A5F]/10 shadow-sm relative overflow-hidden">
-              <div className="absolute -top-4 left-6 w-8 h-8 text-amber-400 opacity-60 rotate-12">✨</div>
-              <div className="absolute top-2 right-8 w-6 h-6 text-[#FF5A5F] opacity-40 -rotate-12">🎉</div>
 
               <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <h2 className="font-bold text-xl text-gray-900">
-                {isSharedView ? "Uma Homenagem para Você! 🎁" : "Sua música ficou pronta! 🎵"}
+                {isSharedView ? "Uma Homenagem para Você!" : "Sua música ficou pronta!"}
               </h2>
               {isSharedView ? (
                 <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
@@ -249,7 +270,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
               ) : (
                 <>
                   <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                    Enviamos o link de download para <span className="text-[#FF5A5F] font-semibold">{order.email}</span>.
+                    Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
                   </p>
                   <div className="flex items-center justify-center gap-1.5 text-[10px] text-gray-400 mt-2">
                     <Mail className="w-3.5 h-3.5" />
@@ -280,8 +301,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 onClick={onRestart}
                 className="inline-flex items-center gap-1.5 bg-[#FF5A5F] hover:bg-[#e04f53] text-white text-xs font-bold py-3 px-6 rounded-full shadow-md shadow-[#FF5A5F]/15 transition-all cursor-pointer"
               >
-                {isSharedView ? "Quero criar uma música personalizada também! 🚀" : "Compor mais uma música por R$ 1,00"}
-                <ChevronRight className="w-3.5 h-3.5 text-white" />
+                {isSharedView ? "Quero criar uma música personalizada também! " : "Compor mais uma música?"}
               </button>
             </div>
           </motion.div>
