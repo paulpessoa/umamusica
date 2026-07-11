@@ -889,8 +889,6 @@ Instruções importantes de voz:
                     )}
                   </div>
 
-             
-
                 </div>
 
                 {/* Bottom Call Controls with Hang Up and Finish Compose */}
