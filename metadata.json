@@ -1,5 +1,5 @@
 {
-  "name": "1Musica",
+  "name": "1Música",
   "description": "Micro-SaaS para geração de músicas personalizadas via IA",
   "requestFramePermissions": [
     "microphone"

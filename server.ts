@@ -1,4 +1,4 @@
-// Server main entrypoint for UnaMusica platform
+// Server main entrypoint for 1Música platform
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -137,12 +137,12 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
       try {
         const fromEmail = process.env.SMTP_USER;
         await transporter.sendMail({
-          from: `"UnaMusica" <${fromEmail}>`,
+          from: `"1Música" <${fromEmail}>`,
           to: email,
-          subject: "🎵 Seu código de verificação — UnaMusica",
+          subject: "🎵 Seu código de verificação — 1Música",
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
-              <h2 style="color: #FF5A5F; margin-bottom: 8px;">UnaMusica.com.br</h2>
+              <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
               <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
               <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
                 <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
@@ -209,7 +209,7 @@ app.post("/api/chat", rateLimit(60, 60 * 60 * 1000), async (req, res) => {
     }
 
     const systemInstruction = `
-Você é o Compositor Virtual do 1Musica, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
+Você é o Compositor Virtual do 1Música, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
 Seu objetivo é conduzir uma entrevista rápida, calorosa e engajadora com o usuário para capturar todas as informações necessárias para gerar a música: contextos detalhados, apelidos, memórias marcantes, piadas internas e histórias reais.
 
 Instruções:
@@ -249,7 +249,7 @@ app.post("/api/chat-voice", rateLimit(30, 60 * 60 * 1000), async (req, res) => {
     }
 
     const systemInstruction = `
-Você é o Compositor Virtual do 1Musica. Você recebeu um áudio do usuário.
+Você é o Compositor Virtual do 1Música. Você recebeu um áudio do usuário.
 Transcreva o áudio e continue a entrevista para coletar informações para a música personalizada.
 Responda de forma curta (2-3 frases) e faça uma pergunta por vez.
 Responda em Português do Brasil.
@@ -340,7 +340,7 @@ app.post("/api/checkout", async (req, res) => {
           },
           body: JSON.stringify({
             transaction_amount: 1.0,
-            description: "Música Personalizada — 1Musica",
+            description: "Música Personalizada — 1Música",
             payment_method_id: "pix",
             payer: { email },
             external_reference: orderId,
@@ -556,7 +556,7 @@ Retorne JSON válido.
     } catch {
       songMetadata = {
         title: "Sua Canção Especial",
-        artistName: "Cantor Virtual UnaMusica",
+        artistName: "Cantor Virtual 1Música",
         style: "Acústico / MPB",
         tempo: "Média",
         vibe: "Emocionante",
@@ -623,12 +623,12 @@ Retorne JSON válido.
       try {
         const fromEmail = process.env.SMTP_USER;
         await transporter.sendMail({
-          from: `"UnaMusica" <${fromEmail}>`,
+          from: `"1Musica" <${fromEmail}>`,
           to: order.email,
           subject: `🎵 Sua música "${songMetadata.title}" está pronta!`,
           html: `
             <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-              <h2 style="color: #FF5A5F; text-align: center;">UnaMusica.com.br</h2>
+              <h2 style="color: #FF5A5F; text-align: center;">1Musica</h2>
               <p>Olá!</p>
               <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
               <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
@@ -641,7 +641,7 @@ Retorne JSON válido.
               <div style="text-align: center; margin: 20px 0;">
                 <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
               </div>
-              <p style="font-size: 11px; color: #999; text-align: center;">UnaMusica.com.br — Transformando memórias em música por R$ 1,00</p>
+              <p style="font-size: 11px; color: #999; text-align: center;">1Musica — Transformando memórias em música por R$ 1,00</p>
             </div>
           `,
         });
@@ -721,7 +721,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`UnaMusica server running on http://localhost:${PORT}`);
+    console.log(`1Música server running on http://localhost:${PORT}`);
   });
 }
 

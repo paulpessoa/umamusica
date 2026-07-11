@@ -421,14 +421,14 @@ export default function App() {
                 <button onClick={() => setShowTerms(false)} className="text-gray-400 hover:text-gray-600 text-2xl cursor-pointer">×</button>
               </div>
               <div className="p-6 overflow-y-auto text-sm text-gray-600 leading-relaxed space-y-4">
-                <p><strong>1. Aceitação dos Termos</strong><br />Ao utilizar o 1Musica, você concorda com estes Termos de Uso. O serviço é oferecido por QiSites.</p>
-                <p><strong>2. Descrição do Serviço</strong><br />O UnaMusica utiliza inteligência artificial para criar músicas personalizadas com base em informações fornecidas pelo usuário, pelo valor de R$ 1,00 (um real) por música.</p>
-                <p><strong>3. Cadastro e E-mail</strong><br />O usuário deve fornecer um e-mail válido e verificado para receber o link de download da música. O UnaMusica não se responsabiliza por e-mails incorretos ou inacessíveis.</p>
+                <p><strong>1. Aceitação dos Termos</strong><br />Ao utilizar o 1Música, você concorda com estes Termos de Uso. O serviço é oferecido por QiSites.</p>
+                <p><strong>2. Descrição do Serviço</strong><br />O 1Música utiliza inteligência artificial para criar músicas personalizadas com base em informações fornecidas pelo usuário, pelo valor de R$ 1,00 (um real) por música.</p>
+                <p><strong>3. Cadastro e E-mail</strong><br />O usuário deve fornecer um e-mail válido e verificado para receber o link de download da música. O 1Música não se responsabiliza por e-mails incorretos ou inacessíveis.</p>
                 <p><strong>4. Pagamento</strong><br />O pagamento é processado via Pix (MercadoPago). Após confirmação, a composição é gerada automaticamente. Não há reembolso após a geração da música.</p>
                 <p><strong>5. Conteúdo Gerado</strong><br />As músicas são geradas por IA e podem conter imperfeições. O usuário recebe uma licença pessoal e não-exclusiva para uso da música gerada. O conteúdo não pode ser comercializado sem autorização.</p>
                 <p><strong>6. Uso Aceitável</strong><br />É proibido usar o serviço para gerar conteúdo ofensivo, discriminatório, violento, sexualmente explícito ou que viole direitos de terceiros. Reservamo-nos o direito de recusar a geração nesses casos.</p>
                 <p><strong>7. Disponibilidade</strong><br />O link de download da música fica disponível por 30 dias após a geração. Após esse período, o arquivo pode ser removido.</p>
-                <p><strong>8. Limitação de Responsabilidade</strong><br />O UnaMusica não se responsabiliza por danos indiretos decorrentes do uso do serviço. O serviço é fornecido "como está".</p>
+                <p><strong>8. Limitação de Responsabilidade</strong><br />O 1Música não se responsabiliza por danos indiretos decorrentes do uso do serviço. O serviço é fornecido "como está".</p>
                 <p><strong>9. Alterações</strong><br />Estes termos podem ser alterados a qualquer momento. O uso continuado do serviço após alterações implica aceitação.</p>
                 <p className="text-xs text-gray-400">Última atualização: Julho de 2026</p>
               </div>
