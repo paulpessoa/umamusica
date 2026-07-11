@@ -24,6 +24,45 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Helper to call generateContent with automatic fallback on 429/503 errors
+async function generateContentWithFallback(params: {
+  model: string;
+  contents: any[];
+  config?: any;
+}) {
+  try {
+    return await ai.models.generateContent({
+      model: params.model,
+      contents: params.contents,
+      config: params.config,
+    });
+  } catch (error: any) {
+    const isQuotaOrUnavailable = 
+      error?.status === "RESOURCE_EXHAUSTED" || 
+      error?.status === "UNAVAILABLE" ||
+      error?.message?.includes("quota") ||
+      error?.message?.includes("demand") ||
+      error?.message?.includes("429") ||
+      error?.message?.includes("503") ||
+      (error?.code === 429 || error?.code === 503);
+
+    if (isQuotaOrUnavailable) {
+      console.warn(`[Fallback Engine] Model ${params.model} failed due to quota or temporary unavailability. Retrying with gemini-flash-latest...`);
+      try {
+        return await ai.models.generateContent({
+          model: "gemini-flash-latest",
+          contents: params.contents,
+          config: params.config,
+        });
+      } catch (fallbackError: any) {
+        console.warn(`[Fallback Engine] Fallback model gemini-flash-latest also failed:`, fallbackError);
+        throw error;
+      }
+    }
+    throw error;
+  }
+}
+
 // Local file database path for persistence
 const DB_PATH = path.join(process.cwd(), "unamusica_orders.json");
 
@@ -90,7 +129,7 @@ Instruções da Entrevista e Comportamento:
     }));
 
     // Add system instruction as part of config with the requested gemini-3.5-flash model
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
       config: {
@@ -102,7 +141,7 @@ Instruções da Entrevista e Comportamento:
     const aiText = response.text || "Desculpe, deu um pequeno compasso desafinado aqui. Pode repetir?";
     res.json({ text: aiText });
   } catch (error: any) {
-    console.error("Chat API Error:", error);
+    console.warn("Chat API Error:", error.message || error);
     res.status(500).json({ error: "Erro ao processar conversa de composição" });
   }
 });
@@ -142,7 +181,7 @@ Instruções da Chamada:
     });
 
     console.log("Processing Continuous Live Speech message with gemini-3.5-flash...");
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
       config: {
@@ -164,7 +203,7 @@ Instruções da Chamada:
     try {
       parsedData = JSON.parse(dataText);
     } catch (parseErr) {
-      console.error("Failed to parse Live text response JSON:", parseErr);
+      console.warn("Failed to parse Live text response JSON:", parseErr);
       parsedData = {
         aiResponse: dataText || "Que incrível! Me conta mais?",
         triggerCompose: false
@@ -196,8 +235,8 @@ Instruções da Chamada:
         aiAudioUrl = `data:audio/mp3;base64,${base64Audio}`;
         console.log("Vocal synthesis completed successfully!");
       }
-    } catch (ttsErr) {
-      console.error("Continuous Vocal synthesis failed:", ttsErr);
+    } catch (ttsErr: any) {
+      console.warn("Continuous Vocal synthesis failed (skipping audio response gracefully):", ttsErr.message || ttsErr);
     }
 
     res.json({
@@ -206,7 +245,7 @@ Instruções da Chamada:
       triggerCompose
     });
   } catch (error: any) {
-    console.error("Chat Continuous API Error:", error);
+    console.warn("Chat Continuous API Error:", error.message || error);
     res.status(500).json({ error: "Erro ao processar conversação contínua de voz" });
   }
 });
@@ -257,11 +296,11 @@ Instruções da Entrevista:
     });
 
     console.log("Analyzing live voice message with gemini-3.5-flash...");
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
       config: {
-        systemInstruction: systemInstruction + "\nAdicionalmente, você deve retornar um objeto JSON com três campos obrigatórios: 'userTranscript' (transcrição do áudio recebido), 'aiResponse' (sua resposta de acompanhamento curta) e 'triggerCompose' (un booleano indicando se todos os detalhes essenciais foram coletados).",
+        systemInstruction: systemInstruction + "\nAdicionalmente, você deve retornar um objeto JSON with três campos obrigatórios: 'userTranscript' (transcrição do áudio recebido), 'aiResponse' (sua resposta de acompanhamento curta) e 'triggerCompose' (un booleano indicando se todos os detalhes essenciais foram coletados).",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -280,7 +319,7 @@ Instruções da Entrevista:
     try {
       parsedData = JSON.parse(dataText);
     } catch (parseErr) {
-      console.error("Failed to parse Voice Chat JSON response, attempting raw recovery:", parseErr);
+      console.warn("Failed to parse Voice Chat JSON response, attempting raw recovery:", parseErr);
       parsedData = {
         userTranscript: "Áudio enviado pelo usuário",
         aiResponse: dataText || "Interessante! Me conta mais detalhes sobre essa história?",
@@ -314,8 +353,8 @@ Instruções da Entrevista:
         aiAudioUrl = `data:audio/mp3;base64,${base64Audio}`;
         console.log("Assistant voice successfully synthesized!");
       }
-    } catch (ttsErr) {
-      console.error("Vocal synthesis for Live assistant response failed:", ttsErr);
+    } catch (ttsErr: any) {
+      console.warn("Vocal synthesis for Live assistant response failed (skipping audio response gracefully):", ttsErr.message || ttsErr);
     }
 
     res.json({
@@ -325,7 +364,7 @@ Instruções da Entrevista:
       triggerCompose
     });
   } catch (error: any) {
-    console.error("Chat Voice API Error:", error);
+    console.warn("Chat Voice API Error:", error.message || error);
     res.status(500).json({ error: "Erro ao processar mensagem de voz do chat" });
   }
 });
