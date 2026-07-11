@@ -889,25 +889,7 @@ Instruções importantes de voz:
                     )}
                   </div>
 
-                  {/* Clean real-time transcription boxes */}
-                  <div className="w-full max-w-md space-y-3.5 bg-white/5 border border-white/10 p-5 rounded-2xl text-left">
-                    <div className="space-y-1 border-b border-white/5 pb-3">
-                      <span className="text-[9px] font-bold tracking-wider text-emerald-400 uppercase flex items-center gap-1">
-                        <Mic className="w-3 h-3" /> Você diz:
-                      </span>
-                      <p className="text-sm text-gray-200 min-h-[22px] italic">
-                        "{liveUserSubtitle || "..."}"
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-bold tracking-wider text-[#FF5A5F] uppercase flex items-center gap-1">
-                        <Sparkles className="w-3 h-3" /> Gemini diz:
-                      </span>
-                      <p className="text-sm font-semibold text-white min-h-[22px] leading-relaxed">
-                        {liveAISubtitle || "Ouvindo você... Fale sobre o que deseja para a canção!"}
-                      </p>
-                    </div>
-                  </div>
+             
 
                 </div>
 
