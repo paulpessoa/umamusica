@@ -435,7 +435,7 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
   try {
     const { coupon } = req.body;
     const cleanCoupon = coupon ? coupon.trim().toUpperCase() : "";
-    if (cleanCoupon === "CUPOM-PRESENTE" || cleanCoupon === "CUPOM_ESPECIAL" || cleanCoupon === "CUPOM-ESPECIAL") {
+    if (cleanCoupon === "PRESENTE" || cleanCoupon === "ESPECIAL" || cleanCoupon === "CUPOM-PRESENTE" || cleanCoupon === "CUPOM_ESPECIAL") {
       await supabase
         .from("orders")
         .update({ status: "paid", updated_at: new Date().toISOString() })
@@ -670,10 +670,10 @@ Retorne JSON válido.
                 <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
               </div>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${appUrl}/api/orders/${order.id}/download" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Baixar Música 🎵</a>
+                <a href="${appUrl}/?orderId=${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música 🎵</a>
               </div>
               <div style="text-align: center; margin: 20px 0;">
-                <a href="${appUrl}/?orderId=${order.id}" style="color: #FF5A5F; font-size: 14px;">Ver letra e detalhes →</a>
+                <a href="${appUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
               </div>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
@@ -732,31 +732,48 @@ Retorne JSON válido.
         }
       }
 
-      // Send email explaining the refund to the user
+      // Send email explaining the refund or cancellation to the user
       if (process.env.SMTP_USER && process.env.SMTP_PASS) {
         try {
           const fromEmail = process.env.SMTP_USER;
+          const emailSubject = isRealPayment 
+            ? "⚠️ Estorno efetuado — Falha na geração da sua música"
+            : "⚠️ Pedido cancelado — Falha na geração da sua música";
+
+          const emailHtml = isRealPayment ? `
+            <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+              <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
+              <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
+              <p>Olá,</p>
+              <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
+              <p>Para sua total segurança e conforme prometido, <strong>um estorno integral do valor de R$ 1,00 já foi processado automaticamente</strong> de volta para a sua conta Pix no Mercado Pago.</p>
+              <p>O valor deve constar na sua conta em alguns minutos.</p>
+              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>paulmspessoa@gmail.com</strong>.</p>
+              <br/>
+              <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+            </div>
+          ` : `
+            <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+              <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
+              <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
+              <p>Olá,</p>
+              <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
+              <p>Como este pedido foi iniciado de forma gratuita (via cupom ou testes), nenhuma cobrança foi realizada e sua compra foi cancelada com sucesso.</p>
+              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>paulmspessoa@gmail.com</strong>.</p>
+              <br/>
+              <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+            </div>
+          `;
+
           await transporter.sendMail({
             from: `"1Música" <${fromEmail}>`,
             to: fetchedOrder.email,
-            subject: "⚠️ Estorno efetuado — Falha na geração da sua música",
-            html: `
-              <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-                <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
-                <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
-                <p>Olá,</p>
-                <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
-                <p>Para sua total segurança e conforme prometido, <strong>um estorno integral do valor de R$ 1,00 já foi processado automaticamente</strong> de volta para a sua conta Pix no Mercado Pago.</p>
-                <p>O valor deve constar na sua conta em alguns minutos.</p>
-                <p>Se quiser tentar novamente no futuro, ficaremos muito felizes em compor para você.</p>
-                <br/>
-                <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-              </div>
-            `,
+            subject: emailSubject,
+            html: emailHtml,
           });
-          console.log(`[SMTP Refund] Refund email sent to ${fetchedOrder.email}`);
+          console.log(`[SMTP Refund] Failure/Refund email sent to ${fetchedOrder.email}`);
         } catch (smtpErr) {
-          console.error("[SMTP Refund] Failed to send refund email:", smtpErr);
+          console.error("[SMTP Refund] Failed to send failure email:", smtpErr);
         }
       }
     }

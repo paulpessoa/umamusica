@@ -123,7 +123,7 @@ export default function CheckoutSection({
 
   return (
     <div id="checkout-container" className="flex-1 overflow-y-auto px-6 py-6 flex flex-col justify-between space-y-6 bg-white">
-      
+
       {/* Upper Status Header */}
       <div className="text-center space-y-2">
         <span className="text-[10px] bg-[#FFF0F0] text-[#FF5A5F] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border border-[#FF5A5F]/10">
@@ -139,13 +139,13 @@ export default function CheckoutSection({
 
       {/* Main QR Code Card */}
       <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 flex flex-col items-center justify-center space-y-4 shadow-sm">
-        
+
         {/* QR Code container */}
         <div className="relative w-44 h-44 bg-white rounded-2xl p-2.5 flex items-center justify-center shadow-sm border border-gray-100">
           {paymentQr ? (
-            <img 
-              src={paymentQr.startsWith("data:") ? paymentQr : `data:image/png;base64,${paymentQr}`} 
-              alt="Pix QR Code" 
+            <img
+              src={paymentQr.startsWith("data:") ? paymentQr : `data:image/png;base64,${paymentQr}`}
+              alt="Pix QR Code"
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
             />
@@ -168,7 +168,8 @@ export default function CheckoutSection({
       </div>
 
       {/* Copia e Cola Input and Action */}
-      <div className="space-y-2">
+      {/* TODO: ocultar até termos 10 usuarios usamdo apens cupons e validado o fluxo de usar cupom */}
+      {/* <div className="space-y-2">
         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
           Chave Pix (Copia e Cola)
         </label>
@@ -193,7 +194,7 @@ export default function CheckoutSection({
             )}
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* Coupon input form */}
       <div className="bg-gray-50 border border-gray-100 p-4.5 rounded-2xl space-y-2 shadow-sm">
@@ -209,7 +210,7 @@ export default function CheckoutSection({
               setCouponError(null);
               setCouponSuccess(null);
             }}
-            placeholder="Ex: CUPOM-PRESENTE"
+            placeholder="Ex: PRESENTE"
             className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-xs text-gray-800 uppercase font-mono placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
           />
           <button
@@ -233,35 +234,37 @@ export default function CheckoutSection({
         )}
       </div>
 
-      {/* TESTING PANEL (CRITICAL FOR LIVE PREVIEW EXPERIENCE) */}
-      <div className="bg-[#FFFDF9] border border-amber-100 p-4.5 rounded-2xl space-y-3 shadow-sm">
-        <div className="flex items-center gap-2 text-amber-600">
-          <Smartphone className="w-4 h-4 animate-pulse text-amber-500" />
-          <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700">
-            Ambiente de Testes / Sandbox
-          </span>
-        </div>
-        <p className="text-[11px] text-gray-600 leading-relaxed">
-          Para testar e simular o recebimento do Pix sem precisar fazer um pagamento real de R$ 1,00, clique no botão de simulação abaixo:
-        </p>
-        <button
-          onClick={handleSimulatePayment}
-          disabled={isSimulating}
-          className="w-full bg-white hover:bg-amber-50/50 text-amber-800 font-bold py-2.5 px-3 rounded-xl border border-amber-200 hover:border-[#FF5A5F]/50 transition-all duration-200 flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
-        >
-          {isSimulating ? (
-            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#FF5A5F]" />
-          ) : (
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          )}
-          Simular Pagamento Pix (Aprovar) ⚡
-        </button>
-        {pollingError && (
-          <p className="text-[10px] text-rose-500 text-center font-mono">
-            {pollingError}
+      {/* TESTING PANEL (EXHIBITED ONLY ON LOCALHOST) */}
+      {(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && (
+        <div className="bg-[#FFFDF9] border border-amber-100 p-4.5 rounded-2xl space-y-3 shadow-sm">
+          <div className="flex items-center gap-2 text-amber-600">
+            <Smartphone className="w-4 h-4 animate-pulse text-amber-500" />
+            <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700">
+              Ambiente de Testes / Sandbox
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-600 leading-relaxed">
+            Para testar e simular o recebimento do Pix sem precisar fazer um pagamento real de R$ 1,00, clique no botão de simulação abaixo:
           </p>
-        )}
-      </div>
+          <button
+            onClick={handleSimulatePayment}
+            disabled={isSimulating}
+            className="w-full bg-white hover:bg-amber-50/50 text-amber-800 font-bold py-2.5 px-3 rounded-xl border border-amber-200 hover:border-[#FF5A5F]/50 transition-all duration-200 flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
+          >
+            {isSimulating ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#FF5A5F]" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            )}
+            Simular Pagamento Pix (Aprovar) ⚡
+          </button>
+          {pollingError && (
+            <p className="text-[10px] text-rose-500 text-center font-mono">
+              {pollingError}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Safety Badges Footer */}
       <footer className="pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">

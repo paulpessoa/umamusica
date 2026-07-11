@@ -7,9 +7,10 @@ import AudioPlayer from "./AudioPlayer";
 interface SuccessSectionProps {
   orderId: string;
   onRestart: () => void;
+  isSharedView?: boolean;
 }
 
-export default function SuccessSection({ orderId, onRestart }: SuccessSectionProps) {
+export default function SuccessSection({ orderId, onRestart, isSharedView = false }: SuccessSectionProps) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -82,10 +83,47 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
 
   if (!order) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6 text-gray-400 bg-white">
-        <div className="text-center space-y-3">
-          <RefreshCw className="w-8 h-8 animate-spin text-[#FF5A5F] mx-auto" />
-          <p className="text-sm">Carregando...</p>
+      <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6 bg-white animate-pulse">
+        {/* Skeleton Vinyl Disk */}
+        <div className="flex flex-col items-center justify-center space-y-4 py-4">
+          <div className="w-40 h-40 bg-gray-100 rounded-full flex items-center justify-center relative shadow-sm">
+            <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
+              <div className="w-4 h-4 bg-gray-300 rounded-full"></div>
+            </div>
+          </div>
+          <div className="h-4 bg-gray-200 rounded-md w-3/4 mx-auto"></div>
+          <div className="h-3 bg-gray-200 rounded-md w-1/2 mx-auto"></div>
+          <div className="flex gap-1.5 justify-center pt-2">
+            <div className="h-5 bg-gray-100 rounded-full w-16"></div>
+            <div className="h-5 bg-gray-100 rounded-full w-20"></div>
+          </div>
+        </div>
+
+        {/* Skeleton Progress */}
+        <div className="space-y-2.5 px-2">
+          <div className="h-1.5 bg-gray-100 rounded-full w-full"></div>
+          <div className="flex justify-between">
+            <div className="h-3 bg-gray-100 rounded-md w-10"></div>
+            <div className="h-3 bg-gray-100 rounded-md w-10"></div>
+          </div>
+        </div>
+
+        {/* Skeleton Controls */}
+        <div className="flex items-center justify-between gap-4 px-2 pt-2">
+          <div className="h-6 bg-gray-100 rounded-md w-20"></div>
+          <div className="w-14 h-14 bg-gray-200 rounded-full shrink-0"></div>
+          <div className="w-9 h-9 bg-gray-100 rounded-xl shrink-0"></div>
+        </div>
+
+        {/* Skeleton Lyrics Box */}
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 space-y-3.5">
+          <div className="h-4 bg-gray-200 rounded-md w-1/4"></div>
+          <div className="space-y-2 pt-1">
+            <div className="h-3.5 bg-gray-200 rounded-md w-full"></div>
+            <div className="h-3.5 bg-gray-200 rounded-md w-5/6"></div>
+            <div className="h-3.5 bg-gray-200 rounded-md w-11/12"></div>
+            <div className="h-3.5 bg-gray-200 rounded-md w-3/4"></div>
+          </div>
         </div>
       </div>
     );
@@ -144,22 +182,39 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
             </div>
 
             <div className="space-y-3">
-              <h2 className="font-extrabold text-xl text-gray-900">Estorno Efetuado! 💸</h2>
+              <h2 className="font-extrabold text-xl text-gray-900">
+                {order.payment_id && !order.payment_id.startsWith("mock") && !order.payment_id.startsWith("simulated") && !order.payment_id.startsWith("coupon")
+                  ? "Estorno Efetuado! 💸"
+                  : "Erro ao Compor! ⚠️"}
+              </h2>
               <p className="text-xs text-rose-600 font-bold font-mono tracking-wide">
                 Geração de música indisponível
               </p>
               <p className="text-sm text-gray-600 max-w-xs leading-relaxed">
-                Lamentamos muito! Devido a uma instabilidade no nosso motor de composição, não foi possível gerar a sua música personalizada.
+                Lamentamos muito! Devido a uma instabilidade no nosso motor de composição de IA, não foi possível gerar a sua música personalizada.
               </p>
-              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4.5 text-left text-xs text-emerald-800 space-y-1.5 max-w-xs mx-auto shadow-sm">
-                <span className="font-bold flex items-center gap-1.5 text-emerald-950">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Dinheiro Devolvido!
-                </span>
-                <p className="leading-relaxed text-emerald-700">
-                  Um estorno automático e integral de <strong>R$ 1,00</strong> foi enviado de volta para a sua conta Pix no Mercado Pago. Detalhes também foram enviados para o seu e-mail.
-                </p>
-              </div>
+              
+              {order.payment_id && !order.payment_id.startsWith("mock") && !order.payment_id.startsWith("simulated") && !order.payment_id.startsWith("coupon") ? (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4.5 text-left text-xs text-emerald-800 space-y-1.5 max-w-xs mx-auto shadow-sm">
+                  <span className="font-bold flex items-center gap-1.5 text-emerald-950">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Estorno Processado!
+                  </span>
+                  <p className="leading-relaxed text-emerald-700">
+                    Um estorno automático e integral de <strong>R$ 1,00</strong> foi devolvido para a sua conta Pix no Mercado Pago. Em caso de dúvidas, fale conosco em <span className="font-bold">paulmspessoa@gmail.com</span>.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4.5 text-left text-xs text-gray-700 space-y-1.5 max-w-xs mx-auto shadow-sm">
+                  <span className="font-bold flex items-center gap-1.5 text-gray-900">
+                    <CheckCircle2 className="w-4 h-4 text-gray-500" />
+                    Pedido Cancelado
+                  </span>
+                  <p className="leading-relaxed text-gray-600">
+                    Como este pedido foi iniciado via cupom ou ambiente de testes, nenhuma cobrança financeira foi realizada. Em caso de dúvidas, fale conosco em <span className="font-bold text-[#FF5A5F]">paulmspessoa@gmail.com</span>.
+                  </p>
+                </div>
+              )}
             </div>
 
             <button
@@ -184,14 +239,24 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
               <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
-              <h2 className="font-bold text-xl text-gray-900">Sua música ficou pronta! 🎵</h2>
-              <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                Enviamos o link de download para <span className="text-[#FF5A5F] font-semibold">{order.email}</span>.
-              </p>
-              <div className="flex items-center justify-center gap-1.5 text-[10px] text-gray-400 mt-2">
-                <Mail className="w-3.5 h-3.5" />
-                <span>Verifique sua caixa de entrada e SPAM</span>
-              </div>
+              <h2 className="font-bold text-xl text-gray-900">
+                {isSharedView ? "Uma Homenagem para Você! 🎁" : "Sua música ficou pronta! 🎵"}
+              </h2>
+              {isSharedView ? (
+                <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                  Ouça a canção personalizada composta especialmente para você!
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                    Enviamos o link de download para <span className="text-[#FF5A5F] font-semibold">{order.email}</span>.
+                  </p>
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-gray-400 mt-2">
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Verifique sua caixa de entrada e SPAM</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Audio Player */}
@@ -213,10 +278,10 @@ export default function SuccessSection({ orderId, onRestart }: SuccessSectionPro
             <div className="pt-2 text-center">
               <button
                 onClick={onRestart}
-                className="inline-flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-xs text-gray-600 hover:text-gray-900 font-semibold py-2.5 px-5 rounded-full border border-gray-200 transition-all cursor-pointer"
+                className="inline-flex items-center gap-1.5 bg-[#FF5A5F] hover:bg-[#e04f53] text-white text-xs font-bold py-3 px-6 rounded-full shadow-md shadow-[#FF5A5F]/15 transition-all cursor-pointer"
               >
-                Compor mais uma música por R$ 1,00
-                <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                {isSharedView ? "Quero criar uma música personalizada também! 🚀" : "Compor mais uma música por R$ 1,00"}
+                <ChevronRight className="w-3.5 h-3.5 text-white" />
               </button>
             </div>
           </motion.div>

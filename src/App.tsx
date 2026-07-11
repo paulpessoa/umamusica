@@ -51,6 +51,8 @@ export default function App() {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [playingExampleId, setPlayingExampleId] = useState<number | null>(null);
 
+  const [isSharedView, setIsSharedView] = useState(false);
+
   const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Play/Pause effect for landing page examples
@@ -74,6 +76,7 @@ export default function App() {
     const idFromUrl = params.get("orderId");
     if (idFromUrl) {
       setOrderId(idFromUrl);
+      setIsSharedView(true);
       setView("success");
     }
   }, []);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Download, Music, Disc, Volume2 } from "lucide-react";
+import { Play, Pause, Download, Music, Disc, Volume2, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { SongMetadata } from "../types";
 
