@@ -58,6 +58,11 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+// Endpoint to expose Gemini API Key safely for Live WebSocket
+app.get("/api/gemini-key", (req, res) => {
+  res.json({ apiKey: process.env.GEMINI_API_KEY || "" });
+});
+
 // Chat Interview Endpoint
 app.post("/api/chat", async (req, res) => {
   try {

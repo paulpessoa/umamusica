@@ -34,12 +34,25 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
   const [liveAISubtitle, setLiveAISubtitle] = useState("");
   const [callStatus, setCallStatus] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
   const [callDuration, setCallDuration] = useState(0);
-  const recognitionRef = useRef<any>(null);
-  const activeCallAudioRef = useRef<HTMLAudioElement | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioContextOutRef = useRef<AudioContext | null>(null);
+  const nextPlayTimeRef = useRef<number>(0);
+  const activeAudioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const speakingTimeoutRef = useRef<any>(null);
+  const assistantResponseActiveRef = useRef<boolean>(false);
+  const assistantGenerationCompleteRef = useRef<boolean>(false);
 
-  const latestTranscriptRef = useRef("");
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const audioContextInRef = useRef<AudioContext | null>(null);
+  const micProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const consecutiveBargeInChunksRef = useRef<number>(0);
+  const bargeInGraceUntilRef = useRef<number>(0);
+  const setupCompletedRef = useRef<boolean>(false);
+  const isStoppingRef = useRef<boolean>(false);
+  const currentAIResponseRef = useRef<string>("");
+
   const isLiveCallActiveRef = useRef(false);
-  const callStatusRef = useRef<"idle" | "listening" | "processing" | "speaking">("idle");
+  const callStatusRef = useRef<"idle" | "listening" | "processing" | "speaking" | "connecting">("idle");
 
   useEffect(() => {
     isLiveCallActiveRef.current = isLiveCallActive;
@@ -125,195 +138,411 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
     ];
   };
 
-  const startContinuousSpeech = () => {
-    const SpeechRecognitionImpl = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionImpl) {
-      alert("O seu navegador não suporta reconhecimento de voz direto. Recomendamos usar o Google Chrome ou Microsoft Edge para ter a experiência completa de conversa de voz.");
-      setIsLiveCallActive(false);
-      return;
+  const playAudio = (base64: string) => {
+    if (!audioContextOutRef.current) {
+      audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    }
+    if (audioContextOutRef.current.state === "suspended") {
+      audioContextOutRef.current.resume();
     }
 
-    // Stop existing voice synthesis
-    if (activeCallAudioRef.current) {
-      activeCallAudioRef.current.pause();
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
     }
 
-    const rec = new SpeechRecognitionImpl();
-    rec.lang = "pt-BR";
-    rec.continuous = false;
-    rec.interimResults = true;
+    const int16Array = new Int16Array(bytes.buffer);
+    const float32Array = new Float32Array(int16Array.length);
+    for (let i = 0; i < int16Array.length; i++) {
+      float32Array[i] = int16Array[i] / 32768;
+    }
 
-    rec.onstart = () => {
-      setCallStatus("listening");
-      setLiveUserSubtitle("Ouvindo você...");
-      latestTranscriptRef.current = ""; // Clear on start
+    const buffer = audioContextOutRef.current.createBuffer(1, float32Array.length, 24000);
+    buffer.getChannelData(0).set(float32Array);
+
+    const source = audioContextOutRef.current.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContextOutRef.current.destination);
+    activeAudioSourcesRef.current.add(source);
+
+    source.onended = () => {
+      activeAudioSourcesRef.current.delete(source);
+      checkPlaybackEnded();
     };
 
-    rec.onresult = (event: any) => {
-      let interim = "";
-      let final = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
-      }
-      const text = (final || interim).trim();
-      latestTranscriptRef.current = text;
-      setLiveUserSubtitle(text || "Ouvindo você...");
-    };
+    if (nextPlayTimeRef.current < audioContextOutRef.current.currentTime) {
+      nextPlayTimeRef.current = audioContextOutRef.current.currentTime + 0.05;
+    }
+    source.start(nextPlayTimeRef.current);
+    nextPlayTimeRef.current += buffer.duration;
 
-    rec.onerror = (e: any) => {
-      console.warn("Speech Recognition Error:", e);
-      if (isLiveCallActiveRef.current && e.error !== "no-speech") {
-        setTimeout(() => {
-          try { rec.start(); } catch (err) {}
-        }, 300);
-      }
-    };
+    assistantResponseActiveRef.current = true;
+    setCallStatus("speaking");
 
-    rec.onend = () => {
-      const textToProcess = latestTranscriptRef.current.trim();
-      if (textToProcess && textToProcess.length > 1) {
-        latestTranscriptRef.current = ""; // Reset immediately
-        sendSpeechToGemini(textToProcess);
-      } else {
-        // Restart listening if call remains active and we are still listening
-        if (isLiveCallActiveRef.current && callStatusRef.current === "listening") {
-          setTimeout(() => {
-            try { rec.start(); } catch (err) {}
-          }, 600);
-        }
-      }
-    };
+    if (speakingTimeoutRef.current) {
+      clearTimeout(speakingTimeoutRef.current);
+    }
+    speakingTimeoutRef.current = setTimeout(
+      checkPlaybackEnded,
+      Math.max(300, (nextPlayTimeRef.current - audioContextOutRef.current.currentTime) * 1000)
+    );
+  };
 
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch (err) {
-      console.error("Failed to start speech recognition:", err);
+  const stopQueuedAudio = () => {
+    if (speakingTimeoutRef.current) {
+      clearTimeout(speakingTimeoutRef.current);
+    }
+    for (const source of activeAudioSourcesRef.current) {
+      try {
+        source.stop();
+      } catch (e) {}
+    }
+    activeAudioSourcesRef.current.clear();
+    if (audioContextOutRef.current) {
+      nextPlayTimeRef.current = audioContextOutRef.current.currentTime;
     }
   };
 
-  const sendSpeechToGemini = async (speechText: string) => {
-    setCallStatus("processing");
-    setIsTyping(true);
+  const checkPlaybackEnded = () => {
+    if (!assistantGenerationCompleteRef.current || activeAudioSourcesRef.current.size > 0) {
+      return;
+    }
+    assistantResponseActiveRef.current = false;
+    assistantGenerationCompleteRef.current = false;
+    consecutiveBargeInChunksRef.current = 0;
+    setCallStatus("listening");
+  };
 
+  const getAudioLevel = (inputData: Float32Array) => {
+    let sumSquares = 0;
+    let peak = 0;
+    for (let i = 0; i < inputData.length; i++) {
+      const abs = Math.abs(inputData[i]);
+      peak = Math.max(peak, abs);
+      sumSquares += inputData[i] * inputData[i];
+    }
+    return {
+      rms: Math.sqrt(sumSquares / Math.max(1, inputData.length)),
+      peak
+    };
+  };
+
+  const shouldSendMicAudio = (inputData: Float32Array) => {
+    if (
+      !setupCompletedRef.current ||
+      !isLiveCallActiveRef.current ||
+      !wsRef.current ||
+      wsRef.current.readyState !== WebSocket.OPEN
+    ) {
+      return false;
+    }
+
+    const now = Date.now();
+    const level = getAudioLevel(inputData);
+    const isAssistantOutputActive = assistantResponseActiveRef.current || activeAudioSourcesRef.current.size > 0;
+
+    if (isAssistantOutputActive) {
+      // Barge-in thresholds
+      const BARGE_IN_RMS_THRESHOLD = 0.045;
+      const BARGE_IN_PEAK_THRESHOLD = 0.12;
+      const BARGE_IN_REQUIRED_CHUNKS = 2;
+      const BARGE_IN_GRACE_MS = 1800;
+
+      const strongSpeech = level.rms >= BARGE_IN_RMS_THRESHOLD || level.peak >= BARGE_IN_PEAK_THRESHOLD;
+      consecutiveBargeInChunksRef.current = strongSpeech ? consecutiveBargeInChunksRef.current + 1 : 0;
+
+      if (consecutiveBargeInChunksRef.current >= BARGE_IN_REQUIRED_CHUNKS) {
+        bargeInGraceUntilRef.current = now + BARGE_IN_GRACE_MS;
+        consecutiveBargeInChunksRef.current = 0;
+        console.log("[Agente Live] Barge-in detected", level);
+        
+        stopQueuedAudio();
+        assistantResponseActiveRef.current = false;
+        assistantGenerationCompleteRef.current = false;
+        setCallStatus("processing");
+        return true;
+      }
+      return false;
+    }
+
+    // Standard activity check to trigger "processing" state
+    const MIC_ACTIVITY_RMS_THRESHOLD = 0.012;
+    if (callStatusRef.current === "listening" && level.rms >= MIC_ACTIVITY_RMS_THRESHOLD) {
+      setCallStatus("processing");
+    }
+    return true;
+  };
+
+  const startMic = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+      });
+      micStreamRef.current = stream;
+
+      const audioContextIn = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      audioContextInRef.current = audioContextIn;
+
+      const source = audioContextIn.createMediaStreamSource(stream);
+      const micProcessor = audioContextIn.createScriptProcessor(4096, 1, 1);
+      micProcessorRef.current = micProcessor;
+
+      micProcessor.onaudioprocess = (event) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+        const inputData = event.inputBuffer.getChannelData(0);
+
+        if (!shouldSendMicAudio(inputData)) return;
+
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const sample = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        }
+
+        let binary = "";
+        const bytes = new Uint8Array(pcm16.buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+
+        wsRef.current.send(JSON.stringify({
+          realtimeInput: {
+            audio: { data: btoa(binary), mimeType: "audio/pcm;rate=16000" }
+          }
+        }));
+      };
+
+      const silentGain = audioContextIn.createGain();
+      silentGain.gain.value = 0;
+      source.connect(micProcessor);
+      micProcessor.connect(silentGain);
+      silentGain.connect(audioContextIn.destination);
+
+      console.log("[Agente Live] Mic ready");
+      return true;
+    } catch (err) {
+      console.error("[Agente Live] Mic error:", err);
+      return false;
+    }
+  };
+
+  const stopMic = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+      } catch (e) {}
+    }
+    if (micProcessorRef.current) {
+      try { micProcessorRef.current.disconnect(); } catch (e) {}
+      micProcessorRef.current = null;
+    }
+    if (micStreamRef.current) {
+      try { micStreamRef.current.getTracks().forEach((track) => track.stop()); } catch (e) {}
+      micStreamRef.current = null;
+    }
+    if (audioContextInRef.current) {
+      try { audioContextInRef.current.close(); } catch (e) {}
+      audioContextInRef.current = null;
+    }
+  };
+
+  const handleLiveUserTranscript = (text: string) => {
+    if (!text.trim()) return;
+    setLiveUserSubtitle(text);
     const userMsg: ChatMessage = {
       sender: "user",
-      text: `🎙️ ${speechText}`,
+      text: `🎙️ ${text}`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
-    const updated = [...messages, userMsg];
-    setMessages(updated);
+    setMessages((prev) => [...prev, userMsg]);
+  };
+
+  const startContinuousSpeech = async () => {
+    isStoppingRef.current = false;
+    setupCompletedRef.current = false;
+    assistantResponseActiveRef.current = false;
+    assistantGenerationCompleteRef.current = false;
+    consecutiveBargeInChunksRef.current = 0;
+    currentAIResponseRef.current = "";
+
+    setCallStatus("connecting");
+    setLiveUserSubtitle("Conectando ao Gemini...");
+    setLiveAISubtitle("");
 
     try {
-      const res = await fetch("/api/chat-continuous", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: updated,
-          text: speechText,
-          email
-        })
-      });
+      const keyRes = await fetch("/api/gemini-key");
+      const keyData = await keyRes.json();
+      const apiKey = keyData.apiKey;
 
-      if (res.ok) {
-        const data = await res.json();
-        
-        const aiMsg: ChatMessage = {
-          sender: "ai",
-          text: data.aiResponse,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        };
-        setMessages((prev) => [...prev, aiMsg]);
-        setLiveAISubtitle(data.aiResponse);
+      if (!apiKey) {
+        throw new Error("Chave da API do Gemini não configurada.");
+      }
 
-        if (data.triggerCompose) {
-          setCallStatus("speaking");
-          setLiveUserSubtitle("Composição automática iniciada! Desligando a chamada...");
-          
-          if (data.aiAudio) {
-            const audio = new Audio(data.aiAudio);
-            activeCallAudioRef.current = audio;
-            audio.onended = () => {
-              setIsLiveCallActive(false);
-              setCallStatus("idle");
-              onFinishChat([...updated, aiMsg]);
-            };
-            await audio.play().catch(e => console.error(e));
-          } else {
-            setTimeout(() => {
-              setIsLiveCallActive(false);
-              setCallStatus("idle");
-              onFinishChat([...updated, aiMsg]);
-            }, 3000);
-          }
-          return;
-        }
+      const MODEL = "models/gemini-2.5-flash-native-audio-latest";
+      const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
-        if (data.aiAudio) {
-          setCallStatus("speaking");
-          const audio = new Audio(data.aiAudio);
-          activeCallAudioRef.current = audio;
-          audio.onended = () => {
-            if (isLiveCallActiveRef.current) {
-              setCallStatus("listening");
-              setLiveUserSubtitle("Ouvindo você...");
-              try {
-                recognitionRef.current?.start();
-              } catch (err) {
-                console.error(err);
+      if (!audioContextOutRef.current) {
+        audioContextOutRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      }
+      audioContextOutRef.current.resume();
+      nextPlayTimeRef.current = audioContextOutRef.current.currentTime;
+
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      const systemInstructionText = `
+Você é o Compositor Virtual do UnaMusica.com.br, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam, por apenas R$ 1,00 via Pix.
+Seu objetivo é conduzir uma entrevista de onboarding profunda, calorosa e engajadora com o usuário para capturar absolutamente todas as informações necessárias para gerar a base da música:
+1. Destinatário (para quem é a música?)
+2. Ocasião especial (aniversário, declaração de amor, agradecimento, etc.)
+3. Estilo musical (Sertanejo, Pop, MPB, Samba, etc.)
+4. Lembranças, apelidos, piadas internas e histórias reais.
+5. Tom desejado (emocionante ou alegre).
+
+Instruções importantes de voz:
+- Responda sempre em Português do Brasil de forma extremamente natural, simpática, curta e concisa (máximo 2 a 3 frases por resposta), pois esta é uma conversa de voz em tempo real.
+- Faça apenas uma pergunta clara e instigante de cada vez.
+- Se o usuário falar algo ofensivo ou inadequado, chame a atenção de forma educada.
+- Quando tiver coletado todos os detalhes essenciais de forma clara, diga expressamente algo como: "Perfeito! Já tenho todos os detalhes para compor a sua canção. Você pode clicar no botão Compor Música abaixo para gerarmos a sua melodia."
+`;
+
+      ws.onopen = () => {
+        console.log("[Agente Live] WebSocket open");
+        ws.send(JSON.stringify({
+          setup: {
+            model: MODEL,
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
+            },
+            realtimeInputConfig: {
+              automaticActivityDetection: {
+                disabled: false,
+                startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+                endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
+                prefixPaddingMs: 250,
+                silenceDurationMs: 600
               }
+            },
+            systemInstruction: { parts: [{ text: systemInstructionText }] }
+          }
+        }));
+      };
+
+      ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data instanceof Blob ? await event.data.text() : event.data);
+
+        if (data.setupComplete) {
+          setupCompletedRef.current = true;
+          console.log("[Agente Live] Setup complete");
+          setCallStatus("listening");
+          setLiveUserSubtitle("Ouvindo você...");
+          startMic();
+
+          // Trigger initial greeting automatically
+          setTimeout(() => {
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                clientContent: {
+                  turns: [{ role: "user", parts: [{ text: "Olá. Por favor, apresente-se calorosamente como o Compositor Virtual da UnaMusica e pergunte-me para quem é a música." }] }],
+                  turnComplete: true
+                }
+              }));
             }
-          };
-          await audio.play().catch(e => console.error(e));
-        } else {
-          if (isLiveCallActiveRef.current) {
-            setCallStatus("listening");
-            setLiveUserSubtitle("Ouvindo você...");
-            try {
-              recognitionRef.current?.start();
-            } catch (err) {}
+          }, 500);
+        }
+
+        if (data.serverContent?.interrupted) {
+          console.log("[Agente Live] Interrupted by user speaking");
+          stopQueuedAudio();
+          assistantResponseActiveRef.current = false;
+          assistantGenerationCompleteRef.current = false;
+          setCallStatus("listening");
+        }
+
+        if (data.serverContent?.modelTurn?.parts) {
+          data.serverContent.modelTurn.parts.forEach((part: any) => {
+            if (part.inlineData?.mimeType?.startsWith("audio/pcm")) {
+              playAudio(part.inlineData.data);
+            }
+          });
+        }
+
+        if (data.serverContent?.inputTranscription?.text) {
+          const userText = data.serverContent.inputTranscription.text;
+          console.log("[Agente Live] User Transcript:", userText);
+          handleLiveUserTranscript(userText);
+        }
+
+        if (data.serverContent?.outputTranscription?.text) {
+          const aiTextPart = data.serverContent.outputTranscription.text;
+          console.log("[Agente Live] AI Transcript Part:", aiTextPart);
+          currentAIResponseRef.current += aiTextPart;
+          setLiveAISubtitle(currentAIResponseRef.current);
+        }
+
+        if (data.serverContent?.turnComplete || data.serverContent?.generationComplete) {
+          assistantGenerationCompleteRef.current = true;
+          checkPlaybackEnded();
+
+          // Commit current accumulated AI subtitle to the history messages
+          if (currentAIResponseRef.current.trim()) {
+            const currentResponse = currentAIResponseRef.current.trim();
+            currentAIResponseRef.current = "";
+            setMessages((prev) => [
+              ...prev,
+              {
+                sender: "ai",
+                text: currentResponse,
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              }
+            ]);
           }
         }
-      } else {
-        throw new Error("API return error");
-      }
-    } catch (err) {
-      console.error("Error in continuous speech logic:", err);
-      if (isLiveCallActiveRef.current) {
-        setCallStatus("listening");
-        setLiveUserSubtitle("Ouvindo você...");
-        try {
-          recognitionRef.current?.start();
-        } catch (e) {}
-      }
-    } finally {
-      setIsTyping(false);
+      };
+
+      ws.onerror = (err) => {
+        console.error("[Agente Live] WS error:", err);
+        setCallStatus("idle");
+        setLiveUserSubtitle("Erro na conexão...");
+      };
+
+      ws.onclose = () => {
+        console.log("[Agente Live] WS close");
+        if (!isStoppingRef.current) {
+          stopContinuousSpeech();
+        }
+      };
+
+    } catch (err: any) {
+      console.error("[Agente Live] Error starting live WebSocket:", err);
+      setCallStatus("idle");
+      setLiveUserSubtitle("Erro ao conectar.");
     }
+  };
+
+  const stopContinuousSpeech = () => {
+    isStoppingRef.current = true;
+    stopMic();
+    stopQueuedAudio();
+
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+    }
+    wsRef.current = null;
+    setCallStatus("idle");
   };
 
   useEffect(() => {
     if (isLiveCallActive) {
       startContinuousSpeech();
     } else {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch (err) {}
-      }
-      if (activeCallAudioRef.current) {
-        activeCallAudioRef.current.pause();
-      }
-      setCallStatus("idle");
+      stopContinuousSpeech();
     }
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch (err) {}
-      }
-      if (activeCallAudioRef.current) {
-        activeCallAudioRef.current.pause();
-      }
+      stopContinuousSpeech();
     };
   }, [isLiveCallActive]);
 
