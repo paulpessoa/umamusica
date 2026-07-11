@@ -30,37 +30,43 @@ async function generateContentWithFallback(params: {
   contents: any[];
   config?: any;
 }) {
-  try {
-    return await ai.models.generateContent({
-      model: params.model,
-      contents: params.contents,
-      config: params.config,
-    });
-  } catch (error: any) {
-    const isQuotaOrUnavailable = 
-      error?.status === "RESOURCE_EXHAUSTED" || 
-      error?.status === "UNAVAILABLE" ||
-      error?.message?.includes("quota") ||
-      error?.message?.includes("demand") ||
-      error?.message?.includes("429") ||
-      error?.message?.includes("503") ||
-      (error?.code === 429 || error?.code === 503);
+  const modelsToTry = [
+    params.model,
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite"
+  ];
 
-    if (isQuotaOrUnavailable) {
-      console.warn(`[Fallback Engine] Model ${params.model} failed due to quota or temporary unavailability. Retrying with gemini-flash-latest...`);
-      try {
-        return await ai.models.generateContent({
-          model: "gemini-flash-latest",
-          contents: params.contents,
-          config: params.config,
-        });
-      } catch (fallbackError: any) {
-        console.warn(`[Fallback Engine] Fallback model gemini-flash-latest also failed:`, fallbackError);
-        throw error;
+  let lastError: any = null;
+
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`[Fallback Engine] Trying generateContent with model: ${modelName}...`);
+      return await ai.models.generateContent({
+        model: modelName,
+        contents: params.contents,
+        config: params.config,
+      });
+    } catch (error: any) {
+      lastError = error;
+      const isQuotaOrUnavailable = 
+        error?.status === "RESOURCE_EXHAUSTED" || 
+        error?.status === "UNAVAILABLE" ||
+        error?.message?.includes("quota") ||
+        error?.message?.includes("demand") ||
+        error?.message?.includes("429") ||
+        error?.message?.includes("503") ||
+        (error?.code === 429 || error?.code === 503);
+
+      if (isQuotaOrUnavailable) {
+        console.warn(`[Fallback Engine] Model ${modelName} failed due to quota/temporary unavailability. Error: ${error.message || error}`);
+        continue; // Try next model in list
       }
+      throw error; // Rethrow actual non-quota errors immediately
     }
-    throw error;
   }
+
+  console.warn(`[Fallback Engine] All fallback models failed. Re-throwing last error.`);
+  throw lastError;
 }
 
 // Local file database path for persistence
@@ -395,7 +401,66 @@ app.post("/api/checkout", async (req, res) => {
 
     if (apiKey) {
       try {
-        console.log("AbacatePay API Key detected. Attempting real Pix generation...");
+        console.log("AbacatePay API Key detected. Setting up dynamic customer...");
+        
+        let customerIdToUse = "cust_unamusica_client";
+        try {
+          // Attempt to create customer first
+          const custResponse = await fetch("https://api.abacatepay.com/v1/customer/create", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              email,
+              name: "Cliente UnaMusica",
+              cellphone: "99999999999",
+              taxId: "00000000000"
+            })
+          });
+
+          if (custResponse.ok) {
+            const custResult: any = await custResponse.json();
+            if (custResult && custResult.data && custResult.data.id) {
+              customerIdToUse = custResult.data.id;
+              console.log("AbacatePay customer created successfully:", customerIdToUse);
+            }
+          } else {
+            const errText = await custResponse.text();
+            console.log(`Customer creation returned status ${custResponse.status}. Attempting to locate existing customer...`);
+            
+            // Fallback: list customers to find existing
+            let listResponse = await fetch("https://api.abacatepay.com/v1/customer", {
+              headers: { "Authorization": `Bearer ${apiKey}` }
+            });
+            if (!listResponse.ok) {
+              listResponse = await fetch("https://api.abacatepay.com/v1/customer/list", {
+                headers: { "Authorization": `Bearer ${apiKey}` }
+              });
+            }
+
+            if (listResponse.ok) {
+              const listResult: any = await listResponse.json();
+              if (listResult && listResult.data) {
+                const list = Array.isArray(listResult.data) 
+                  ? listResult.data 
+                  : (Array.isArray(listResult.data.customers) ? listResult.data.customers : []);
+                const existingCust = list.find((c: any) => c.email === email);
+                if (existingCust && existingCust.id) {
+                  customerIdToUse = existingCust.id;
+                  console.log("Located existing AbacatePay customer ID:", customerIdToUse);
+                }
+              }
+            } else {
+              console.warn("Listing customers failed:", listResponse.status);
+            }
+          }
+        } catch (custErr: any) {
+          console.warn("Failed to find or create customer dynamically:", custErr.message || custErr);
+        }
+
+        console.log(`Generating Pix Billing with Customer ID: ${customerIdToUse}...`);
         const response = await fetch("https://api.abacatepay.com/v1/billing/create", {
           method: "POST",
           headers: {
@@ -414,7 +479,7 @@ app.post("/api/checkout", async (req, res) => {
             ],
             returnUrl: process.env.APP_URL || `http://localhost:3000`,
             completionUrl: process.env.APP_URL || `http://localhost:3000`,
-            customerId: "cust_unamusica_client",
+            customerId: customerIdToUse,
             metadata: {
               orderId,
               email
@@ -431,10 +496,11 @@ app.post("/api/checkout", async (req, res) => {
             console.log("Real AbacatePay Pix Billing created:", realPaymentId);
           }
         } else {
-          console.error("AbacatePay API failed, status code:", response.status);
+          const errBody = await response.text();
+          console.warn(`AbacatePay API billing generation returned non-200 status (${response.status}):`, errBody);
         }
-      } catch (e) {
-        console.error("Failed to connect to AbacatePay. Switched gracefully to Sandbox mode:", e);
+      } catch (e: any) {
+        console.warn("Failed to connect to AbacatePay. Switched gracefully to Sandbox mode:", e.message || e);
       }
     }
 
