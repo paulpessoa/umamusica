@@ -28,3 +28,22 @@
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #d1d5db;
 }
+
+/* Force pointer cursor on all clickable elements globally */
+button, 
+a, 
+select, 
+input[type="button"], 
+input[type="submit"], 
+[role="button"] {
+  cursor: pointer;
+}
+
+/* Disabled elements should show not-allowed cursor */
+button:disabled,
+button[disabled],
+input:disabled,
+[disabled] {
+  cursor: not-allowed !important;
+}
+
