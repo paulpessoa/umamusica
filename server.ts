@@ -5,7 +5,6 @@ import fs from "fs"
 import dotenv from "dotenv"
 import { GoogleGenAI, Type } from "@google/genai"
 import { createClient } from "@supabase/supabase-js"
-import nodemailer from "nodemailer"
 import cors from "cors"
 import crypto from "crypto"
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
@@ -17,19 +16,55 @@ const app = express()
 app.use(cors())
 const PORT = parseInt(process.env.PORT || "3000", 10)
 
-// Initialize SMTP transporter using environment variables (standardized for any SMTP provider)
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "587", 10),
-  secure: false, // TLS obrigatório para a porta 587 da Brevo
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  },
-  tls: {
-    rejectUnauthorized: false // Garante que não vai barrar por certificado em produção
+// ─── Brevo API Email Helper (No IP restrictions) ──────────────
+async function sendEmailViaBrevo(params: {
+  to: string
+  subject: string
+  htmlContent: string
+  fromEmail?: string
+  fromName?: string
+}) {
+  const apiKey = process.env.BREVO_API_KEY
+  const fromEmail = params.fromEmail || process.env.BREVO_SENDER_EMAIL || "contato@qisites.com.br"
+  const fromName = params.fromName || "1Música"
+
+  if (!apiKey) {
+    console.warn("[Brevo] API Key not configured. Email not sent.")
+    return { success: false, error: "API Key missing" }
   }
-})
+
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        to: [{ email: params.to }],
+        sender: { email: fromEmail, name: fromName },
+        subject: params.subject,
+        htmlContent: params.htmlContent
+      })
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.text()
+      console.error(
+        `[Brevo] Email send failed (${response.status}):`,
+        errorBody
+      )
+      return { success: false, error: errorBody }
+    }
+
+    const data = await response.json()
+    console.log(`[Brevo] Email sent successfully to ${params.to}`)
+    return { success: true, messageId: data.messageId }
+  } catch (error: any) {
+    console.error("[Brevo] Email send error:", error.message || error)
+    return { success: false, error: error.message }
+  }
+}
 
 app.use(express.json({ limit: "25mb" }))
 
@@ -177,7 +212,7 @@ app.get("/api/invite/:code", async (req, res) => {
       return res.status(404).json({ error: "Invite not found" })
     }
 
-    // Mask the email for privacy (e.g. paul***@gmail.com)
+    // Mask the email for privacy (e.g paul***@gmail.com)
     const emailParts = user.email.split("@")
     if (emailParts.length === 2) {
       const namePart = emailParts[0]
@@ -226,35 +261,21 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
       expires_at: expiresAt.toISOString()
     })
 
-    // Send via SMTP
-    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-      try {
-        const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
-        await transporter.sendMail({
-          from: `"1Música" <${fromEmail}>`,
-          to: email,
-          subject: "Seu código de verificação — 1Música",
-          html: `
-            <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
-              <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
-              <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
-              <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
-                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
-              </div>
-              <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
-            </div>
-          `
-        })
-        console.log(`[SMTP OTP] Code sent to ${email}`)
-      } catch (smtpErr: any) {
-        console.error(
-          "[SMTP OTP] Failed to send email:",
-          smtpErr.message || smtpErr
-        )
-      }
-    } else {
-      console.log(`[OTP] SMTP credentials not set. Code for ${email}: ${code}`)
-    }
+    // Send via Brevo API (no IP restrictions!)
+    await sendEmailViaBrevo({
+      to: email,
+      subject: "Seu código de verificação — 1Música",
+      htmlContent: `
+        <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
+          <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
+          <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
+          <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
+            <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
+          </div>
+          <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
+        </div>
+      `
+    })
 
     res.json({ success: true })
   } catch (error: any) {
@@ -323,7 +344,6 @@ app.post("/api/verify-otp", async (req, res) => {
 
     if (!user) {
       // Create new user
-      // Create new user
       const { referralCode } = req.body
       let referredBy = null
       let initialBalance = 0
@@ -358,30 +378,21 @@ app.post("/api/verify-otp", async (req, res) => {
               })
               .eq("id", referredBy)
 
-            // Send notification email to referrer
-            if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-              try {
-                const fromEmail =
-                  process.env.SMTP_FROM || "contato@qisites.com.br"
-                await transporter.sendMail({
-                  from: `"1Música" <${fromEmail}>`,
-                  to: refUser.email,
-                  subject: "Você ganhou 1 música grátis!",
-                  html: `
-                    <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
-                      <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
-                      <p style="color: #555; font-size: 14px;">Boas notícias! Um amigo acabou de se cadastrar usando seu link.</p>
-                      <div style="background: #FFF0F0; border-radius: 12px; padding: 20px; margin: 20px 0;">
-                        <span style="font-size: 24px; font-weight: bold; color: #FF5A5F;">+1 Música Grátis</span>
-                      </div>
-                      <p style="color: #888; font-size: 12px;">Seu novo saldo já está disponível na sua conta.</p>
-                    </div>
-                  `
-                })
-              } catch (smtpErr) {
-                console.error("[Referral Signup Email Error]", smtpErr)
-              }
-            }
+            // Send notification email to referrer via Brevo API
+            await sendEmailViaBrevo({
+              to: refUser.email,
+              subject: "Você ganhou 1 música grátis!",
+              htmlContent: `
+                <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
+                  <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
+                  <p style="color: #555; font-size: 14px;">Boas notícias! Um amigo acabou de se cadastrar usando seu link.</p>
+                  <div style="background: #FFF0F0; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                    <span style="font-size: 24px; font-weight: bold; color: #FF5A5F;">+1 Música Grátis</span>
+                  </div>
+                  <p style="color: #888; font-size: 12px;">Seu novo saldo já está disponível na sua conta.</p>
+                </div>
+              `
+            })
           }
         }
       }
@@ -741,9 +752,6 @@ app.get("/api/orders/:id", async (req, res) => {
     return res.status(404).json({ error: "Pedido não encontrado" })
   }
 
-  // Do not expose email entirely to public if accessed without auth
-  // In a real app we would check auth headers. For MVP, we mask it or leave it.
-
   res.json(data)
 })
 
@@ -902,7 +910,6 @@ Campos obrigatórios:
 Retorne JSON válido.
 `
 
-    // This call might fail if the user's Gemini key is invalid.
     const modelResponse = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: analysisPrompt,
@@ -996,8 +1003,6 @@ Retorne JSON válido.
       }
     } else {
       // Real transaction: Call Google Lyria.
-      // Since Lyria is a private preview requiring restricted credentials, this will fail.
-      // Failing here triggers the catch block below which issues a refund.
       console.log(
         "[Music Generation] Real transaction. Attempting Lyria API call..."
       )
@@ -1054,43 +1059,36 @@ Retorne JSON válido.
       })
       .eq("id", order.id)
 
-    // Send email with download link (via SMTP)
+    // Send email with download link via Brevo API
     const frontendUrl =
       process.env.FRONTEND_URL ||
       process.env.APP_URL ||
       `http://localhost:${PORT}`
     const apiUrl =
       process.env.API_URL || process.env.APP_URL || `http://localhost:${PORT}`
-    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-      try {
-        const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
-        await transporter.sendMail({
-          from: `"1Música" <${fromEmail}>`,
-          to: order.email,
-          subject: ` Sua música "${songMetadata.title}" está pronta!`,
-          html: `
-            <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-              <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
-              <p>Olá!</p>
-              <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
-              <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
-                <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
-                <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
-              </div>
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${frontendUrl}/musica/${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
-              </div>
-              <div style="text-align: center; margin: 20px 0;">
-                <a href="${apiUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
-              </div>
-              <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-            </div>
-          `
-        })
-      } catch (smtpErr) {
-        console.error("[SMTP] Failed to send completion email:", smtpErr)
-      }
-    }
+
+    await sendEmailViaBrevo({
+      to: order.email,
+      subject: `Sua música "${songMetadata.title}" está pronta!`,
+      htmlContent: `
+        <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+          <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
+          <p>Olá!</p>
+          <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
+          <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
+            <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
+            <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
+          </div>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${frontendUrl}/musica/${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
+          </div>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${apiUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
+          </div>
+          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+        </div>
+      `
+    })
 
     const { data: updatedOrder } = await supabase
       .from("orders")
@@ -1111,7 +1109,7 @@ Retorne JSON válido.
       error.message || error
     )
 
-    // If order was fetched and is a real payment (has payment_id and is not mock), initiate automatic refund
+    // If order was fetched and is a real payment, initiate automatic refund
     if (fetchedOrder) {
       const isRealPayment =
         fetchedOrder.payment_id &&
@@ -1160,54 +1158,43 @@ Retorne JSON válido.
         }
       }
 
-      // Send email explaining the refund or cancellation to the user
-      if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-        try {
-          const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
-          const emailSubject = isRealPayment
-            ? "⚠️ Estorno efetuado — Falha na geração da sua música"
-            : "⚠️ Pedido cancelado — Falha na geração da sua música"
+      // Send email explaining the refund via Brevo API
+      const emailSubject = isRealPayment
+        ? "⚠️ Estorno efetuado — Falha na geração da sua música"
+        : "⚠️ Pedido cancelado — Falha na geração da sua música"
 
-          const emailHtml = isRealPayment
-            ? `
-            <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-              <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
-              <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
-              <p>Olá,</p>
-              <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
-              <p>Para sua total segurança e conforme prometido, <strong>um estorno integral do valor de R$ 1,00 já foi processado automaticamente</strong> de volta para a sua conta Pix no Mercado Pago.</p>
-              <p>O valor deve constar na sua conta em alguns minutos.</p>
-              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
-              <br/>
-              <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-            </div>
-          `
-            : `
-            <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
-              <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
-              <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
-              <p>Olá,</p>
-              <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
-              <p>Como este pedido foi iniciado de forma gratuita (via cupom ou testes), nenhuma cobrança foi realizada e sua compra foi cancelada com sucesso.</p>
-              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
-              <br/>
-              <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-            </div>
-          `
+      const emailHtml = isRealPayment
+        ? `
+        <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+          <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
+          <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
+          <p>Olá,</p>
+          <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
+          <p>Para sua total segurança e conforme prometido, <strong>um estorno integral do valor de R$ 1,00 já foi processado automaticamente</strong> de volta para a sua conta Pix no Mercado Pago.</p>
+          <p>O valor deve constar na sua conta em alguns minutos.</p>
+          <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
+          <br/>
+          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+        </div>
+      `
+        : `
+        <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
+          <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
+          <h3 style="color: #dd4b39; text-align: center; margin-top: 0;">Infelizmente ocorreu um erro de processamento</h3>
+          <p>Olá,</p>
+          <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
+          <p>Como este pedido foi iniciado de forma gratuita (via cupom ou testes), nenhuma cobrança foi realizada e sua compra foi cancelada com sucesso.</p>
+          <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
+          <br/>
+          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+        </div>
+      `
 
-          await transporter.sendMail({
-            from: `"1Música" <${fromEmail}>`,
-            to: fetchedOrder.email,
-            subject: emailSubject,
-            html: emailHtml
-          })
-          console.log(
-            `[SMTP Refund] Failure/Refund email sent to ${fetchedOrder.email}`
-          )
-        } catch (smtpErr) {
-          console.error("[SMTP Refund] Failed to send failure email:", smtpErr)
-        }
-      }
+      await sendEmailViaBrevo({
+        to: fetchedOrder.email,
+        subject: emailSubject,
+        htmlContent: emailHtml
+      })
     }
 
     res.status(500).json({

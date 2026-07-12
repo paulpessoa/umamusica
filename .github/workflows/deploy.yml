@@ -63,12 +63,8 @@ jobs:
             --set-env-vars=SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
             --set-env-vars=ML_TOKEN=${{ secrets.ML_TOKEN }}
             --set-env-vars=ML_P_KEY=${{ secrets.ML_P_KEY }}
-            --set-env-vars=SMTP_HOST=${{ secrets.SMTP_HOST }}
-            --set-env-vars=SMTP_PORT=${{ secrets.SMTP_PORT }}
-            --set-env-vars=SMTP_SECURE=false
-            --set-env-vars=SMTP_USER=${{ secrets.SMTP_USER }}
-            --set-env-vars=SMTP_FROM=${{ secrets.SMTP_FROM }}
-            --set-env-vars=SMTP_PASS=${{ secrets.SMTP_PASS }}
+            --set-env-vars=BREVO_API_KEY=${{ secrets.BREVO_API_KEY }}
+            --set-env-vars=BREVO_SENDER_EMAIL=${{ secrets.BREVO_SENDER_EMAIL }}
             --set-env-vars=APP_URL=${{ vars.APP_URL }}
             --set-env-vars=API_URL=${{ vars.API_URL }}
             --set-env-vars=FRONTEND_URL=${{ vars.FRONTEND_URL }}
