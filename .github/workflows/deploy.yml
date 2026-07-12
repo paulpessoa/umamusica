@@ -67,6 +67,7 @@ jobs:
             --set-env-vars=SMTP_PORT=${{ secrets.SMTP_PORT }}
             --set-env-vars=SMTP_SECURE=false
             --set-env-vars=SMTP_USER=${{ secrets.SMTP_USER }}
+            --set-env-vars=SMTP_FROM=${{ secrets.SMTP_FROM }}
             --set-env-vars=BREVO_SMTP_KEY=${{ secrets.BREVO_SMTP_KEY }}
             --set-env-vars=SMTP_PASS=${{ secrets.BREVO_SMTP_KEY }}
             --set-env-vars=APP_URL=${{ vars.APP_URL }}

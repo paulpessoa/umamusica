@@ -80,27 +80,32 @@ const supabase = createClient(
 )
 
 // Helper to verify session token
-async function verifySession(req: express.Request, res: express.Response): Promise<{ email: string } | null> {
-  const authHeader = req.headers.authorization;
+async function verifySession(
+  req: express.Request,
+  res: express.Response
+): Promise<{ email: string } | null> {
+  const authHeader = req.headers.authorization
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Token de sessão ausente ou inválido" });
-    return null;
+    res.status(401).json({ error: "Token de sessão ausente ou inválido" })
+    return null
   }
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.split(" ")[1]
 
   // Find user by token
   const { data: user, error } = await supabase
     .from("users")
     .select("email, status")
     .eq("session_token", token)
-    .single();
+    .single()
 
   if (error || !user || user.status !== "active") {
-    res.status(401).json({ error: "Sessão expirada ou inválida. Por favor, faça login novamente." });
-    return null;
+    res.status(401).json({
+      error: "Sessão expirada ou inválida. Por favor, faça login novamente."
+    })
+    return null
   }
 
-  return { email: user.email };
+  return { email: user.email }
 }
 
 // Helper to call generateContent with automatic fallback on quota errors
@@ -146,47 +151,45 @@ async function generateContentWithFallback(params: {
 // API ROUTES
 // ============================================================
 
-
-
 // Health Check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
+  res.json({ status: "ok", timestamp: new Date().toISOString() })
+})
 
 // Referral Info
 app.get("/api/invite/:code", async (req, res) => {
   try {
-    const { code } = req.params;
+    const { code } = req.params
     if (!code) {
-      return res.status(400).json({ error: "Code required" });
+      return res.status(400).json({ error: "Code required" })
     }
-    const cleanCode = code.trim().toUpperCase();
+    const cleanCode = code.trim().toUpperCase()
     const { data: user, error } = await supabase
       .from("users")
       .select("email")
       .eq("referral_code", cleanCode)
-      .single();
+      .single()
 
     if (error || !user) {
-      return res.status(404).json({ error: "Invite not found" });
+      return res.status(404).json({ error: "Invite not found" })
     }
 
     // Mask the email for privacy (e.g. paul***@gmail.com)
-    const emailParts = user.email.split("@");
+    const emailParts = user.email.split("@")
     if (emailParts.length === 2) {
-      const namePart = emailParts[0];
-      const domainPart = emailParts[1];
-      const visibleLen = Math.max(2, Math.floor(namePart.length / 2));
-      const maskedName = namePart.substring(0, visibleLen) + "***";
-      return res.json({ email: `${maskedName}@${domainPart}` });
+      const namePart = emailParts[0]
+      const domainPart = emailParts[1]
+      const visibleLen = Math.max(2, Math.floor(namePart.length / 2))
+      const maskedName = namePart.substring(0, visibleLen) + "***"
+      return res.json({ email: `${maskedName}@${domainPart}` })
     }
 
-    return res.json({ email: user.email });
+    return res.json({ email: user.email })
   } catch (error) {
-    console.error("Invite error:", error);
-    res.status(500).json({ error: "Server error" });
+    console.error("Invite error:", error)
+    res.status(500).json({ error: "Server error" })
   }
-});
+})
 
 // ─── OTP Email Verification ────────────────────────────────
 app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
@@ -209,7 +212,7 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
     // Send via SMTP
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = "contato@qisites.com.br";
+        const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: email,
@@ -270,72 +273,79 @@ app.post("/api/verify-otp", async (req, res) => {
       .update({ verified: true })
       .eq("id", data[0].id)
 
-    const sessionToken = crypto.randomUUID();
+    const sessionToken = crypto.randomUUID()
 
     // Check if user exists
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = email.toLowerCase().trim()
     let { data: user, error: userError } = await supabase
       .from("users")
       .select("id, email, name, referral_code, free_songs_balance, status")
       .eq("email", cleanEmail)
       .single()
 
-    if (user && user.status === 'trash') {
+    if (user && user.status === "trash") {
       // Reactivate account
       await supabase
         .from("users")
-        .update({ status: 'active', deleted_at: null, session_token: sessionToken })
-        .eq("id", user.id);
-      user.status = 'active';
-      user.session_token = sessionToken;
+        .update({
+          status: "active",
+          deleted_at: null,
+          session_token: sessionToken
+        })
+        .eq("id", user.id)
+      user.status = "active"
+      user.session_token = sessionToken
     } else if (user) {
       // Save session token for existing active user
       await supabase
         .from("users")
         .update({ session_token: sessionToken })
-        .eq("id", user.id);
-      user.session_token = sessionToken;
+        .eq("id", user.id)
+      user.session_token = sessionToken
     }
 
     if (!user) {
       // Create new user
       // Create new user
-      const { referralCode } = req.body;
-      let referredBy = null;
-      let initialBalance = 0;
+      const { referralCode } = req.body
+      let referredBy = null
+      let initialBalance = 0
 
       if (referralCode) {
         const { data: refUser } = await supabase
           .from("users")
           .select("id, email, free_songs_balance")
           .eq("referral_code", referralCode.trim().toUpperCase())
-          .single();
+          .single()
         if (refUser) {
-          referredBy = refUser.id;
-          initialBalance = 1; // Invited user gets 1 free song immediately
+          referredBy = refUser.id
+          initialBalance = 1 // Invited user gets 1 free song immediately
 
           // Check monthly limit for referrer (max 5 friends/songs per month)
-          const startOfMonth = new Date();
-          startOfMonth.setDate(1);
-          startOfMonth.setHours(0, 0, 0, 0);
+          const startOfMonth = new Date()
+          startOfMonth.setDate(1)
+          startOfMonth.setHours(0, 0, 0, 0)
 
           const { count } = await supabase
             .from("users")
             .select("id", { count: "exact" })
             .eq("referred_by", referredBy)
-            .gte("created_at", startOfMonth.toISOString());
+            .gte("created_at", startOfMonth.toISOString())
 
           if (count === null || count < 5) {
             // Referrer gets 1 free song
             await supabase
               .from("users")
-              .update({ free_songs_balance: (refUser.free_songs_balance || 0) + 1 })
-              .eq("id", referredBy);
+              .update({
+                free_songs_balance: (refUser.free_songs_balance || 0) + 1
+              })
+              .eq("id", referredBy)
 
             // Send notification email to referrer
             if (process.env.SMTP_USER && process.env.SMTP_PASS) {
               try {
-                const fromEmail = "contato@qisites.com.br";
+                const fromEmail =
+                  process.env.SMTP_FROM || "contato@qisites.com.br"
                 await transporter.sendMail({
                   from: `"1Música" <${fromEmail}>`,
                   to: refUser.email,
@@ -350,16 +360,19 @@ app.post("/api/verify-otp", async (req, res) => {
                       <p style="color: #888; font-size: 12px;">Seu novo saldo já está disponível na sua conta.</p>
                     </div>
                   `
-                });
+                })
               } catch (smtpErr) {
-                console.error("[Referral Signup Email Error]", smtpErr);
+                console.error("[Referral Signup Email Error]", smtpErr)
               }
             }
           }
         }
       }
 
-      const newReferralCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+      const newReferralCode = Math.random()
+        .toString(36)
+        .substr(2, 6)
+        .toUpperCase()
 
       const { data: newUser, error: createError } = await supabase
         .from("users")
@@ -370,11 +383,13 @@ app.post("/api/verify-otp", async (req, res) => {
           free_songs_balance: initialBalance,
           session_token: sessionToken
         })
-        .select("id, email, name, referral_code, free_songs_balance, session_token")
+        .select(
+          "id, email, name, referral_code, free_songs_balance, session_token"
+        )
         .single()
 
       if (!createError && newUser) {
-        user = newUser;
+        user = newUser
       }
     }
 
@@ -388,26 +403,26 @@ app.post("/api/verify-otp", async (req, res) => {
 // ─── Get Current User ──────────────────────────────────────
 app.get("/api/users/me", async (req, res) => {
   try {
-    const verified = await verifySession(req, res);
-    if (!verified) return;
+    const verified = await verifySession(req, res)
+    if (!verified) return
 
-    const email = req.query.email as string;
+    const email = req.query.email as string
     if (!email) {
-      return res.status(400).json({ error: "Email obrigatório" });
+      return res.status(400).json({ error: "Email obrigatório" })
     }
 
     if (email.toLowerCase().trim() !== verified.email.toLowerCase().trim()) {
-      return res.status(403).json({ error: "Acesso proibido." });
+      return res.status(403).json({ error: "Acesso proibido." })
     }
 
     const { data: user, error } = await supabase
       .from("users")
       .select("id, email, name, referral_code, free_songs_balance")
       .eq("email", email.toLowerCase().trim())
-      .single();
+      .single()
 
     if (error || !user) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
+      return res.status(404).json({ error: "Usuário não encontrado" })
     }
 
     // Fetch user's past generated songs
@@ -416,24 +431,24 @@ app.get("/api/users/me", async (req, res) => {
       .select("id, song_metadata, audio_storage_path, status, created_at")
       .eq("email", email.toLowerCase().trim())
       .in("status", ["completed", "paid", "pending_payment"])
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
 
     // Fetch referred contacts (masked for privacy)
     const { data: referredUsers } = await supabase
       .from("users")
       .select("id, email, created_at")
       .eq("referred_by", user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
 
-    const maskedReferred = (referredUsers || []).map(u => ({
+    const maskedReferred = (referredUsers || []).map((u) => ({
       id: u.id,
       email: u.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
       created_at: u.created_at
-    }));
+    }))
 
-    res.json({ user, orders: orders || [], referredUsers: maskedReferred });
+    res.json({ user, orders: orders || [], referredUsers: maskedReferred })
   } catch (error: any) {
-    res.status(500).json({ error: "Erro ao buscar usuário" });
+    res.status(500).json({ error: "Erro ao buscar usuário" })
   }
 })
 
@@ -555,8 +570,8 @@ Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo
 // ─── Checkout (MercadoPago Pix) ────────────────────────────
 app.post("/api/checkout", async (req, res) => {
   try {
-    const verified = await verifySession(req, res);
-    if (!verified) return;
+    const verified = await verifySession(req, res)
+    if (!verified) return
 
     const { email, chatTranscript, structuredPrompt } = req.body
     if (!email) {
@@ -564,7 +579,7 @@ app.post("/api/checkout", async (req, res) => {
     }
 
     if (email.toLowerCase().trim() !== verified.email.toLowerCase().trim()) {
-      return res.status(403).json({ error: "Acesso proibido." });
+      return res.status(403).json({ error: "Acesso proibido." })
     }
 
     const orderId = "order_" + Math.random().toString(36).substr(2, 9)
@@ -574,24 +589,26 @@ app.post("/api/checkout", async (req, res) => {
     let status: MusicStatus = "pending_payment"
 
     // Check if user has free balance
-    const cleanEmail = email.toLowerCase().trim();
+    const cleanEmail = email.toLowerCase().trim()
     const { data: user } = await supabase
       .from("users")
       .select("id, free_songs_balance")
       .eq("email", cleanEmail)
       .single()
 
-    const hasBalance = user && user.free_songs_balance > 0;
+    const hasBalance = user && user.free_songs_balance > 0
 
     if (hasBalance) {
-      console.log(`[Checkout] User ${cleanEmail} has balance. Using 1 free song.`);
+      console.log(
+        `[Checkout] User ${cleanEmail} has balance. Using 1 free song.`
+      )
       await supabase
         .from("users")
         .update({ free_songs_balance: user.free_songs_balance - 1 })
-        .eq("id", user.id);
+        .eq("id", user.id)
 
-      paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9);
-      status = "paid";
+      paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9)
+      status = "paid"
     } else {
       // Try MercadoPago Pix
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
@@ -621,7 +638,8 @@ app.post("/api/checkout", async (req, res) => {
             const mpData: any = await mpResponse.json()
             paymentId = mpData.id?.toString() || paymentId
             paymentQr =
-              mpData.point_of_interaction?.transaction_data?.qr_code_base64 || ""
+              mpData.point_of_interaction?.transaction_data?.qr_code_base64 ||
+              ""
             paymentCopiaCola =
               mpData.point_of_interaction?.transaction_data?.qr_code || ""
             console.log(`[MercadoPago] Pix created: ${paymentId}`)
@@ -678,25 +696,27 @@ app.post("/api/checkout", async (req, res) => {
 // ─── Logout ──────────────────────────────────────────────
 app.post("/api/logout", async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization
     if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.split(" ")[1];
+      const token = authHeader.split(" ")[1]
       await supabase
         .from("users")
         .update({ session_token: null })
-        .eq("session_token", token);
+        .eq("session_token", token)
     }
-    res.json({ success: true });
+    res.json({ success: true })
   } catch (error) {
-    res.status(500).json({ error: "Erro ao efetuar logout" });
+    res.status(500).json({ error: "Erro ao efetuar logout" })
   }
-});
+})
 
 // ─── Get Order Status ──────────────────────────────────────
 app.get("/api/orders/:id", async (req, res) => {
   const { data, error } = await supabase
     .from("orders")
-    .select("id, email, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, created_at")
+    .select(
+      "id, email, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, created_at"
+    )
     .eq("id", req.params.id)
     .single()
 
@@ -745,7 +765,9 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     }
 
     if (couponData.current_uses >= couponData.max_uses) {
-      return res.status(400).json({ error: "O limite de uso deste cupom foi atingido" })
+      return res
+        .status(400)
+        .json({ error: "O limite de uso deste cupom foi atingido" })
     }
 
     if (couponData.expires_at && new Date(couponData.expires_at) < new Date()) {
@@ -1015,13 +1037,11 @@ Retorne JSON válido.
       })
       .eq("id", order.id)
 
-
-
     // Send email with download link (via SMTP)
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = "contato@qisites.com.br";
+        const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: order.email,
@@ -1121,7 +1141,7 @@ Retorne JSON válido.
       // Send email explaining the refund or cancellation to the user
       if (process.env.SMTP_USER && process.env.SMTP_PASS) {
         try {
-          const fromEmail = "contato@qisites.com.br";
+          const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
           const emailSubject = isRealPayment
             ? "⚠️ Estorno efetuado — Falha na geração da sua música"
             : "⚠️ Pedido cancelado — Falha na geração da sua música"
@@ -1212,9 +1232,9 @@ app.get("/api/orders/:id/download", async (req, res) => {
 // ─── Delete Current User (Soft Delete to Trash Bin) ──────────
 app.post("/api/users/me/delete", async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body
     if (!email) {
-      return res.status(400).json({ error: "Email obrigatório" });
+      return res.status(400).json({ error: "Email obrigatório" })
     }
 
     const { error } = await supabase
@@ -1223,69 +1243,78 @@ app.post("/api/users/me/delete", async (req, res) => {
         status: "trash",
         deleted_at: new Date().toISOString()
       })
-      .eq("email", email.toLowerCase().trim());
+      .eq("email", email.toLowerCase().trim())
 
     if (error) {
-      return res.status(400).json({ error: "Erro ao agendar exclusão da conta" });
+      return res
+        .status(400)
+        .json({ error: "Erro ao agendar exclusão da conta" })
     }
 
-    res.json({ success: true, message: "Conta agendada para exclusão com sucesso." });
+    res.json({
+      success: true,
+      message: "Conta agendada para exclusão com sucesso."
+    })
   } catch (error: any) {
-    res.status(500).json({ error: "Erro interno no servidor ao deletar usuário" });
+    res
+      .status(500)
+      .json({ error: "Erro interno no servidor ao deletar usuário" })
   }
-});
+})
 
 // Daily Cleanup Cron Simulation for virtual trash (accounts deleted > 30 days ago)
 async function performHardDeleteCleanup() {
   try {
-    console.log("[Trash Cleanup] Running daily hard delete cleanup...");
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    console.log("[Trash Cleanup] Running daily hard delete cleanup...")
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
     // Get users in trash for more than 30 days
     const { data: usersToDelete } = await supabase
       .from("users")
       .select("id, email")
       .eq("status", "trash")
-      .lte("deleted_at", thirtyDaysAgo.toISOString());
+      .lte("deleted_at", thirtyDaysAgo.toISOString())
 
     if (usersToDelete && usersToDelete.length > 0) {
       for (const u of usersToDelete) {
-        console.log(`[Trash Cleanup] Hard deleting user: ${u.email}`);
+        console.log(`[Trash Cleanup] Hard deleting user: ${u.email}`)
 
         // Delete user's songs/audios from storage first
         const { data: orders } = await supabase
           .from("orders")
           .select("id, audio_storage_path")
-          .eq("email", u.email);
+          .eq("email", u.email)
 
         if (orders) {
           for (const o of orders) {
             if (o.audio_storage_path) {
-              await supabase.storage.from("songs").remove([o.audio_storage_path]);
+              await supabase.storage
+                .from("songs")
+                .remove([o.audio_storage_path])
             }
           }
         }
 
         // Delete user's orders
-        await supabase.from("orders").delete().eq("email", u.email);
+        await supabase.from("orders").delete().eq("email", u.email)
 
         // Delete user's OTP codes
-        await supabase.from("otp_codes").delete().eq("email", u.email);
+        await supabase.from("otp_codes").delete().eq("email", u.email)
 
         // Finally delete the user
-        await supabase.from("users").delete().eq("id", u.id);
+        await supabase.from("users").delete().eq("id", u.id)
       }
     }
-    console.log("[Trash Cleanup] Cleanup finished.");
+    console.log("[Trash Cleanup] Cleanup finished.")
   } catch (err) {
-    console.error("[Trash Cleanup] Error during cleanup:", err);
+    console.error("[Trash Cleanup] Error during cleanup:", err)
   }
 }
 
 // Run cleanup on startup and then every 24 hours
-performHardDeleteCleanup();
-setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000);
+performHardDeleteCleanup()
+setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000)
 
 // ============================================================
 // VITE DEV / PRODUCTION SERVING
@@ -1314,4 +1343,3 @@ async function startServer() {
 }
 
 startServer()
-
