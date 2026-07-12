@@ -1038,7 +1038,12 @@ Retorne JSON válido.
       .eq("id", order.id)
 
     // Send email with download link (via SMTP)
-    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      process.env.APP_URL ||
+      `http://localhost:${PORT}`
+    const apiUrl =
+      process.env.API_URL || process.env.APP_URL || `http://localhost:${PORT}`
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
         const fromEmail = process.env.SMTP_FROM || "contato@qisites.com.br"
@@ -1056,10 +1061,10 @@ Retorne JSON válido.
                 <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
               </div>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${appUrl}/?orderId=${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
+                <a href="${frontendUrl}/musica/${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
               </div>
               <div style="text-align: center; margin: 20px 0;">
-                <a href="${appUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
+                <a href="${apiUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
               </div>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
