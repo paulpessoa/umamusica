@@ -145,7 +145,7 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
     // Send via SMTP
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = " contato@qisites.com.br\
+        const fromEmail = "contato@qisites.com.br";
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: email,
@@ -725,7 +725,7 @@ Retorne JSON válido.
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = " contato@qisites.com.br\
+        const fromEmail = "contato@qisites.com.br";
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: order.email,
@@ -839,7 +839,7 @@ Retorne JSON válido.
               <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
               <p>Para sua total segurança e conforme prometido, <strong>um estorno integral do valor de R$ 1,00 já foi processado automaticamente</strong> de volta para a sua conta Pix no Mercado Pago.</p>
               <p>O valor deve constar na sua conta em alguns minutos.</p>
-              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>paulmspessoa@gmail.com</strong>.</p>
+              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
               <br/>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>
@@ -851,7 +851,7 @@ Retorne JSON válido.
               <p>Olá,</p>
               <p>Pedimos imensas desculpas. Devido a uma instabilidade temporária no nosso motor de composição de inteligência artificial, não foi possível gerar a sua canção personalizada.</p>
               <p>Como este pedido foi iniciado de forma gratuita (via cupom ou testes), nenhuma cobrança foi realizada e sua compra foi cancelada com sucesso.</p>
-              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>paulmspessoa@gmail.com</strong>.</p>
+              <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
               <br/>
               <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
             </div>

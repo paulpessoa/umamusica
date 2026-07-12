@@ -580,7 +580,7 @@ export default function App() {
                 <p><strong>5. Cookies</strong><br />Não utilizamos cookies de rastreamento. Apenas dados estritamente necessários para o funcionamento do serviço são processados.</p>
                 <p><strong>6. Direitos do Usuário (LGPD)</strong><br />Você tem direito a: acessar seus dados, solicitar correção ou exclusão, revogar consentimento. Para exercer estes direitos, entre em contato via contato@qisites.com.br.</p>
                 <p><strong>7. Segurança</strong><br />Utilizamos HTTPS, tokens de acesso temporários e URLs assinadas para proteger seus dados e arquivos de áudio.</p>
-                <p><strong>8. Contato</strong><br />Para dúvidas sobre privacidade: paulmspessoa@gmail.com</p>
+                <p><strong>8. Contato</strong><br />Para dúvidas sobre privacidade: contato@qisites.com.br</p>
                 <p className="text-xs text-gray-400">Última atualização: Julho de 2026</p>
               </div>
             </motion.div>

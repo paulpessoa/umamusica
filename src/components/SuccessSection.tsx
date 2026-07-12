@@ -224,7 +224,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                     Estorno Automático Processado!
                   </span>
                   <p className="leading-relaxed text-emerald-700">
-                    Um estorno automático e integral de <strong>R$ 1,00</strong> foi devolvido para a sua conta Pix no Mercado Pago. Você não precisa fazer nada – o reembolso chegará automaticamente em sua conta. Em caso de dúvidas, entre em contato conosco em <span className="font-bold">paulmspessoa@gmail.com</span>.
+                    Um estorno automático e integral de <strong>R$ 1,00</strong> foi devolvido para a sua conta Pix no Mercado Pago. Você não precisa fazer nada – o reembolso chegará automaticamente em sua conta. Em caso de dúvidas, entre em contato conosco em <span className="font-bold">contato@qisites.com.br</span>.
                   </p>
                 </div>
               ) : (
@@ -234,7 +234,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                     Pedido Cancelado
                   </span>
                   <p className="leading-relaxed text-gray-600">
-                    Como este pedido foi iniciado via cupom ou ambiente de testes, nenhuma cobrança financeira foi realizada. Em caso de dúvidas, fale conosco em <span className="font-bold text-[#FF5A5F]">paulmspessoa@gmail.com</span>.
+                    Como este pedido foi iniciado via cupom ou ambiente de testes, nenhuma cobrança financeira foi realizada. Em caso de dúvidas, fale conosco em <span className="font-bold text-[#FF5A5F]">contato@qisites.com.br</span>.
                   </p>
                 </div>
               )}
@@ -272,10 +272,6 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                   <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
                     Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
                   </p>
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-gray-400 mt-2">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Verifique sua caixa de entrada e SPAM</span>
-                  </div>
                 </>
               )}
             </div>
