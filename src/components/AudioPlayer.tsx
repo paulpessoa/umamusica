@@ -186,7 +186,7 @@ export default function AudioPlayer({
       const cleanLine = line.trim();
       if (cleanLine.startsWith("[") && cleanLine.endsWith("]")) {
         return (
-          <h4 key={index} className="text-[#FF5A5F] font-bold text-xs mt-4 mb-2 uppercase tracking-widest font-mono flex items-center justify-center gap-1.5">
+          <h4 key={index} className="text-[#FF5A5F] font-bold text-xs mt-4 mb-2  tracking-widest font-mono flex items-center justify-center gap-1.5">
             <span className="w-1.5 h-1.5 bg-[#FF5A5F] rounded-full animate-pulse"></span>
             {cleanLine}
           </h4>
@@ -314,7 +314,7 @@ export default function AudioPlayer({
       {/* Lyrics */}
       <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 space-y-3 shadow-sm max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200">
         <div className="flex items-center justify-between border-b border-gray-200/50 pb-2.5">
-          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+          <span className="text-xs font-bold text-gray-500 tracking-wider flex items-center gap-1.5">
             <Music className="w-3.5 h-3.5 text-[#FF5A5F]" />
             Letra
           </span>

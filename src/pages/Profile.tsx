@@ -104,16 +104,24 @@ export default function Profile() {
                 Quando o seu amigo se cadastrar e confirmar o e-mail, <strong>você e ele ganham 1 música grátis!</strong> (Limite de 5 amigos por mês).
               </p>
 
-              <div className="bg-white rounded-xl p-3 border border-gray-200 flex items-center justify-between gap-3">
-                <div className="truncate flex-1">
-                  <p className="text-xs font-mono text-gray-800 truncate">{refLink}</p>
+              <div className="bg-white rounded-xl p-3 border border-gray-200 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-0.5">Seu Código</p>
+                    <p className="text-sm font-black text-gray-900 uppercase tracking-widest">{user.referral_code}</p>
+                  </div>
                 </div>
+                <div className="flex items-center justify-between gap-3 bg-gray-50 p-2 rounded-lg">
+                  <div className="truncate flex-1">
+                    <p className="text-xs font-mono text-gray-500 truncate">{refLink}</p>
+                  </div>
                 <button
                   onClick={copyRefLink}
                   className="w-10 h-10 shrink-0 bg-gray-50 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors border border-gray-200"
                 >
                   {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5 text-gray-600" />}
                 </button>
+                </div>
               </div>
 
               {/* Contatos Indicados */}

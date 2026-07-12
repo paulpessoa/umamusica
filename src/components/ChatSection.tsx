@@ -396,13 +396,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
             className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-white"
           >
             <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-full bg-[#FFF0F0] text-[#FF5A5F] flex items-center justify-center mx-auto border border-[#FF5A5F]/10">
-                <PenTool className="w-6 h-6 animate-pulse" />
-              </div>
-              <h3 className="font-bold text-lg text-gray-900">Criação Livre</h3>
-              <p className="text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
-                Conte tudo livremente: quem é a homenagem, memórias marcantes, estilo musical. Nossa IA vai compor a música perfeita!
-              </p>
+
             </div>
 
             <div className="flex-1 flex flex-col min-h-[220px]">

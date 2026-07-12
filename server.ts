@@ -158,10 +158,11 @@ app.get("/api/invite/:code", async (req, res) => {
     if (!code) {
       return res.status(400).json({ error: "Code required" });
     }
+    const cleanCode = code.trim().toUpperCase();
     const { data: user, error } = await supabase
       .from("users")
       .select("email")
-      .eq("referral_code", code)
+      .eq("referral_code", cleanCode)
       .single();
 
     if (error || !user) {
