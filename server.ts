@@ -97,29 +97,8 @@ function rateLimit(limit: number, windowMs: number) {
     res: express.Response,
     next: express.NextFunction
   ) => {
-    let ip = "unknown"
-    const forwardedFor = req.headers["x-forwarded-for"]
-    if (typeof forwardedFor === "string") {
-      ip = forwardedFor.split(",")[0].trim()
-    } else if (req.socket.remoteAddress) {
-      ip = req.socket.remoteAddress
-    }
-    const now = Date.now()
-
-    if (!ipLimits[ip] || ipLimits[ip].resetAt < now) {
-      ipLimits[ip] = { count: 1, resetAt: now + windowMs }
-      return next()
-    }
-
-    ipLimits[ip].count++
-    if (ipLimits[ip].count > limit) {
-      return res.status(429).json({
-        error:
-          "Muitas requisições. Por favor, aguarde alguns minutos antes de tentar novamente.",
-        retryAfter: Math.round((ipLimits[ip].resetAt - now) / 1000)
-      })
-    }
-    next()
+    // Temporarily disabled for testing/feedback phase
+    return next()
   }
 }
 
@@ -665,8 +644,8 @@ app.post("/api/checkout", async (req, res) => {
       paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9)
       status = "paid"
     } else {
-      // Try MercadoPago Pix
-      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+      // Try MercadoPago Pix - TEMPORARILY DISABLED
+      const mpToken = null // process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (mpToken) {
         try {
           console.log("[MercadoPago] Creating Pix payment...")
@@ -961,9 +940,9 @@ Campos obrigatórios:
 Retorne JSON válido.
 `
 
-    const modelResponse = await ai.models.generateContent({
+    const modelResponse = await generateContentWithFallback({
       model: "gemini-3.5-flash",
-      contents: analysisPrompt,
+      contents: [analysisPrompt],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -1000,8 +979,7 @@ Retorne JSON válido.
     const isMockPayment =
       !order.payment_id ||
       order.payment_id.startsWith("mock") ||
-      order.payment_id.startsWith("simulated") ||
-      order.payment_id.startsWith("coupon")
+      order.payment_id.startsWith("simulated")
     let audioStoragePath: string | null = null
 
     if (isMockPayment) {

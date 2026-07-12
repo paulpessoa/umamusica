@@ -51,7 +51,7 @@ export default function AudioPlayer({
     if (!audioSrc) {
       setIsAudioLoading(true);
       // Fetch signed URL via our API (never exposes Supabase)
-      const downloadUrl = `/api/orders/${orderId}/download`;
+      const downloadUrl = `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`;
       setAudioSrc(downloadUrl);
     }
 
@@ -301,7 +301,7 @@ export default function AudioPlayer({
 
         {/* Download via API (signed URL) */}
         <a
-          href={`/api/orders/${orderId}/download`}
+          href={`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`}
           target="_blank"
           rel="noopener noreferrer"
           className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio || isAudioLoading ? "opacity-40 pointer-events-none" : ""}`}

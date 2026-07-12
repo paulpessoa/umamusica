@@ -137,18 +137,17 @@ export default function CheckoutSection({
       {/* Upper Status Header */}
       <div className="text-center space-y-2">
         <span className="text-[10px] bg-[#FFF0F0] text-[#FF5A5F] font-extrabold px-3 py-1 rounded-full tracking-widest border border-[#FF5A5F]/10">
-          Aguardando Pagamento
+          Cupom de Resgate
         </span>
 
         <p className="text-xs pt-4 text-gray-500 max-w-xs mx-auto leading-relaxed">
-          Escaneie o QR Code ou copie a chave Pix abaixo. Sua canção será gerada imediatamente após a confirmação.
+          Insira seu cupom promocional para ativar a geração da sua música personalizada sem custos.
         </p>
       </div>
 
-      {/* Main QR Code Card */}
+      {/* Main QR Code Card - Temporarily Commented Out to use coupons only
       <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 flex flex-col items-center justify-center space-y-4 shadow-sm">
 
-        {/* QR Code container */}
         <div className="relative w-44 h-44 bg-white rounded-2xl p-2.5 flex items-center justify-center shadow-sm border border-gray-100">
           {localQr ? (
             <img
@@ -165,7 +164,6 @@ export default function CheckoutSection({
           )}
         </div>
 
-        {/* Expiration warning */}
         <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
           <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
           <span>O Pix expira em: </span>
@@ -190,6 +188,7 @@ export default function CheckoutSection({
           )}
         </button>
       </div>
+      */}
 
       {/* Coupon input form */}
       <div className="bg-gray-50 border border-gray-100 p-4.5 rounded-2xl space-y-2 shadow-sm">
@@ -229,7 +228,7 @@ export default function CheckoutSection({
         )}
       </div>
 
-      {/* TESTING PANEL (EXHIBITED ONLY ON LOCALHOST) */}
+      {/* TESTING PANEL (EXHIBITED ONLY ON LOCALHOST) - Temporarily Commented Out
       {(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && (
         <div className="bg-[#FFFDF9] border border-amber-100 p-4.5 rounded-2xl space-y-3 shadow-sm">
 
@@ -250,6 +249,7 @@ export default function CheckoutSection({
           )}
         </div>
       )}
+      */}
 
 
     </div>
