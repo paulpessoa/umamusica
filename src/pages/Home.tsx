@@ -222,7 +222,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="shrink-0 px-6 pt-3 pb-5 space-y-4 lg:space-y-6 border-t border-gray-100 bg-white flex justify-center">
+        <div className="shrink-0 px-6 pt-3 pb-5 space-y-4 lg:space-y-6 border-t border-gray-100 bg-white flex flex-col items-center">
           <button
             onClick={handleStart}
             className="w-full max-w-xs bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-4 px-4 rounded-2xl shadow-lg shadow-[#FF5A5F]/15 flex items-center justify-center gap-2 text-sm tracking-wide transition-all cursor-pointer"
