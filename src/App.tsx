@@ -12,6 +12,7 @@ import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import MySongs from "./pages/MySongs";
 import FAQ from "./pages/FAQ";
+import NotFound from "./pages/NotFound";
 // Terms, Privacy will be added shortly
 
 function ChatRoute() {
@@ -28,7 +29,10 @@ function ChatRoute() {
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/checkout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${user.session_token}`
+        },
         body: JSON.stringify({
           email: user.email,
           chatTranscript,
@@ -120,6 +124,7 @@ export default function App() {
         <Route path="/chat" element={<ChatRoute />} />
         <Route path="/checkout/:id" element={<CheckoutRoute />} />
         <Route path="/musica/:id" element={<SuccessRoute />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>
   );

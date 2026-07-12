@@ -16,7 +16,13 @@ export default function MySongs() {
       return;
     }
 
-    fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`)
+    if (!user.session_token) return;
+
+    fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`, {
+      headers: {
+        "Authorization": `Bearer ${user.session_token}`
+      }
+    })
       .then((res) => res.json())
       .then((data) => {
         if (data.orders) setOrders(data.orders);

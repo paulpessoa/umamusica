@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai"
 import { createClient } from "@supabase/supabase-js"
 import nodemailer from "nodemailer"
 import cors from "cors"
+import crypto from "crypto"
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 
 // Load environment variables
@@ -77,6 +78,30 @@ const supabase = createClient(
   process.env.SUPABASE_URL || "",
   process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 )
+
+// Helper to verify session token
+async function verifySession(req: express.Request, res: express.Response): Promise<{ email: string } | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Token de sessão ausente ou inválido" });
+    return null;
+  }
+  const token = authHeader.split(" ")[1];
+  
+  // Find user by token
+  const { data: user, error } = await supabase
+    .from("users")
+    .select("email, status")
+    .eq("session_token", token)
+    .single();
+
+  if (error || !user || user.status !== "active") {
+    res.status(401).json({ error: "Sessão expirada ou inválida. Por favor, faça login novamente." });
+    return null;
+  }
+
+  return { email: user.email };
+}
 
 // Helper to call generateContent with automatic fallback on quota errors
 async function generateContentWithFallback(params: {
@@ -208,6 +233,8 @@ app.post("/api/verify-otp", async (req, res) => {
       .update({ verified: true })
       .eq("id", data[0].id)
 
+    const sessionToken = crypto.randomUUID();
+
     // Check if user exists
     const cleanEmail = email.toLowerCase().trim();
     let { data: user, error: userError } = await supabase
@@ -220,12 +247,21 @@ app.post("/api/verify-otp", async (req, res) => {
       // Reactivate account
       await supabase
         .from("users")
-        .update({ status: 'active', deleted_at: null })
+        .update({ status: 'active', deleted_at: null, session_token: sessionToken })
         .eq("id", user.id);
       user.status = 'active';
+      user.session_token = sessionToken;
+    } else if (user) {
+      // Save session token for existing active user
+      await supabase
+        .from("users")
+        .update({ session_token: sessionToken })
+        .eq("id", user.id);
+      user.session_token = sessionToken;
     }
 
     if (!user) {
+      // Create new user
       // Create new user
       const { referralCode } = req.body;
       let referredBy = null;
@@ -294,11 +330,12 @@ app.post("/api/verify-otp", async (req, res) => {
           email: cleanEmail,
           referral_code: newReferralCode,
           referred_by: referredBy,
-          free_songs_balance: initialBalance
+          free_songs_balance: initialBalance,
+          session_token: sessionToken
         })
-        .select("id, email, name, referral_code, free_songs_balance")
+        .select("id, email, name, referral_code, free_songs_balance, session_token")
         .single()
-
+        
       if (!createError && newUser) {
         user = newUser;
       }
@@ -314,9 +351,16 @@ app.post("/api/verify-otp", async (req, res) => {
 // ─── Get Current User ──────────────────────────────────────
 app.get("/api/users/me", async (req, res) => {
   try {
+    const verified = await verifySession(req, res);
+    if (!verified) return;
+
     const email = req.query.email as string;
     if (!email) {
       return res.status(400).json({ error: "Email obrigatório" });
+    }
+
+    if (email.toLowerCase().trim() !== verified.email.toLowerCase().trim()) {
+      return res.status(403).json({ error: "Acesso proibido." });
     }
 
     const { data: user, error } = await supabase
@@ -474,9 +518,16 @@ Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo
 // ─── Checkout (MercadoPago Pix) ────────────────────────────
 app.post("/api/checkout", async (req, res) => {
   try {
+    const verified = await verifySession(req, res);
+    if (!verified) return;
+
     const { email, chatTranscript, structuredPrompt } = req.body
     if (!email) {
       return res.status(400).json({ error: "Email é obrigatório" })
+    }
+
+    if (email.toLowerCase().trim() !== verified.email.toLowerCase().trim()) {
+      return res.status(403).json({ error: "Acesso proibido." });
     }
 
     const orderId = "order_" + Math.random().toString(36).substr(2, 9)
@@ -586,6 +637,23 @@ app.post("/api/checkout", async (req, res) => {
     res.status(500).json({ error: "Erro ao gerar cobrança Pix" })
   }
 })
+
+// ─── Logout ──────────────────────────────────────────────
+app.post("/api/logout", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      await supabase
+        .from("users")
+        .update({ session_token: null })
+        .eq("session_token", token);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao efetuar logout" });
+  }
+});
 
 // ─── Get Order Status ──────────────────────────────────────
 app.get("/api/orders/:id", async (req, res) => {

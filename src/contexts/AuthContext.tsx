@@ -6,6 +6,7 @@ interface User {
   name?: string;
   referral_code?: string;
   free_songs_balance?: number;
+  session_token?: string;
 }
 
 interface AuthContextType {
@@ -31,7 +32,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: "dev@qisites.com.br",
           name: "Desenvolvedor Local",
           referral_code: "DEV123",
-          free_songs_balance: 5
+          free_songs_balance: 5,
+          session_token: "mock-dev-session-token"
         };
         localStorage.setItem("umamusica_user", JSON.stringify(mockUser));
         return mockUser;
@@ -45,7 +47,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem("umamusica_user", JSON.stringify(userData));
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (user && user.session_token) {
+      try {
+        await fetch(`${import.meta.env.VITE_API_URL || ""}/api/logout`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${user.session_token}`
+          }
+        });
+      } catch (err) {
+        console.error("Erro ao chamar API de logout:", err);
+      }
+    }
     setUser(null);
     localStorage.removeItem("umamusica_user");
     window.location.href = "/";
@@ -61,8 +75,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    if (user && user.email) {
-      fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`)
+    if (user && user.email && user.session_token) {
+      fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`, {
+        headers: {
+          "Authorization": `Bearer ${user.session_token}`
+        }
+      })
         .then(res => res.json())
         .then(data => {
           if (data.user) {
