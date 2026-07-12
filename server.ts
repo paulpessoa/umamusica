@@ -82,21 +82,26 @@ function rateLimit(limit: number, windowMs: number) {
     res: express.Response,
     next: express.NextFunction
   ) => {
-    const ip =
-      req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown"
+    let ip = "unknown"
+    const forwardedFor = req.headers["x-forwarded-for"]
+    if (typeof forwardedFor === "string") {
+      ip = forwardedFor.split(",")[0].trim()
+    } else if (req.socket.remoteAddress) {
+      ip = req.socket.remoteAddress
+    }
     const now = Date.now()
 
-    if (!ipLimits[ip as string] || ipLimits[ip as string].resetAt < now) {
-      ipLimits[ip as string] = { count: 1, resetAt: now + windowMs }
+    if (!ipLimits[ip] || ipLimits[ip].resetAt < now) {
+      ipLimits[ip] = { count: 1, resetAt: now + windowMs }
       return next()
     }
 
-    ipLimits[ip as string].count++
-    if (ipLimits[ip as string].count > limit) {
+    ipLimits[ip].count++
+    if (ipLimits[ip].count > limit) {
       return res.status(429).json({
         error:
           "Muitas requisições. Por favor, aguarde alguns minutos antes de tentar novamente.",
-        retryAfter: Math.round((ipLimits[ip as string].resetAt - now) / 1000)
+        retryAfter: Math.round((ipLimits[ip].resetAt - now) / 1000)
       })
     }
     next()
@@ -244,7 +249,7 @@ app.get("/api/invite/:code", async (req, res) => {
 })
 
 // ─── OTP Email Verification ────────────────────────────────
-app.post("/api/send-otp", rateLimit(15, 60 * 60 * 1000), async (req, res) => {
+app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
   try {
     const { email } = req.body
     if (!email || !email.includes("@")) {
@@ -321,11 +326,16 @@ app.post("/api/verify-otp", async (req, res) => {
 
     // Check if user exists
     const cleanEmail = email.toLowerCase().trim()
-    let { data: user, error: userError } = await supabase
+    let user: any = null
+    const { data: userData, error: userError } = await supabase
       .from("users")
       .select("id, email, name, referral_code, free_songs_balance, status")
       .eq("email", cleanEmail)
       .single()
+
+    if (userData) {
+      user = userData
+    }
 
     if (user && user.status === "trash") {
       // Reactivate account
@@ -493,7 +503,7 @@ app.get("/api/users/me", async (req, res) => {
 })
 
 // ─── Chat Interview (Text) ────────────────────────────────
-app.post("/api/chat", rateLimit(60, 60 * 60 * 1000), async (req, res) => {
+app.post("/api/chat", rateLimit(40, 10 * 60 * 1000), async (req, res) => {
   try {
     const { messages, email } = req.body
     if (!messages || !Array.isArray(messages)) {
@@ -533,7 +543,7 @@ Instruções:
 })
 
 // ─── Chat Voice (Audio message — like WhatsApp) ────────────
-app.post("/api/chat-voice", rateLimit(30, 60 * 60 * 1000), async (req, res) => {
+app.post("/api/chat-voice", rateLimit(25, 10 * 60 * 1000), async (req, res) => {
   try {
     const { audio, mimeType, messages, email } = req.body
     if (!audio) {
@@ -814,7 +824,11 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     // Apply coupon
     await supabase
       .from("orders")
-      .update({ status: "paid", updated_at: new Date().toISOString() })
+      .update({
+        status: "paid",
+        payment_id: `coupon_${cleanCoupon}_` + Math.random().toString(36).substr(2, 6),
+        updated_at: new Date().toISOString()
+      })
       .eq("id", req.params.id)
 
     // Increment usage
@@ -892,11 +906,31 @@ app.post("/api/orders/:id/generate", async (req, res) => {
     }
     fetchedOrder = order
 
-    // Set order status to processing
-    await supabase
+    // Check current status before starting generation
+    if (order.status === "completed") {
+      return res.json(order)
+    }
+    if (order.status === "processing") {
+      return res.status(400).json({ error: "A música já está sendo gerada. Por favor, aguarde." })
+    }
+    if (order.status === "failed") {
+      return res.status(400).json({ error: "Este pedido falhou e já foi estornado." })
+    }
+    if (order.status !== "paid") {
+      return res.status(400).json({ error: "O pedido ainda não foi pago." })
+    }
+
+    // Set order status to processing conditionally (atomic update)
+    const { data: updatedRows, error: updateError } = await supabase
       .from("orders")
       .update({ status: "processing", updated_at: new Date().toISOString() })
       .eq("id", order.id)
+      .eq("status", "paid")
+      .select()
+
+    if (updateError || !updatedRows || updatedRows.length === 0) {
+      return res.status(400).json({ error: "A geração já foi iniciada por outra requisição." })
+    }
 
     // Analyze transcript using Gemini
     const transcriptText = (order.chat_transcript || [])
@@ -1127,21 +1161,32 @@ Retorne JSON válido.
       error.message || error
     )
 
-    // If order was fetched and is a real payment, initiate automatic refund
+    // If order was fetched, update status and initiate automatic refund
     if (fetchedOrder) {
+      // Update order status to failed ONLY if it is currently 'processing'
+      // This prevents parallel error handling from sending multiple emails/refunds
+      const { data: updatedRows, error: updateError } = await supabase
+        .from("orders")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", fetchedOrder.id)
+        .eq("status", "processing")
+        .select()
+
+      if (updateError || !updatedRows || updatedRows.length === 0) {
+        console.log(`[Refund] Order ${fetchedOrder.id} status was already updated. Skipping refund to prevent duplicates.`)
+        return res.status(500).json({
+          error: "Erro ao compor a música. Estorno já processado."
+        })
+      }
+
       const isRealPayment =
         fetchedOrder.payment_id &&
+        !fetchedOrder.payment_id.startsWith("pay_") &&
         !fetchedOrder.payment_id.startsWith("mock") &&
         !fetchedOrder.payment_id.startsWith("simulated") &&
         !fetchedOrder.payment_id.startsWith("coupon")
 
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
-
-      // Update order status to failed
-      await supabase
-        .from("orders")
-        .update({ status: "failed", updated_at: new Date().toISOString() })
-        .eq("id", fetchedOrder.id)
 
       if (isRealPayment && mpToken) {
         console.log(
