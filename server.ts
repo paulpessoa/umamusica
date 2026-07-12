@@ -805,6 +805,33 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
       return res.status(400).json({ error: "Este cupom já expirou" })
     }
 
+    // Fetch current order to see if it has a Mercado Pago payment to cancel
+    const { data: orderData } = await supabase
+      .from("orders")
+      .select("payment_id")
+      .eq("id", req.params.id)
+      .single()
+
+    if (orderData && orderData.payment_id) {
+      const isMPPayment = /^\d+$/.test(orderData.payment_id) // Mercado Pago payment IDs are purely numeric
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+      if (isMPPayment && mpToken) {
+        try {
+          console.log(`[Coupon] Cancelling Mercado Pago payment ${orderData.payment_id} since coupon was applied...`)
+          await fetch(`https://api.mercadopago.com/v1/payments/${orderData.payment_id}`, {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${mpToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ status: "cancelled" })
+          })
+        } catch (err: any) {
+          console.error("[Coupon] Failed to cancel Mercado Pago payment:", err.message)
+        }
+      }
+    }
+
     // Apply coupon
     await supabase
       .from("orders")
