@@ -52,41 +52,38 @@ export default function CookieBanner() {
           transition={{ duration: 0.4, ease: "easeOut" }}
           className="fixed bottom-4 left-4 right-4 md:right-auto md:left-4 md:max-w-md z-50"
         >
-          <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border border-gray-200/50 dark:border-gray-800/50 shadow-2xl rounded-2xl p-5 md:p-6 flex flex-col gap-4 relative overflow-hidden">
-            {/* Background Accent Gradient */}
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#FF5A5F] via-[#FF7E82] to-[#FF5A5F]" />
-            
+          <div className="bg-white/95 backdrop-blur-md border border-gray-100/80 shadow-2xl rounded-2xl p-5 md:p-6 flex flex-col gap-4 relative">
             <div className="flex gap-3 items-start">
-              <div className="bg-[#FFF4F2] dark:bg-[#e04f53]/10 p-2.5 rounded-xl text-[#FF5A5F] dark:text-[#FF7E82] shrink-0 mt-0.5">
+              <div className="bg-[#FFF4F2] p-2.5 rounded-xl text-[#FF5A5F] shrink-0 mt-0.5">
                 <Cookie className="w-5 h-5" />
               </div>
               <div className="space-y-1">
-                <h3 className="font-semibold text-gray-900 dark:text-white text-sm md:text-base flex items-center gap-1.5">
+                <h3 className="font-semibold text-gray-950 text-sm md:text-base flex items-center gap-1.5">
                   Valorizamos sua privacidade
                 </h3>
-                <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                <p className="text-xs md:text-sm text-gray-600 leading-relaxed font-normal">
                   Usamos cookies essenciais para manter sua sessão conectada e cookies de análise (Microsoft Clarity) para entender como você interage com o site e melhorar sua experiência.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 pt-1 border-t border-gray-100 dark:border-gray-800/60">
+            <div className="flex items-center justify-between gap-3 pt-1.5 border-t border-gray-100">
               <a
                 href="/privacidade"
-                className="text-xs text-[#FF5A5F] dark:text-[#FF7E82] hover:underline font-medium"
+                className="text-xs text-[#FF5A5F] hover:underline font-semibold"
               >
                 Política de Privacidade
               </a>
               <div className="flex gap-2 shrink-0">
                 <button
                   onClick={handleDecline}
-                  className="px-3.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all"
+                  className="px-3.5 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800 hover:bg-gray-50 rounded-xl transition-all"
                 >
                   Recusar
                 </button>
                 <button
                   onClick={handleAccept}
-                  className="px-4 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-[#FF5A5F] to-[#e04f53] hover:from-[#e04f53] hover:to-[#FF5A5F] shadow-md shadow-[#FF5A5F]/10 active:scale-[0.98] rounded-xl transition-all flex items-center gap-1"
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-[#FF5A5F] to-[#e04f53] hover:from-[#e04f53] hover:to-[#FF5A5F] shadow-md shadow-[#FF5A5F]/15 active:scale-[0.98] rounded-xl transition-all flex items-center gap-1"
                 >
                   <Check className="w-3.5 h-3.5" />
                   Aceitar
