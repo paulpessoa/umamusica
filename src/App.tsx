@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Routes, Route, useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import MobileFrame from "./components/MobileFrame";
 import ChatSection from "./components/ChatSection";
