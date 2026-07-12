@@ -644,8 +644,8 @@ app.post("/api/checkout", async (req, res) => {
       paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9)
       status = "paid"
     } else {
-      // Try MercadoPago Pix - TEMPORARILY DISABLED
-      const mpToken = null // process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+      // Try MercadoPago Pix
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (mpToken) {
         try {
           console.log("[MercadoPago] Creating Pix payment...")
