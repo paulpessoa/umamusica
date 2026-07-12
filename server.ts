@@ -21,7 +21,7 @@ const transporter = nodemailer.createTransport({
   secure: process.env.SMTP_SECURE !== "false", // true for port 465, false for 587
   auth: {
     user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || ""
+    pass: process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS || ""
   }
 })
 
@@ -145,7 +145,7 @@ app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
     // Send via SMTP
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = process.env.SMTP_USER
+        const fromEmail = " contato@qisites.com.br\
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: email,
@@ -725,7 +725,7 @@ Retorne JSON válido.
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        const fromEmail = process.env.SMTP_USER
+        const fromEmail = " contato@qisites.com.br\
         await transporter.sendMail({
           from: `"1Música" <${fromEmail}>`,
           to: order.email,
@@ -825,7 +825,7 @@ Retorne JSON válido.
       // Send email explaining the refund or cancellation to the user
       if (process.env.SMTP_USER && process.env.SMTP_PASS) {
         try {
-          const fromEmail = process.env.SMTP_USER
+          const fromEmail = " contato@qisites.com.br\
           const emailSubject = isRealPayment
             ? "⚠️ Estorno efetuado — Falha na geração da sua música"
             : "⚠️ Pedido cancelado — Falha na geração da sua música"
@@ -940,3 +940,4 @@ async function startServer() {
 }
 
 startServer()
+
