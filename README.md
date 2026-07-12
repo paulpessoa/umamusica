@@ -4,7 +4,7 @@ Plataforma inovadora que transforma histórias reais, memórias e sentimentos em
 
 <div align="center">
   <a href="https://umamusica.vercel.app" target="_blank">
-    <img src="./demo-umamusica.gif" alt="1Música Demo" width="100%" style="border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
+    <img src="./assets/demo-umamusica.gif" alt="1Música Demo" width="100%" style="border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
   </a>
   <p><em>Clique na imagem acima para testar a aplicação na Vercel! 🚀</em></p>
 </div>
