@@ -182,8 +182,22 @@ app.get("/api/invite/:code", async (req, res) => {
     if (emailParts.length === 2) {
       const namePart = emailParts[0]
       const domainPart = emailParts[1]
-      const visibleLen = Math.max(2, Math.floor(namePart.length / 2))
-      const maskedName = namePart.substring(0, visibleLen) + "***"
+
+      let maskedName = ""
+
+      // Se tiver 3 ou mais caracteres, mostra o primeiro, asteriscos e o último
+      if (namePart.length >= 3) {
+        const firstLetter = namePart[0]
+        const lastLetter = namePart[namePart.length - 1]
+        maskedName = firstLetter + "***" + lastLetter
+      } else if (namePart.length === 2) {
+        // Se tiver só 2 (ex: pa@gm.com), mostra a primeira e bota asterisco na última
+        maskedName = namePart[0] + "*"
+      } else {
+        // Se tiver só 1 letra (ex: p@gm.com), apenas põe o asterisco
+        maskedName = namePart + "*"
+      }
+
       return res.json({ email: `${maskedName}@${domainPart}` })
     }
 
