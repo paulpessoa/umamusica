@@ -21,6 +21,11 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
         "🤝 Agradecimento a amigo",
         "👨 Música para o pai",
         "🎓 Formatura / conquista",
+        "👶 Nascimento de bebê / Boas-vindas",
+        "💼 Colega de trabalho / Despedida",
+        "⚽ Paixão pelo time de futebol",
+        "🏍️ Clube de moto / Irmandade",
+        "⛪ Amigos da igreja / Fé",
       ],
     },
   ]);
