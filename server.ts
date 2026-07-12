@@ -1089,12 +1089,15 @@ Retorne JSON válido.
       .eq("id", order.id)
 
     // Send email with download link via Brevo API
+    const isProduction = process.env.NODE_ENV === "production"
     const frontendUrl =
       process.env.FRONTEND_URL ||
       process.env.APP_URL ||
-      `http://localhost:${PORT}`
+      (isProduction ? "https://umamusica.vercel.app" : `http://localhost:${PORT}`)
     const apiUrl =
-      process.env.API_URL || process.env.APP_URL || `http://localhost:${PORT}`
+      process.env.API_URL ||
+      process.env.APP_URL ||
+      (isProduction ? "https://umamusica-369350924489.us-east1.run.app" : `http://localhost:${PORT}`)
 
     await sendEmailViaBrevo({
       to: order.email,
