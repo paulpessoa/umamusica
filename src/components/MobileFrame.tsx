@@ -127,10 +127,6 @@ function TypingHeadline() {
   );
 }
 
-interface MobileFrameProps {
-  children: React.ReactNode;
-}
-
 export default function MobileFrame({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -239,8 +235,8 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
         <div className="flex-1 min-w-0 lg:w-1/2 lg:shrink-0 flex flex-col bg-white relative min-h-screen lg:min-h-0 lg:h-full">
 
           {/* Floating badge (Desktop) */}
-          <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md shadow-sm rounded-full py-1.5 px-4 border border-gray-100 hidden lg:flex items-center space-x-3 z-50">
-            <>
+          {user && (
+            <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md shadow-sm rounded-full py-1.5 px-4 border border-gray-100 hidden lg:flex items-center space-x-3 z-50">
               <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
                 Perfil
               </button>
@@ -248,8 +244,8 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
               <button onClick={logout} className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">
                 Sair
               </button>
-            </>
-          </div>
+            </div>
+          )}
 
           <div id="phone-frame" className="relative w-full flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0">
 
