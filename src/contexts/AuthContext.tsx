@@ -20,7 +20,24 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     const savedUser = localStorage.getItem("umamusica_user");
-    return savedUser ? JSON.parse(savedUser) : null;
+    if (savedUser) return JSON.parse(savedUser);
+
+    // Auto-login mock user for local testing on localhost
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      const path = window.location.pathname;
+      if (path !== "/" && path !== "/login") {
+        const mockUser = {
+          id: "mock-dev-id",
+          email: "dev@qisites.com.br",
+          name: "Desenvolvedor Local",
+          referral_code: "DEV123",
+          free_songs_balance: 5
+        };
+        localStorage.setItem("umamusica_user", JSON.stringify(mockUser));
+        return mockUser;
+      }
+    }
+    return null;
   });
 
   const login = (userData: User) => {
