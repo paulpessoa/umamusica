@@ -285,9 +285,9 @@ app.post("/api/verify-otp", async (req, res) => {
           }
         }
       }
-      
-      const newReferralCode = Math.floor(100000 + Math.random() * 900000).toString();
-      
+
+      const newReferralCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .insert({
@@ -298,7 +298,7 @@ app.post("/api/verify-otp", async (req, res) => {
         })
         .select("id, email, name, referral_code, free_songs_balance")
         .single()
-        
+
       if (!createError && newUser) {
         user = newUser;
       }
@@ -318,17 +318,17 @@ app.get("/api/users/me", async (req, res) => {
     if (!email) {
       return res.status(400).json({ error: "Email obrigatório" });
     }
-    
+
     const { data: user, error } = await supabase
       .from("users")
       .select("id, email, name, referral_code, free_songs_balance")
       .eq("email", email.toLowerCase().trim())
       .single();
-      
+
     if (error || !user) {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
-    
+
     // Fetch user's past generated songs
     const { data: orders } = await supabase
       .from("orders")
@@ -349,7 +349,7 @@ app.get("/api/users/me", async (req, res) => {
       email: u.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
       created_at: u.created_at
     }));
-      
+
     res.json({ user, orders: orders || [], referredUsers: maskedReferred });
   } catch (error: any) {
     res.status(500).json({ error: "Erro ao buscar usuário" });
@@ -501,57 +501,57 @@ app.post("/api/checkout", async (req, res) => {
         .from("users")
         .update({ free_songs_balance: user.free_songs_balance - 1 })
         .eq("id", user.id);
-        
+
       paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9);
       status = "paid";
     } else {
       // Try MercadoPago Pix
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (mpToken) {
-      try {
-        console.log("[MercadoPago] Creating Pix payment...")
-        const mpResponse = await fetch(
-          "https://api.mercadopago.com/v1/payments",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${mpToken}`,
-              "X-Idempotency-Key": orderId
-            },
-            body: JSON.stringify({
-              transaction_amount: 1.0,
-              description: "Música Personalizada — 1Música",
-              payment_method_id: "pix",
-              payer: { email },
-              external_reference: orderId
-            })
+        try {
+          console.log("[MercadoPago] Creating Pix payment...")
+          const mpResponse = await fetch(
+            "https://api.mercadopago.com/v1/payments",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${mpToken}`,
+                "X-Idempotency-Key": orderId
+              },
+              body: JSON.stringify({
+                transaction_amount: 1.0,
+                description: "Música Personalizada — 1Música",
+                payment_method_id: "pix",
+                payer: { email },
+                external_reference: orderId
+              })
+            }
+          )
+
+          if (mpResponse.ok) {
+            const mpData: any = await mpResponse.json()
+            paymentId = mpData.id?.toString() || paymentId
+            paymentQr =
+              mpData.point_of_interaction?.transaction_data?.qr_code_base64 || ""
+            paymentCopiaCola =
+              mpData.point_of_interaction?.transaction_data?.qr_code || ""
+            console.log(`[MercadoPago] Pix created: ${paymentId}`)
+          } else {
+            const errBody = await mpResponse.text()
+            console.warn(`[MercadoPago] Error ${mpResponse.status}:`, errBody)
           }
-        )
-
-        if (mpResponse.ok) {
-          const mpData: any = await mpResponse.json()
-          paymentId = mpData.id?.toString() || paymentId
-          paymentQr =
-            mpData.point_of_interaction?.transaction_data?.qr_code_base64 || ""
-          paymentCopiaCola =
-            mpData.point_of_interaction?.transaction_data?.qr_code || ""
-          console.log(`[MercadoPago] Pix created: ${paymentId}`)
-        } else {
-          const errBody = await mpResponse.text()
-          console.warn(`[MercadoPago] Error ${mpResponse.status}:`, errBody)
+        } catch (e: any) {
+          console.warn("[MercadoPago] Connection failed:", e.message)
         }
-      } catch (e: any) {
-        console.warn("[MercadoPago] Connection failed:", e.message)
       }
-    }
 
-    // Fallback QR for testing
-    if (!paymentQr) {
-      const mockPix = `00020126580014br.gov.bcb.pix0136unamusica-${orderId}52040000530398654041.005802BR`
-      paymentQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPix)}`
-      paymentCopiaCola = mockPix
-    }
+      // Fallback QR for testing
+      if (!paymentQr) {
+        const mockPix = `00020126580014br.gov.bcb.pix0136unamusica-${orderId}52040000530398654041.005802BR`
+        paymentQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPix)}`
+        paymentCopiaCola = mockPix
+      }
     }
 
     // Save order in Supabase
@@ -598,10 +598,10 @@ app.get("/api/orders/:id", async (req, res) => {
   if (error || !data) {
     return res.status(404).json({ error: "Pedido não encontrado" })
   }
-  
+
   // Do not expose email entirely to public if accessed without auth
   // In a real app we would check auth headers. For MVP, we mask it or leave it.
-  
+
   res.json(data)
 })
 
@@ -638,7 +638,7 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     if (!couponData || couponError) {
       return res.status(400).json({ error: "Cupom inválido ou inexistente" })
     }
-    
+
     if (couponData.current_uses >= couponData.max_uses) {
       return res.status(400).json({ error: "O limite de uso deste cupom foi atingido" })
     }
@@ -1147,13 +1147,13 @@ async function performHardDeleteCleanup() {
     if (usersToDelete && usersToDelete.length > 0) {
       for (const u of usersToDelete) {
         console.log(`[Trash Cleanup] Hard deleting user: ${u.email}`);
-        
+
         // Delete user's songs/audios from storage first
         const { data: orders } = await supabase
           .from("orders")
           .select("id, audio_storage_path")
           .eq("email", u.email);
-          
+
         if (orders) {
           for (const o of orders) {
             if (o.audio_storage_path) {
