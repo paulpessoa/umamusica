@@ -141,6 +141,22 @@ export default function Profile() {
           {/* Menu de Opções */}
           <section className="space-y-3 pt-2">
             <button
+              onClick={() => navigate("/chat")}
+              className="w-full bg-gradient-to-r from-[#FF5A5F] to-[#e0484d] text-white font-bold rounded-2xl p-4.5 flex items-center justify-between transition-all hover:opacity-95 shadow-sm shadow-[#FF5A5F]/20 cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white">
+                  <Music className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-sm">Criar Nova Música</p>
+                  <p className="text-[10px] text-white/80 mt-0.5">Transforme outra história em música</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
               onClick={() => navigate("/minhas-musicas")}
               className="w-full bg-white border border-gray-100 hover:border-gray-200 shadow-sm rounded-2xl p-4.5 flex items-center justify-between transition-all group cursor-pointer"
             >
