@@ -261,18 +261,18 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <h2 className="font-bold text-xl text-gray-900">
-                {isSharedView ? "Uma Homenagem para Você!" : "Sua música ficou pronta!"}
+                {isGenerating 
+                  ? "Sua música ficou pronta!" 
+                  : (isSharedView ? "Uma Homenagem para Você!" : "Sua música personalizada")}
               </h2>
-              {isSharedView ? (
+              {isGenerating ? (
+                <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                  Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
+                </p>
+              ) : (
                 <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
                   Ouça a canção personalizada composta especialmente para você!
                 </p>
-              ) : (
-                <>
-                  <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                    Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
-                  </p>
-                </>
               )}
             </div>
 

@@ -44,6 +44,11 @@ export default function AudioPlayer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
 
+  const shareUrl = `${window.location.origin}/musica/${orderId}`;
+  const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
+    `Ouça esta música personalizada incrível criada no 1Música! 🎵\n\n👉 ${shareUrl}`
+  )}`;
+
   // Lazy load audio only when user clicks play — reduces initial bundle
   const loadAndPlay = async () => {
     if (!hasAudio) return;
@@ -299,16 +304,36 @@ export default function AudioPlayer({
           )}
         </button>
 
-        {/* Download via API (signed URL) */}
-        <a
-          href={`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio || isAudioLoading ? "opacity-40 pointer-events-none" : ""}`}
-          title="Baixar Música"
-        >
-          <Download className="w-4 h-4" />
-        </a>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* WhatsApp share button */}
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-emerald-600 rounded-xl flex items-center justify-center transition-colors"
+            title="Compartilhar no WhatsApp"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="w-4 h-4 text-emerald-500"
+            >
+              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 0 0 1.37 5.082L2 22l5.102-1.336a9.926 9.926 0 0 0 4.909 1.302h.004c5.505 0 9.988-4.478 9.99-9.985A9.983 9.983 0 0 0 12.012 2zm5.718 14.153c-.314.881-1.523 1.621-2.102 1.713-.578.093-1.127.351-3.693-.701-3.284-1.345-5.358-4.717-5.522-4.939-.165-.221-1.319-1.758-1.319-3.353 0-1.595.825-2.38 1.121-2.696.297-.317.594-.396.792-.396.198 0 .396.002.56.01.178.008.416-.067.652.503.243.585.824 2.013.896 2.16.073.148.122.32.023.518-.098.199-.148.32-.296.495-.148.175-.312.39-.446.522-.149.148-.304.309-.13.606.173.297.768 1.267 1.65 2.051.17.151.32.32.483.479a2.531 2.531 0 0 0 .762.536c.28.113.445.093.61-.098.165-.192.709-.824.9-.11.191.713.693 2.376.762 2.524.069.148.138.247.138.346 0 .099-.074.522-.388 1.403z"/>
+            </svg>
+          </a>
+
+          {/* Download via API (signed URL) */}
+          <a
+            href={`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio || isAudioLoading ? "opacity-40 pointer-events-none" : ""}`}
+            title="Baixar Música"
+          >
+            <Download className="w-4 h-4" />
+          </a>
+        </div>
       </div>
 
       {/* Lyrics */}
