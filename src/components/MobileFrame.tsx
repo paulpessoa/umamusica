@@ -240,21 +240,15 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
 
           {/* Floating badge (Desktop) */}
           <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md shadow-sm rounded-full py-1.5 px-4 border border-gray-100 hidden lg:flex items-center space-x-3 z-50">
-            {user ? (
-              <>
-                <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
-                  Perfil
-                </button>
-                <div className="w-px h-4 bg-gray-200"></div>
-                <button onClick={logout} className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">
-                  Sair
-                </button>
-              </>
-            ) : (
-              <button onClick={() => navigate('/login')} className="text-sm font-bold text-[#FF5A5F] hover:text-[#e0484d] transition-colors">
-                Entrar / Criar Conta
+            <>
+              <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
+                Perfil
               </button>
-            )}
+              <div className="w-px h-4 bg-gray-200"></div>
+              <button onClick={logout} className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">
+                Sair
+              </button>
+            </>
           </div>
 
           <div id="phone-frame" className="relative w-full flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0">
