@@ -324,7 +324,7 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
               </div>
             </header>
 
-            <main id="app-main-content" className="flex-1 flex flex-col min-h-0 relative bg-white">
+            <main id="app-main-content" className="flex-1 flex flex-col min-h-0 relative bg-white w-full max-w-md mx-auto">
               {children}
             </main>
           </div>
