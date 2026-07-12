@@ -244,7 +244,7 @@ app.get("/api/invite/:code", async (req, res) => {
 })
 
 // ─── OTP Email Verification ────────────────────────────────
-app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {
+app.post("/api/send-otp", rateLimit(15, 60 * 60 * 1000), async (req, res) => {
   try {
     const { email } = req.body
     if (!email || !email.includes("@")) {

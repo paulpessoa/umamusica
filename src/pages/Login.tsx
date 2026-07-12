@@ -29,7 +29,13 @@ export default function Login() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email })
       });
-      if (!res.ok) throw new Error("Erro ao enviar código");
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Erro ao enviar código");
+      }
+
       setStep("code");
     } catch (err: any) {
       setError(err.message || "Erro de conexão");
