@@ -33,6 +33,8 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [freeformText, setFreeformText] = useState("");
   const [showFreeform, setShowFreeform] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
 
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -236,15 +238,42 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
   const triggerCompose = () => {
     if (showFreeform) {
       if (!freeformText.trim()) return;
-      onFinishChat([
+      setMessages([
+        ...messages,
         {
           sender: "user",
-          text: `[História Livre]: ${freeformText}`,
-          timestamp: new Date().toLocaleTimeString(),
+          text: `[CRIAÇÃO LIVRE]\n${freeformText}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
+      setShowFreeform(false);
+      setIsTyping(true);
+      handleSendMessage(`[CRIAÇÃO LIVRE] ${freeformText}`);
     } else {
       onFinishChat(messages);
+    }
+  };
+
+  const handleReview = async () => {
+    if (!freeformText.trim()) return;
+    setIsReviewing(true);
+    setReviewFeedback(null);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: freeformText }),
+      });
+      const data = await response.json();
+      if (response.ok && data.feedback) {
+        setReviewFeedback(data.feedback);
+      } else {
+        setReviewFeedback("Não foi possível gerar a revisão no momento. Tente novamente.");
+      }
+    } catch {
+      setReviewFeedback("Erro de conexão ao tentar revisar.");
+    } finally {
+      setIsReviewing(false);
     }
   };
 
@@ -313,8 +342,6 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
               )}
               <div ref={messagesEndRef} />
             </div>
-
-
 
             {/* Bottom Controls */}
             <div className="p-4 bg-white border-t border-gray-100 space-y-3">
@@ -395,10 +422,6 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
             exit={{ opacity: 0, scale: 0.95 }}
             className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-white"
           >
-            <div className="text-center space-y-2">
-
-            </div>
-
             <div className="flex-1 flex flex-col min-h-[220px]">
               <textarea
                 value={freeformText}
@@ -408,23 +431,40 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
               />
             </div>
 
-            <div className="space-y-3">
+            {reviewFeedback && (
+              <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl text-sm text-purple-800 shadow-inner">
+                <div className="flex items-center gap-2 mb-2 font-bold">
+                  <Sparkles className="w-4 h-4 text-purple-500" /> Dicas da IA
+                </div>
+                <div className="whitespace-pre-wrap leading-relaxed">{reviewFeedback}</div>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={handleReview}
+                disabled={!freeformText.trim() || isReviewing}
+                className="flex-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isReviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Revisar com IA
+              </button>
               <button
                 onClick={triggerCompose}
                 disabled={!freeformText.trim()}
-                className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 text-sm transition-all cursor-pointer"
+                className="flex-1 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 text-sm transition-all cursor-pointer"
               >
                 Criar Minha Música
                 <ChevronRight className="w-4 h-4" />
               </button>
-
-              <button
-                onClick={() => setShowFreeform(false)}
-                className="w-full bg-gray-50 hover:bg-gray-100 text-xs text-gray-600 font-semibold py-3 px-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                Voltar para o conversa
-              </button>
             </div>
+
+            <button
+              onClick={() => setShowFreeform(false)}
+              className="w-full bg-gray-50 hover:bg-gray-100 text-xs text-gray-600 font-semibold py-3 px-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              Voltar para a conversa
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

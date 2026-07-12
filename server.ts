@@ -146,6 +146,36 @@ async function generateContentWithFallback(params: {
 // API ROUTES
 // ============================================================
 
+// AI Review for Freeform creation
+app.post("/api/review", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || text.trim().length < 5) {
+      return res.status(400).json({ error: "Texto muito curto para revisão." });
+    }
+
+    const prompt = `Você é um assistente de composição musical. O usuário escreveu o seguinte rascunho para criar uma música personalizada:
+
+"${text}"
+
+Sua tarefa é fazer uma revisão rápida (insights) para ajudá-lo a melhorar a história antes de gerar a música.
+Aja de forma muito amigável e direta. Seja MUITO BREVE (no máximo 2 ou 3 tópicos curtos).
+Exemplo do que observar: O usuário esqueceu de mencionar o gênero musical (Sertanejo, Pop, Rock)? Faltam detalhes específicos (nomes, manias engraçadas, tempo de relacionamento)?
+ATENÇÃO: NÃO gere a letra da música. Apenas dê dicas e sugestões do que ele pode acrescentar para a música ficar melhor.`;
+
+    const result = await generateContentWithFallback({
+      model: "gemini-3.1-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
+
+    const aiText = result.response.text();
+    res.json({ feedback: aiText });
+  } catch (error) {
+    console.error("Review error:", error);
+    res.status(500).json({ error: "Erro ao gerar revisão. Tente novamente." });
+  }
+});
+
 // Health Check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
