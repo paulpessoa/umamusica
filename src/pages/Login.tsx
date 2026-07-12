@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Mail, ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
@@ -11,10 +11,28 @@ export default function Login() {
   const [step, setStep] = useState<"email" | "code">("email");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [timeLeft, setTimeLeft] = useState(600); // 10 minutes (600 seconds)
   const { login } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const referralCode = searchParams.get("ref");
+
+  // Countdown timer for OTP validity
+  useEffect(() => {
+    if (step !== "code" || timeLeft <= 0) return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [step, timeLeft]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   const sendOtp = async () => {
     if (!email || !email.includes("@")) {
@@ -36,6 +54,7 @@ export default function Login() {
         throw new Error(data.error || "Erro ao enviar código");
       }
 
+      setTimeLeft(600); // Reset timer to 10 min
       setStep("code");
     } catch (err: any) {
       setError(err.message || "Erro de conexão");
@@ -44,8 +63,9 @@ export default function Login() {
     }
   };
 
-  const verifyOtp = async () => {
-    if (!code || code.length !== 6) {
+  const verifyOtp = async (codeToVerify?: string) => {
+    const activeCode = codeToVerify !== undefined ? codeToVerify : code;
+    if (!activeCode || activeCode.length !== 6) {
       setError("Insira o código de 6 dígitos");
       return;
     }
@@ -55,7 +75,7 @@ export default function Login() {
       const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code, referralCode })
+        body: JSON.stringify({ email, code: activeCode, referralCode })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Código inválido");
@@ -67,7 +87,7 @@ export default function Login() {
         throw new Error("Erro ao criar usuário. Tente novamente.");
       }
     } catch (err: any) {
-      setError(err.message || "Erro ao verificar código");
+      setError(err.message || "Código incorreto. Verifique e tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -121,26 +141,58 @@ export default function Login() {
               </button>
 
               <h1 className="text-2xl font-bold text-gray-900 mb-2">Insira o código</h1>
-              <p className="text-gray-500 mb-8 leading-relaxed">
+              <p className="text-gray-500 mb-6 leading-relaxed">
                 Enviamos um código de 6 dígitos para <strong className="text-gray-900">{email}</strong>
               </p>
 
-              <div className="space-y-4">
-                <div>
+              {/* Countdown Timer */}
+              <div className="flex items-center justify-between text-xs text-gray-400 mb-6 px-1">
+                <span>O código expira em:</span>
+                <span className={`font-mono font-bold ${timeLeft < 60 ? "text-red-500 animate-pulse" : "text-[#FF5A5F]"}`}>
+                  {formatTime(timeLeft)}
+                </span>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-4">
                   <input
                     type="text"
                     value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setCode(val);
+                      if (val.length === 6) {
+                        verifyOtp(val);
+                      }
+                    }}
                     placeholder="000000"
-                    className="w-full px-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF5A5F] focus:border-transparent outline-none transition-all text-center text-2xl tracking-[0.5em] font-medium"
+                    disabled={loading || timeLeft <= 0}
+                    className="w-full px-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF5A5F] focus:border-transparent outline-none transition-all text-center text-2xl tracking-[0.5em] font-medium disabled:opacity-50"
                   />
-                  {error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}
+                  
+                  {timeLeft <= 0 && (
+                    <div className="text-center">
+                      <p className="text-red-500 text-xs mb-2">Este código de verificação expirou.</p>
+                      <button
+                        onClick={sendOtp}
+                        className="text-xs text-[#FF5A5F] font-bold hover:underline"
+                      >
+                        Reenviar novo código
+                      </button>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="bg-red-50 border border-red-100/50 rounded-xl p-3.5 text-center text-xs text-red-600 font-semibold shadow-sm">
+                      {error}
+                    </div>
+                  )}
                 </div>
 
                 <button
-                  onClick={verifyOtp}
-                  disabled={loading}
-                  className="w-full max-w-xs mx-auto py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center"
+                  onClick={() => verifyOtp()}
+                  disabled={loading || code.length !== 6 || timeLeft <= 0}
+                  className="w-full max-w-xs mx-auto py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center disabled:shadow-none"
                 >
                   {loading ? "Verificando..." : "Entrar"}
                 </button>

@@ -933,7 +933,7 @@ Campos obrigatórios:
 3. Style: Estilo musical.
 4. Tempo: Lenta, Média ou Rápida.
 5. Vibe: Tom emocional (ex: "Emocionante", "Romântica").
-6. Lyrics: Letra COMPLETA com [Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro].
+6. Lyrics: Letra COMPLETA estruturada claramente em estrofes e versos (use quebras de linha '\\n' entre os versos e quebras de linha duplas '\\n\\n' entre as estrofes/seções como [Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro]). Garanta que a letra NUNCA venha em um bloco único de texto, mas sempre dividida em estrofes e versos bem organizados.
 7. Key Memories: Lista das memórias utilizadas.
 8. Dedicated To: Nome/apelido da pessoa homenageada.
 
@@ -953,7 +953,10 @@ Retorne JSON válido.
             style: { type: Type.STRING },
             tempo: { type: Type.STRING },
             vibe: { type: Type.STRING },
-            lyrics: { type: Type.STRING },
+            lyrics: {
+              type: Type.STRING,
+              description: "Letra completa da música estruturada de forma clara em estrofes e versos, usando quebras de linha (\\n) entre os versos e quebras de linha duplas (\\n\\n) entre as seções ([Intro], [Verso 1], etc.) para que fique perfeitamente formatada em parágrafos."
+            },
             keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
             dedicatedTo: { type: Type.STRING }
           },
