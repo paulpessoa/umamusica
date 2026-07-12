@@ -10,6 +10,8 @@ import SuccessSection from "./components/SuccessSection";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
+import MySongs from "./pages/MySongs";
+import FAQ from "./pages/FAQ";
 // Terms, Privacy will be added shortly
 
 function ChatRoute() {
@@ -81,6 +83,19 @@ function CheckoutRoute() {
   );
 }
 
+function MySongsRoute() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Protect route
+  if (!user) {
+    navigate("/login");
+    return null;
+  }
+
+  return <MySongs />;
+}
+
 function SuccessRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -100,6 +115,8 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/perfil" element={<Profile />} />
+        <Route path="/minhas-musicas" element={<MySongsRoute />} />
+        <Route path="/faq" element={<FAQ />} />
         <Route path="/chat" element={<ChatRoute />} />
         <Route path="/checkout/:id" element={<CheckoutRoute />} />
         <Route path="/musica/:id" element={<SuccessRoute />} />

@@ -243,7 +243,7 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
             {user ? (
               <>
                 <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
-                  Meu Perfil
+                  Perfil
                 </button>
                 <div className="w-px h-4 bg-gray-200"></div>
                 <button onClick={logout} className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">

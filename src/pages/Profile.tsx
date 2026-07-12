@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Copy, Check, Gift, Music } from "lucide-react";
+import { ArrowLeft, Copy, Check, Gift, Music, HelpCircle, ChevronRight, LogOut, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import MobileFrame from "../components/MobileFrame";
@@ -71,15 +71,13 @@ export default function Profile() {
           <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 ml-2">Meu Perfil</h1>
+          <h1 className="text-lg font-bold text-gray-900 ml-2">Perfil</h1>
         </div>
 
         <div className="p-6 space-y-8">
           {/* Info Pessoal */}
           <section>
-            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Informações Pessoais</h2>
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 mb-1">E-mail</p>
               <p className="font-bold text-gray-900">{user.email}</p>
             </div>
           </section>
@@ -87,7 +85,6 @@ export default function Profile() {
           {/* Programa de Indicação */}
           <section>
             <div className="flex items-center gap-2 mb-4">
-              <Gift className="w-5 h-5 text-[#FF5A5F]" />
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Programa de Indicação</h2>
             </div>
             <div className="bg-gradient-to-br from-[#FFF0F0] to-white border border-[#FF5A5F]/20 rounded-2xl p-5 shadow-sm space-y-4">
@@ -98,12 +95,11 @@ export default function Profile() {
                 </div>
               </div>
               <p className="text-xs text-gray-600 leading-relaxed">
-                Indique o 1Música. Quando o seu amigo se cadastrar e confirmar o e-mail, <strong>você e ele ganham 1 música grátis!</strong> (Limite de 5 amigos por mês).
+                Quando o seu amigo se cadastrar e confirmar o e-mail, <strong>você e ele ganham 1 música grátis!</strong> (Limite de 5 amigos por mês).
               </p>
-              
+
               <div className="bg-white rounded-xl p-3 border border-gray-200 flex items-center justify-between gap-3">
                 <div className="truncate flex-1">
-                  <p className="text-[10px] text-gray-400 uppercase font-bold mb-0.5">Seu link de indicação</p>
                   <p className="text-xs font-mono text-gray-800 truncate">{refLink}</p>
                 </div>
                 <button
@@ -116,7 +112,7 @@ export default function Profile() {
 
               {/* Contatos Indicados */}
               <div className="pt-4 border-t border-gray-100">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Amigos Cadastrados ({referredUsers.length}/5 este mês)</h3>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Amigos Cadastrados</h3>
                 {referredUsers.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">Ninguém se cadastrou usando seu link ainda.</p>
                 ) : (
@@ -133,83 +129,56 @@ export default function Profile() {
             </div>
           </section>
 
-          {/* Histórico de Músicas */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Music className="w-5 h-5 text-gray-600" />
-              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Minhas Músicas</h2>
-            </div>
-            
-            {orders.length === 0 ? (
-              <div className="bg-gray-50 rounded-2xl p-6 text-center border border-gray-100">
-                <p className="text-sm text-gray-500">Você ainda não criou nenhuma música.</p>
-                <button
-                  onClick={() => navigate("/chat")}
-                  className="mt-4 px-6 py-2.5 bg-[#FF5A5F] text-white font-bold rounded-full text-sm hover:bg-[#e0484d] transition-colors"
-                >
-                  Criar Agora
-                </button>
+          {/* Menu de Opções */}
+          <section className="space-y-3 pt-2">
+            <button
+              onClick={() => navigate("/minhas-musicas")}
+              className="w-full bg-white border border-gray-100 hover:border-gray-200 shadow-sm rounded-2xl p-4.5 flex items-center justify-between transition-all group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-[#FF5A5F] group-hover:scale-105 transition-transform">
+                  <Music className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-sm text-gray-900">Minhas Músicas</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Ver histórico e músicas pendentes</p>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Aguardando Pagamento */}
-                {pendingOrders.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2">Aguardando Pagamento</h3>
-                    <div className="space-y-3">
-                      {pendingOrders.map((order) => (
-                        <div key={order.id} className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex flex-col gap-3 hover:border-amber-300 transition-colors">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-bold text-amber-900 text-sm mb-0.5">Pagamento Pendente</p>
-                              <p className="text-[10px] text-amber-700/70">{new Date(order.created_at).toLocaleDateString()}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => navigate(`/checkout/${order.id}`)}
-                            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2"
-                          >
-                            Retomar Pagamento
-                            <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+            </button>
 
-                {/* Finalizadas / Em Andamento */}
-                {completedOrders.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Histórico</h3>
-                    <div className="space-y-3">
-                      {completedOrders.map((order) => (
-                        <div key={order.id} className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center justify-between hover:border-[#FF5A5F]/30 transition-colors cursor-pointer" onClick={() => navigate(`/musica/${order.id}`)}>
-                          <div>
-                            <p className="font-bold text-gray-900 text-sm mb-1">{order.status === "completed" ? "Música Finalizada" : "Em andamento"}</p>
-                            <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</p>
-                          </div>
-                          <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+            <button
+              onClick={() => navigate("/faq")}
+              className="w-full bg-white border border-gray-100 hover:border-gray-200 shadow-sm rounded-2xl p-4.5 flex items-center justify-between transition-all group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center text-blue-500 group-hover:scale-105 transition-transform">
+                  <HelpCircle className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-sm text-gray-900">Perguntas Frequentes (FAQ)</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Dúvidas comuns sobre o 1Música</p>
+                </div>
               </div>
-            )}
+              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+            </button>
           </section>
 
-          <section className="pt-6 border-t border-gray-100 flex flex-col gap-4 items-center">
+          {/* Ações da Conta */}
+          <section className="space-y-3 pt-6 border-t border-gray-100">
             <button
               onClick={logout}
-              className="text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors"
+              className="w-full py-3.5 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold rounded-2xl border border-gray-200 transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer"
             >
+              <LogOut className="w-4.5 h-4.5 text-gray-500" />
               Sair da Conta
             </button>
+
             <button
               onClick={handleDeleteAccount}
-              className="text-xs text-red-500 hover:text-red-700 transition-colors"
+              className="w-full py-3.5 bg-rose-50/30 hover:bg-rose-50 text-rose-600 font-bold rounded-2xl border border-rose-100/50 hover:border-rose-100 transition-colors flex items-center justify-center gap-2 text-xs cursor-pointer"
             >
+              <Trash2 className="w-4 h-4 text-rose-500" />
               Excluir minha conta
             </button>
           </section>
