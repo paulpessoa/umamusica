@@ -14,7 +14,10 @@ import MySongs from "./pages/MySongs";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
 import Invite from "./pages/Invite";
-// Terms, Privacy will be added shortly
+import CookieBanner from "./components/CookieBanner";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
+
 
 function ChatRoute() {
   const { user } = useAuth();
@@ -126,8 +129,11 @@ export default function App() {
         <Route path="/checkout/:id" element={<CheckoutRoute />} />
         <Route path="/musica/:id" element={<SuccessRoute />} />
         <Route path="/convite/:code" element={<Invite />} />
+        <Route path="/termos" element={<Terms />} />
+        <Route path="/privacidade" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      <CookieBanner />
     </AuthProvider>
   );
 }
