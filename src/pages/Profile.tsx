@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, Copy, Check, Gift, Music } from "lucide-react";
-import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import MobileFrame from "../components/MobileFrame";
@@ -10,6 +9,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
+  const [referredUsers, setReferredUsers] = useState<any[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -21,6 +21,7 @@ export default function Profile() {
       .then((res) => res.json())
       .then((data) => {
         if (data.orders) setOrders(data.orders);
+        if (data.referredUsers) setReferredUsers(data.referredUsers);
       })
       .catch((err) => console.error("Erro ao carregar perfil:", err));
   }, [user, navigate]);
@@ -33,6 +34,30 @@ export default function Profile() {
     navigator.clipboard.writeText(refLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmDelete = window.confirm(
+      "Tem certeza que deseja solicitar a exclusão de sua conta?\n\nSua conta entrará em uma lixeira virtual por 30 dias. Se você não fizer login novamente nesse período, a conta e todos os seus dados e músicas criadas serão excluídos permanentemente."
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email }),
+      });
+      if (res.ok) {
+        alert("Sua exclusão de conta foi agendada. A conta foi desativada e será excluída em 30 dias.");
+        logout();
+      } else {
+        alert("Erro ao solicitar a exclusão de conta.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao conectar com o servidor.");
+    }
   };
 
   return (
@@ -62,15 +87,15 @@ export default function Profile() {
               <Gift className="w-5 h-5 text-[#FF5A5F]" />
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Programa de Indicação</h2>
             </div>
-            <div className="bg-gradient-to-br from-[#FFF0F0] to-white border border-[#FF5A5F]/20 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
+            <div className="bg-gradient-to-br from-[#FFF0F0] to-white border border-[#FF5A5F]/20 rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Seu Saldo</p>
+                  <p className="text-sm text-gray-600 mb-1">Seu Saldo de Indicações</p>
                   <p className="text-3xl font-black text-[#FF5A5F]">{user.free_songs_balance || 0} <span className="text-base font-bold text-gray-500">músicas</span></p>
                 </div>
               </div>
-              <p className="text-xs text-gray-600 leading-relaxed mb-4">
-                Indique o 1Música. Quando o seu amigo criar a primeira música, <strong>você e ele ganham 1 música grátis!</strong> (Limite: 5 por mês).
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Indique o 1Música. Quando o seu amigo se cadastrar e confirmar o e-mail, <strong>você e ele ganham 1 música grátis!</strong> (Limite de 5 amigos por mês).
               </p>
               
               <div className="bg-white rounded-xl p-3 border border-gray-200 flex items-center justify-between gap-3">
@@ -84,6 +109,23 @@ export default function Profile() {
                 >
                   {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5 text-gray-600" />}
                 </button>
+              </div>
+
+              {/* Contatos Indicados */}
+              <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Amigos Cadastrados ({referredUsers.length}/5 este mês)</h3>
+                {referredUsers.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">Ninguém se cadastrou usando seu link ainda.</p>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+                    {referredUsers.map((friend) => (
+                      <div key={friend.id} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-gray-100">
+                        <span className="text-xs font-medium text-gray-700">{friend.email}</span>
+                        <span className="text-[10px] text-gray-400">{new Date(friend.created_at).toLocaleDateString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -126,6 +168,12 @@ export default function Profile() {
               className="text-sm font-bold text-gray-500 hover:text-gray-900 transition-colors"
             >
               Sair da Conta
+            </button>
+            <button
+              onClick={handleDeleteAccount}
+              className="text-xs text-red-500 hover:text-red-700 transition-colors"
+            >
+              Excluir minha conta
             </button>
           </section>
         </div>

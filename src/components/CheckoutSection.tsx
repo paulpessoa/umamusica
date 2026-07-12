@@ -30,7 +30,7 @@ export default function CheckoutSection({
 
     const pollStatus = async () => {
       try {
-        const res = await fetch(`/api/orders/${orderId}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
         if (res.ok) {
           const order = await res.json();
           if (order.status === "paid" || order.status === "completed" || order.status === "processing") {
@@ -77,7 +77,7 @@ export default function CheckoutSection({
     setCouponError(null);
     setCouponSuccess(null);
     try {
-      const res = await fetch(`/api/orders/${orderId}/apply-coupon`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/apply-coupon`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ coupon: couponCode.trim() }),
@@ -104,7 +104,7 @@ export default function CheckoutSection({
     setIsSimulating(true);
     setPollingError(null);
     try {
-      const res = await fetch(`/api/orders/${orderId}/simulate-payment`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/simulate-payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });

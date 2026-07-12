@@ -72,7 +72,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
     setIsTyping(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: updatedMessages, email }),
@@ -160,7 +160,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
         const base64data = (reader.result as string).split(",")[1];
 
         try {
-          const response = await fetch("/api/chat-voice", {
+          const response = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/chat-voice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

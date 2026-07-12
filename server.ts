@@ -212,22 +212,77 @@ app.post("/api/verify-otp", async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
     let { data: user, error: userError } = await supabase
       .from("users")
-      .select("id, email, name, referral_code, free_songs_balance")
+      .select("id, email, name, referral_code, free_songs_balance, status")
       .eq("email", cleanEmail)
       .single()
+
+    if (user && user.status === 'trash') {
+      // Reactivate account
+      await supabase
+        .from("users")
+        .update({ status: 'active', deleted_at: null })
+        .eq("id", user.id);
+      user.status = 'active';
+    }
 
     if (!user) {
       // Create new user
       const { referralCode } = req.body;
       let referredBy = null;
+      let initialBalance = 0;
+
       if (referralCode) {
         const { data: refUser } = await supabase
           .from("users")
-          .select("id")
+          .select("id, email, free_songs_balance")
           .eq("referral_code", referralCode.trim().toUpperCase())
           .single();
         if (refUser) {
           referredBy = refUser.id;
+          initialBalance = 1; // Invited user gets 1 free song immediately
+
+          // Check monthly limit for referrer (max 5 friends/songs per month)
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
+
+          const { count } = await supabase
+            .from("users")
+            .select("id", { count: "exact" })
+            .eq("referred_by", referredBy)
+            .gte("created_at", startOfMonth.toISOString());
+
+          if (count === null || count < 5) {
+            // Referrer gets 1 free song
+            await supabase
+              .from("users")
+              .update({ free_songs_balance: (refUser.free_songs_balance || 0) + 1 })
+              .eq("id", referredBy);
+
+            // Send notification email to referrer
+            if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+              try {
+                const fromEmail = "contato@qisites.com.br";
+                await transporter.sendMail({
+                  from: `"1Música" <${fromEmail}>`,
+                  to: refUser.email,
+                  subject: "🎉 Você ganhou 1 música grátis!",
+                  html: `
+                    <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
+                      <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
+                      <p style="color: #555; font-size: 14px;">Boas notícias! Um amigo acabou de se cadastrar usando seu link.</p>
+                      <div style="background: #FFF0F0; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                        <span style="font-size: 24px; font-weight: bold; color: #FF5A5F;">+1 Música Grátis</span>
+                      </div>
+                      <p style="color: #888; font-size: 12px;">Seu novo saldo já está disponível na sua conta.</p>
+                    </div>
+                  `
+                });
+              } catch (smtpErr) {
+                console.error("[Referral Signup Email Error]", smtpErr);
+              }
+            }
+          }
         }
       }
       
@@ -238,7 +293,8 @@ app.post("/api/verify-otp", async (req, res) => {
         .insert({
           email: cleanEmail,
           referral_code: newReferralCode,
-          referred_by: referredBy
+          referred_by: referredBy,
+          free_songs_balance: initialBalance
         })
         .select("id, email, name, referral_code, free_songs_balance")
         .single()
@@ -273,15 +329,28 @@ app.get("/api/users/me", async (req, res) => {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
     
-    // Also fetch user's past generated songs
+    // Fetch user's past generated songs
     const { data: orders } = await supabase
       .from("orders")
       .select("id, song_metadata, audio_storage_path, status, created_at")
       .eq("email", email.toLowerCase().trim())
       .eq("status", "completed")
       .order("created_at", { ascending: false });
+
+    // Fetch referred contacts (masked for privacy)
+    const { data: referredUsers } = await supabase
+      .from("users")
+      .select("id, email, created_at")
+      .eq("referred_by", user.id)
+      .order("created_at", { ascending: false });
+
+    const maskedReferred = (referredUsers || []).map(u => ({
+      id: u.id,
+      email: u.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
+      created_at: u.created_at
+    }));
       
-    res.json({ user, orders: orders || [] });
+    res.json({ user, orders: orders || [], referredUsers: maskedReferred });
   } catch (error: any) {
     res.status(500).json({ error: "Erro ao buscar usuário" });
   }
@@ -822,53 +891,7 @@ Retorne JSON válido.
       })
       .eq("id", order.id)
 
-    // Handle Referral Bonus
-    try {
-      const { data: user } = await supabase
-        .from("users")
-        .select("id, referred_by")
-        .eq("email", order.email)
-        .single();
 
-      if (user && user.referred_by) {
-        const { count } = await supabase
-          .from("orders")
-          .select("id", { count: "exact" })
-          .eq("email", order.email)
-          .eq("status", "completed");
-
-        if (count === 1) {
-          const { data: referrer } = await supabase
-            .from("users")
-            .select("id, email, free_songs_balance")
-            .eq("id", user.referred_by)
-            .single();
-
-          if (referrer && referrer.free_songs_balance < 5) {
-            await supabase
-              .from("users")
-              .update({ free_songs_balance: referrer.free_songs_balance + 1 })
-              .eq("id", referrer.id);
-
-            if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-              const fromEmail = "contato@qisites.com.br";
-              await transporter.sendMail({
-                from: `"1Música" <${fromEmail}>`,
-                to: referrer.email,
-                subject: "🎉 Você ganhou 1 música grátis!",
-                html: `<div style="font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px;">
-                        <h2 style="color: #FF5A5F;">Você ganhou 1 música grátis!</h2>
-                        <p>Oba! O amigo que você indicou acabou de criar a primeira música dele.</p>
-                        <p>Seu saldo foi atualizado. Aproveite!</p>
-                       </div>`
-              });
-            }
-          }
-        }
-      }
-    } catch (refErr) {
-      console.error("[Referral Error]", refErr);
-    }
 
     // Send email with download link (via SMTP)
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
@@ -1061,6 +1084,84 @@ app.get("/api/orders/:id/download", async (req, res) => {
     res.status(500).json({ error: "Erro no download" })
   }
 })
+
+// ─── Delete Current User (Soft Delete to Trash Bin) ──────────
+app.post("/api/users/me/delete", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Email obrigatório" });
+    }
+
+    const { error } = await supabase
+      .from("users")
+      .update({
+        status: "trash",
+        deleted_at: new Date().toISOString()
+      })
+      .eq("email", email.toLowerCase().trim());
+
+    if (error) {
+      return res.status(400).json({ error: "Erro ao agendar exclusão da conta" });
+    }
+
+    res.json({ success: true, message: "Conta agendada para exclusão com sucesso." });
+  } catch (error: any) {
+    res.status(500).json({ error: "Erro interno no servidor ao deletar usuário" });
+  }
+});
+
+// Daily Cleanup Cron Simulation for virtual trash (accounts deleted > 30 days ago)
+async function performHardDeleteCleanup() {
+  try {
+    console.log("[Trash Cleanup] Running daily hard delete cleanup...");
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Get users in trash for more than 30 days
+    const { data: usersToDelete } = await supabase
+      .from("users")
+      .select("id, email")
+      .eq("status", "trash")
+      .lte("deleted_at", thirtyDaysAgo.toISOString());
+
+    if (usersToDelete && usersToDelete.length > 0) {
+      for (const u of usersToDelete) {
+        console.log(`[Trash Cleanup] Hard deleting user: ${u.email}`);
+        
+        // Delete user's songs/audios from storage first
+        const { data: orders } = await supabase
+          .from("orders")
+          .select("id, audio_storage_path")
+          .eq("email", u.email);
+          
+        if (orders) {
+          for (const o of orders) {
+            if (o.audio_storage_path) {
+              await supabase.storage.from("songs").remove([o.audio_storage_path]);
+            }
+          }
+        }
+
+        // Delete user's orders
+        await supabase.from("orders").delete().eq("email", u.email);
+
+        // Delete user's OTP codes
+        await supabase.from("otp_codes").delete().eq("email", u.email);
+
+        // Finally delete the user
+        await supabase.from("users").delete().eq("id", u.id);
+      }
+    }
+    console.log("[Trash Cleanup] Cleanup finished.");
+  } catch (err) {
+    console.error("[Trash Cleanup] Error during cleanup:", err);
+  }
+}
+
+// Run cleanup on startup and then every 24 hours
+performHardDeleteCleanup();
+setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000);
 
 // ============================================================
 // VITE DEV / PRODUCTION SERVING

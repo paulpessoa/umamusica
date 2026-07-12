@@ -51,7 +51,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
 
     const fetchOrder = async () => {
       try {
-        const res = await fetch(`/api/orders/${orderId}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
         if (res.ok) {
           const data: Order = await res.json();
           setOrder(data);
@@ -87,7 +87,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
     setIsGenerating(true);
     try {
       setErrorMessage(null);
-      await fetch(`/api/orders/${orderId}/generate`, {
+      await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
