@@ -3,10 +3,10 @@
 Plataforma inovadora que transforma histórias reais, memórias e sentimentos em músicas exclusivas por apenas **R$ 1,00** através de Inteligência Artificial.
 
 <div align="center">
-  <a href="https://umamusica.vercel.app" target="_blank">
-    <img src="./assets/demo-umamusica.gif" alt="1Música Demo" width="100%" style="border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
-  </a>
-  <p><em>Clique na imagem acima para testar a aplicação na Vercel! 🚀</em></p>
+   <a href="https://umamusica.vercel.app/" target="_blank">
+   <img src="assets/demo-umamusica.gif" alt="Demonstração do 1Música" width="1280" height="607">
+   </a>
+   <p><em>Clique na imagem acima para testar a aplicação</em></p>
 </div>
 
 ---
