@@ -229,7 +229,7 @@ export default function AudioPlayer({
 
         <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
           {[metadata.style, `Tempo: ${metadata.tempo}`, `Vibe: ${metadata.vibe}`].map((tag) => (
-            <span key={tag} className="text-[10px] bg-gray-50 text-gray-500 border border-gray-100 px-2.5 py-1 rounded-full font-mono uppercase">
+            <span key={tag} className="text-[10px] bg-gray-50 text-gray-500 border border-gray-100 px-2.5 py-1 rounded-full font-mono">
               {tag}
             </span>
           ))}

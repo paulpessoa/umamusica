@@ -34,7 +34,7 @@ export default function Profile() {
 
   if (!user) return null;
 
-  const refLink = `${window.location.origin}/login?ref=${user.referral_code}`;
+  const refLink = `${window.location.origin}/convite/${user.referral_code}`;
 
   const copyRefLink = () => {
     navigator.clipboard.writeText(refLink);
@@ -51,7 +51,7 @@ export default function Profile() {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me/delete`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${user.session_token}`
         },
@@ -93,13 +93,10 @@ export default function Profile() {
 
           {/* Programa de Indicação */}
           <section>
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Programa de Indicação</h2>
-            </div>
             <div className="bg-gradient-to-br from-[#FFF0F0] to-white border border-[#FF5A5F]/20 rounded-2xl p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Seu Saldo de Indicações</p>
+                  <p className="text-sm text-gray-600 mb-1">Indicações</p>
                   <p className="text-3xl font-black text-[#FF5A5F]">{user.free_songs_balance || 0} <span className="text-base font-bold text-gray-500">músicas</span></p>
                 </div>
               </div>
@@ -121,7 +118,7 @@ export default function Profile() {
 
               {/* Contatos Indicados */}
               <div className="pt-4 border-t border-gray-100">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Amigos Cadastrados</h3>
+                <h3 className="text-xs font-bold text-gray-500 tracking-wider mb-2">Amigos Cadastrados</h3>
                 {referredUsers.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">Ninguém se cadastrou usando seu link ainda.</p>
                 ) : (

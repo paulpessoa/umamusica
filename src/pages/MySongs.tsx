@@ -73,7 +73,7 @@ export default function MySongs() {
                 {/* Aguardando Pagamento */}
                 {pendingOrders.length > 0 && (
                   <div className="space-y-3">
-                    <h2 className="text-xs font-bold text-amber-600 uppercase tracking-wider">Aguardando Pagamento</h2>
+                    <h2 className="text-xs font-bold text-amber-600 tracking-wider">Aguardando Pagamento</h2>
                     <div className="space-y-3">
                       {pendingOrders.map((order) => (
                         <div key={order.id} className="bg-amber-50/70 border border-amber-100 rounded-2xl p-4 flex flex-col gap-3">
@@ -100,7 +100,7 @@ export default function MySongs() {
                 {/* Finalizadas / Em Andamento */}
                 {completedOrders.length > 0 && (
                   <div className="space-y-3">
-                    <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Histórico de Criações</h2>
+                    <h2 className="text-xs font-bold text-gray-500 tracking-wider">Histórico de Criações</h2>
                     <div className="space-y-3">
                       {completedOrders.map((order) => (
                         <div

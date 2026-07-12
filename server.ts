@@ -148,8 +148,42 @@ async function generateContentWithFallback(params: {
 
 // Health Check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() })
-})
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Referral Info
+app.get("/api/invite/:code", async (req, res) => {
+  try {
+    const { code } = req.params;
+    if (!code) {
+      return res.status(400).json({ error: "Code required" });
+    }
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("email")
+      .eq("referral_code", code)
+      .single();
+
+    if (error || !user) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+
+    // Mask the email for privacy (e.g. paul***@gmail.com)
+    const emailParts = user.email.split("@");
+    if (emailParts.length === 2) {
+      const namePart = emailParts[0];
+      const domainPart = emailParts[1];
+      const visibleLen = Math.max(2, Math.floor(namePart.length / 2));
+      const maskedName = namePart.substring(0, visibleLen) + "***";
+      return res.json({ email: `${maskedName}@${domainPart}` });
+    }
+
+    return res.json({ email: user.email });
+  } catch (error) {
+    console.error("Invite error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 // ─── OTP Email Verification ────────────────────────────────
 app.post("/api/send-otp", rateLimit(5, 60 * 60 * 1000), async (req, res) => {

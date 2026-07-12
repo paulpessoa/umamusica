@@ -136,7 +136,7 @@ export default function CheckoutSection({
 
       {/* Upper Status Header */}
       <div className="text-center space-y-2">
-        <span className="text-[10px] bg-[#FFF0F0] text-[#FF5A5F] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border border-[#FF5A5F]/10">
+        <span className="text-[10px] bg-[#FFF0F0] text-[#FF5A5F] font-extrabold px-3 py-1 rounded-full tracking-widest border border-[#FF5A5F]/10">
           Aguardando Pagamento
         </span>
 

@@ -13,6 +13,7 @@ import Profile from "./pages/Profile";
 import MySongs from "./pages/MySongs";
 import FAQ from "./pages/FAQ";
 import NotFound from "./pages/NotFound";
+import Invite from "./pages/Invite";
 // Terms, Privacy will be added shortly
 
 function ChatRoute() {
@@ -124,6 +125,7 @@ export default function App() {
         <Route path="/chat" element={<ChatRoute />} />
         <Route path="/checkout/:id" element={<CheckoutRoute />} />
         <Route path="/musica/:id" element={<SuccessRoute />} />
+        <Route path="/convite/:code" element={<Invite />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>
