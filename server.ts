@@ -164,7 +164,7 @@ Exemplo do que observar: O usuário esqueceu de mencionar o gênero musical (Ser
 ATENÇÃO: NÃO gere a letra da música. Apenas dê dicas e sugestões do que ele pode acrescentar para a música ficar melhor.`;
 
     const result = await generateContentWithFallback({
-      model: "gemini-3.1-flash",
+      model: "gemini-3.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
