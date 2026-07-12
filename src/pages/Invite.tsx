@@ -60,12 +60,9 @@ export default function Invite() {
           </div>
         ) : (
           <div className="flex flex-col items-center">
-            <div className="w-24 h-24 bg-emerald-50 rounded-full flex items-center justify-center mb-6 shadow-inner shadow-emerald-100">
-              <Gift className="w-12 h-12 text-emerald-500" />
-            </div>
             <h1 className="text-3xl font-black text-gray-900 mb-4 tracking-tight leading-tight">
               Você ganhou um <br />
-              <span className="text-[#FF5A5F]">convite especial!</span> 🎉
+              <span className="text-[#FF5A5F]">convite especial!</span>
             </h1>
             <p className="text-[15px] text-gray-600 mb-10 max-w-sm leading-relaxed">
               O seu amigo <strong className="text-gray-900">{inviterEmail}</strong> te indicou para transformar a sua história em uma música exclusiva e inesquecível.

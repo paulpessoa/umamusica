@@ -80,17 +80,10 @@ export default function Profile() {
           <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 ml-2">Perfil</h1>
+          <h1 className="text-lg font-bold text-gray-900 ml-2">{user.email}</h1>
         </div>
 
         <div className="p-6 space-y-8">
-          {/* Info Pessoal */}
-          <section>
-            <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-              <p className="font-bold text-gray-900">{user.email}</p>
-            </div>
-          </section>
-
           {/* Programa de Indicação */}
           <section>
             <div className="bg-gradient-to-br from-[#FFF0F0] to-white border border-[#FF5A5F]/20 rounded-2xl p-5 shadow-sm space-y-4">
@@ -105,22 +98,16 @@ export default function Profile() {
               </p>
 
               <div className="bg-white rounded-xl p-3 border border-gray-200 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1">
-                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-0.5">Seu Código</p>
-                    <p className="text-sm font-black text-gray-900 uppercase tracking-widest">{user.referral_code}</p>
-                  </div>
-                </div>
                 <div className="flex items-center justify-between gap-3 bg-gray-50 p-2 rounded-lg">
                   <div className="truncate flex-1">
                     <p className="text-xs font-mono text-gray-500 truncate">{refLink}</p>
                   </div>
-                <button
-                  onClick={copyRefLink}
-                  className="w-10 h-10 shrink-0 bg-gray-50 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors border border-gray-200"
-                >
-                  {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5 text-gray-600" />}
-                </button>
+                  <button
+                    onClick={copyRefLink}
+                    className="w-10 h-10 shrink-0 bg-gray-50 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors border border-gray-200"
+                  >
+                    {copied ? <Check className="w-5 h-5 text-emerald-500" /> : <Copy className="w-5 h-5 text-gray-600" />}
+                  </button>
                 </div>
               </div>
 

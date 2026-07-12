@@ -87,7 +87,7 @@ async function verifySession(req: express.Request, res: express.Response): Promi
     return null;
   }
   const token = authHeader.split(" ")[1];
-  
+
   // Find user by token
   const { data: user, error } = await supabase
     .from("users")
@@ -146,35 +146,7 @@ async function generateContentWithFallback(params: {
 // API ROUTES
 // ============================================================
 
-// AI Review for Freeform creation
-app.post("/api/review", async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text || text.trim().length < 5) {
-      return res.status(400).json({ error: "Texto muito curto para revisão." });
-    }
 
-    const prompt = `Você é um assistente de composição musical. O usuário escreveu o seguinte rascunho para criar uma música personalizada:
-
-"${text}"
-
-Sua tarefa é fazer uma revisão rápida (insights) para ajudá-lo a melhorar a história antes de gerar a música.
-Aja de forma muito amigável e direta. Seja MUITO BREVE (no máximo 2 ou 3 tópicos curtos).
-Exemplo do que observar: O usuário esqueceu de mencionar o gênero musical (Sertanejo, Pop, Rock)? Faltam detalhes específicos (nomes, manias engraçadas, tempo de relacionamento)?
-ATENÇÃO: NÃO gere a letra da música. Apenas dê dicas e sugestões do que ele pode acrescentar para a música ficar melhor.`;
-
-    const result = await generateContentWithFallback({
-      model: "gemini-3.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-    });
-
-    const aiText = result.response.text();
-    res.json({ feedback: aiText });
-  } catch (error) {
-    console.error("Review error:", error);
-    res.status(500).json({ error: "Erro ao gerar revisão. Tente novamente." });
-  }
-});
 
 // Health Check
 app.get("/api/health", (req, res) => {
@@ -367,7 +339,7 @@ app.post("/api/verify-otp", async (req, res) => {
                 await transporter.sendMail({
                   from: `"1Música" <${fromEmail}>`,
                   to: refUser.email,
-                  subject: "🎉 Você ganhou 1 música grátis!",
+                  subject: "Você ganhou 1 música grátis!",
                   html: `
                     <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
                       <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
@@ -400,7 +372,7 @@ app.post("/api/verify-otp", async (req, res) => {
         })
         .select("id, email, name, referral_code, free_songs_balance, session_token")
         .single()
-        
+
       if (!createError && newUser) {
         user = newUser;
       }
