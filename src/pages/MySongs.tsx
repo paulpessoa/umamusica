@@ -100,7 +100,6 @@ export default function MySongs() {
                 {/* Finalizadas / Em Andamento */}
                 {completedOrders.length > 0 && (
                   <div className="space-y-3">
-                    <h2 className="text-xs font-bold text-gray-500 tracking-wider">Histórico de Criações</h2>
                     <div className="space-y-3">
                       {completedOrders.map((order) => (
                         <div

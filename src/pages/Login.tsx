@@ -56,10 +56,10 @@ export default function Login() {
 
       if (data.user) {
         login(data.user);
+        navigate("/chat");
       } else {
-        login({ id: "temp", email });
+        throw new Error("Erro ao criar usuário. Tente novamente.");
       }
-      navigate("/chat");
     } catch (err: any) {
       setError(err.message || "Erro ao verificar código");
     } finally {
