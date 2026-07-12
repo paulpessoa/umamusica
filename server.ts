@@ -273,6 +273,12 @@ app.post("/api/send-otp", rateLimit(15, 60 * 60 * 1000), async (req, res) => {
             <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
           </div>
           <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
+          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+          <p>
+            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
+            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
+            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
+          </p>
         </div>
       `
     })
@@ -390,6 +396,12 @@ app.post("/api/verify-otp", async (req, res) => {
                     <span style="font-size: 24px; font-weight: bold; color: #FF5A5F;">+1 Música Grátis</span>
                   </div>
                   <p style="color: #888; font-size: 12px;">Seu novo saldo já está disponível na sua conta.</p>
+                  <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+                  <p>
+                    <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
+                    <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
+                    <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
+                  </p>
                 </div>
               `
             })
@@ -1086,6 +1098,12 @@ Retorne JSON válido.
             <a href="${apiUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
           </div>
           <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
+          <p>
+            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
+            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
+            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
+          </p>
+        </div>  
         </div>
       `
     })
@@ -1175,7 +1193,12 @@ Retorne JSON válido.
           <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
           <br/>
           <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-        </div>
+        <p>
+            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
+            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
+            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
+          </p>
+          </div>
       `
         : `
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
@@ -1187,7 +1210,12 @@ Retorne JSON válido.
           <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
           <br/>
           <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-        </div>
+          <p>
+            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
+            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
+            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
+          </p>
+          </div>
       `
 
       await sendEmailViaBrevo({
