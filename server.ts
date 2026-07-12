@@ -264,7 +264,7 @@ app.post("/api/send-otp", rateLimit(15, 60 * 60 * 1000), async (req, res) => {
     // Send via Brevo API (no IP restrictions!)
     await sendEmailViaBrevo({
       to: email,
-      subject: "Seu código de verificação — 1Música",
+      subject: "Código de verificação",
       htmlContent: `
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
           <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
