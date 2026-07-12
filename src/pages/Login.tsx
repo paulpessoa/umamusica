@@ -53,7 +53,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Código inválido");
-      
+
       if (data.user) {
         login(data.user);
       } else {
@@ -71,7 +71,7 @@ export default function Login() {
     <MobileFrame>
       <div className="flex flex-col h-full bg-white relative overflow-hidden">
         <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-[#FFF0F0] to-white/0 pointer-events-none" />
-        
+
         <div className="px-6 pt-12 pb-6 relative z-10 flex flex-col h-full">
           {step === "email" ? (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1">
@@ -94,7 +94,7 @@ export default function Login() {
                   />
                   {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
                 </div>
-                
+
                 <button
                   onClick={sendOtp}
                   disabled={loading}
@@ -107,16 +107,13 @@ export default function Login() {
             </motion.div>
           ) : (
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1">
-              <button 
+              <button
                 onClick={() => setStep("email")}
                 className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center mb-6 hover:bg-gray-100 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
-              
-              <div className="w-12 h-12 bg-[#FFF0F0] rounded-2xl flex items-center justify-center mb-6">
-                <ShieldCheck className="w-6 h-6 text-[#FF5A5F]" />
-              </div>
+
               <h1 className="text-2xl font-bold text-gray-900 mb-2">Insira o código</h1>
               <p className="text-gray-500 mb-8 leading-relaxed">
                 Enviamos um código de 6 dígitos para <strong className="text-gray-900">{email}</strong>
@@ -133,7 +130,7 @@ export default function Login() {
                   />
                   {error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}
                 </div>
-                
+
                 <button
                   onClick={verifyOtp}
                   disabled={loading}

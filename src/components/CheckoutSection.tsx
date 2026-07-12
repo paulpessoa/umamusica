@@ -24,7 +24,11 @@ export default function CheckoutSection({
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
 
-  // Poll order status every 3 seconds
+  const [localQr, setLocalQr] = useState(paymentQr);
+  const [localCopiaCola, setLocalCopiaCola] = useState(paymentCopiaCola);
+  const [isFetchingQr, setIsFetchingQr] = useState(!paymentQr);
+
+  // Poll order status every 3 seconds and fetch QR if missing
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
 
@@ -36,6 +40,12 @@ export default function CheckoutSection({
           if (order.status === "paid" || order.status === "completed" || order.status === "processing") {
             clearInterval(intervalId);
             onPaymentConfirmed();
+          } else {
+            if (!localQr && order.payment_qr) {
+              setLocalQr(order.payment_qr);
+              setLocalCopiaCola(order.payment_copia_e_cola);
+              setIsFetchingQr(false);
+            }
           }
         }
       } catch (e) {
@@ -48,7 +58,7 @@ export default function CheckoutSection({
     intervalId = setInterval(pollStatus, 3000);
 
     return () => clearInterval(intervalId);
-  }, [orderId, onPaymentConfirmed]);
+  }, [orderId, onPaymentConfirmed, localQr]);
 
   // Expiration countdown
   useEffect(() => {
@@ -66,7 +76,7 @@ export default function CheckoutSection({
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(paymentCopiaCola);
+    navigator.clipboard.writeText(localCopiaCola);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -140,9 +150,9 @@ export default function CheckoutSection({
 
         {/* QR Code container */}
         <div className="relative w-44 h-44 bg-white rounded-2xl p-2.5 flex items-center justify-center shadow-sm border border-gray-100">
-          {paymentQr ? (
+          {localQr ? (
             <img
-              src={paymentQr.startsWith("data:") ? paymentQr : `data:image/png;base64,${paymentQr}`}
+              src={localQr.startsWith("http") ? localQr : (localQr.startsWith("data:") ? localQr : `data:image/png;base64,${localQr}`)}
               alt="Pix QR Code"
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"

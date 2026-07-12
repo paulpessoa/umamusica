@@ -61,10 +61,11 @@ function ChatRoute() {
 function CheckoutRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state } = (window.history.state as any) || {};
+  const location = useLocation();
+  const state = location.state || {};
   // If no state, we should fetch it or just error out for MVP
-  const paymentQr = state?.usr?.paymentQr || "";
-  const paymentCopiaCola = state?.usr?.paymentCopiaCola || "";
+  const paymentQr = state?.paymentQr || "";
+  const paymentCopiaCola = state?.paymentCopiaCola || "";
 
   if (!id) return null;
 

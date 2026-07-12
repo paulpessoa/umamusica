@@ -60,6 +60,9 @@ export default function Profile() {
     }
   };
 
+  const completedOrders = orders.filter(o => o.status !== "pending_payment");
+  const pendingOrders = orders.filter(o => o.status === "pending_payment");
+
   return (
     <MobileFrame>
       <div className="flex flex-col h-full bg-white overflow-y-auto">
@@ -148,16 +151,50 @@ export default function Profile() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                {orders.map((order) => (
-                  <div key={order.id} className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center justify-between hover:border-[#FF5A5F]/30 transition-colors cursor-pointer" onClick={() => navigate(`/musica/${order.id}`)}>
-                    <div>
-                      <p className="font-bold text-gray-900 text-sm mb-1">{order.status === "completed" ? "Música Finalizada" : "Em andamento"}</p>
-                      <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</p>
+              <div className="space-y-6">
+                {/* Aguardando Pagamento */}
+                {pendingOrders.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2">Aguardando Pagamento</h3>
+                    <div className="space-y-3">
+                      {pendingOrders.map((order) => (
+                        <div key={order.id} className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex flex-col gap-3 hover:border-amber-300 transition-colors">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-amber-900 text-sm mb-0.5">Pagamento Pendente</p>
+                              <p className="text-[10px] text-amber-700/70">{new Date(order.created_at).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => navigate(`/checkout/${order.id}`)}
+                            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2"
+                          >
+                            Retomar Pagamento
+                            <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                    <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
                   </div>
-                ))}
+                )}
+
+                {/* Finalizadas / Em Andamento */}
+                {completedOrders.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Histórico</h3>
+                    <div className="space-y-3">
+                      {completedOrders.map((order) => (
+                        <div key={order.id} className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center justify-between hover:border-[#FF5A5F]/30 transition-colors cursor-pointer" onClick={() => navigate(`/musica/${order.id}`)}>
+                          <div>
+                            <p className="font-bold text-gray-900 text-sm mb-1">{order.status === "completed" ? "Música Finalizada" : "Em andamento"}</p>
+                            <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</p>
+                          </div>
+                          <ArrowLeft className="w-4 h-4 text-gray-400 rotate-180" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>

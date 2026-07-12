@@ -334,7 +334,7 @@ app.get("/api/users/me", async (req, res) => {
       .from("orders")
       .select("id, song_metadata, audio_storage_path, status, created_at")
       .eq("email", email.toLowerCase().trim())
-      .eq("status", "completed")
+      .in("status", ["completed", "paid", "pending_payment"])
       .order("created_at", { ascending: false });
 
     // Fetch referred contacts (masked for privacy)
@@ -591,7 +591,7 @@ app.post("/api/checkout", async (req, res) => {
 app.get("/api/orders/:id", async (req, res) => {
   const { data, error } = await supabase
     .from("orders")
-    .select("id, email, status, song_metadata, audio_storage_path, payment_id, created_at")
+    .select("id, email, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, created_at")
     .eq("id", req.params.id)
     .single()
 
@@ -627,24 +627,43 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
   try {
     const { coupon } = req.body
     const cleanCoupon = coupon ? coupon.trim().toUpperCase() : ""
-    if (
-      cleanCoupon === "PRESENTE" ||
-      cleanCoupon === "ESPECIAL" ||
-      cleanCoupon === "CUPOM-PRESENTE" ||
-      cleanCoupon === "CUPOM_ESPECIAL"
-    ) {
-      await supabase
-        .from("orders")
-        .update({ status: "paid", updated_at: new Date().toISOString() })
-        .eq("id", req.params.id)
-      res.json({
-        success: true,
-        status: "paid",
-        message: "Cupom aplicado com sucesso!"
-      })
-    } else {
-      res.status(400).json({ error: "Cupom inválido ou expirado" })
+
+    // Check in the coupons table
+    const { data: couponData, error: couponError } = await supabase
+      .from("coupons")
+      .select("*")
+      .eq("code", cleanCoupon)
+      .single()
+
+    if (!couponData || couponError) {
+      return res.status(400).json({ error: "Cupom inválido ou inexistente" })
     }
+    
+    if (couponData.current_uses >= couponData.max_uses) {
+      return res.status(400).json({ error: "O limite de uso deste cupom foi atingido" })
+    }
+
+    if (couponData.expires_at && new Date(couponData.expires_at) < new Date()) {
+      return res.status(400).json({ error: "Este cupom já expirou" })
+    }
+
+    // Apply coupon
+    await supabase
+      .from("orders")
+      .update({ status: "paid", updated_at: new Date().toISOString() })
+      .eq("id", req.params.id)
+
+    // Increment usage
+    await supabase
+      .from("coupons")
+      .update({ current_uses: couponData.current_uses + 1 })
+      .eq("code", cleanCoupon)
+
+    res.json({
+      success: true,
+      status: "paid",
+      message: "Cupom aplicado com sucesso!"
+    })
   } catch (error) {
     res.status(500).json({ error: "Erro ao aplicar cupom" })
   }
