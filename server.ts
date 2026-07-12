@@ -825,7 +825,7 @@ Retorne JSON válido.
       // Send email explaining the refund or cancellation to the user
       if (process.env.SMTP_USER && process.env.SMTP_PASS) {
         try {
-          const fromEmail = " contato@qisites.com.br\
+          const fromEmail = "contato@qisites.com.br";
           const emailSubject = isRealPayment
             ? "⚠️ Estorno efetuado — Falha na geração da sua música"
             : "⚠️ Pedido cancelado — Falha na geração da sua música"
