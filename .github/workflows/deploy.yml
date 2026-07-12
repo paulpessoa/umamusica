@@ -68,9 +68,8 @@ jobs:
             --set-env-vars=SMTP_SECURE=false
             --set-env-vars=SMTP_USER=${{ secrets.SMTP_USER }}
             --set-env-vars=SMTP_FROM=${{ secrets.SMTP_FROM }}
-            --set-env-vars=BREVO_SMTP_KEY=${{ secrets.BREVO_SMTP_KEY }}
             --set-env-vars=BREVO_API_KEY=${{ secrets.BREVO_API_KEY }}
-            --set-env-vars=SMTP_PASS=${{ secrets.BREVO_SMTP_KEY }}
+            --set-env-vars=SMTP_PASS=${{ secrets.SMTP_PASS }}
             --set-env-vars=APP_URL=${{ vars.APP_URL }}
             --set-env-vars=API_URL=${{ vars.API_URL }}
             --set-env-vars=FRONTEND_URL=${{ vars.FRONTEND_URL }}
