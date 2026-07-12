@@ -98,7 +98,7 @@ export default function Login() {
                 <button
                   onClick={sendOtp}
                   disabled={loading}
-                  className="w-full py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+                  className="w-full max-w-xs mx-auto py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
                 >
                   {loading ? "Enviando..." : "Receber Código"}
                   {!loading && <ArrowRight className="w-5 h-5" />}
@@ -134,7 +134,7 @@ export default function Login() {
                 <button
                   onClick={verifyOtp}
                   disabled={loading}
-                  className="w-full py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70"
+                  className="w-full max-w-xs mx-auto py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center"
                 >
                   {loading ? "Verificando..." : "Entrar"}
                 </button>
