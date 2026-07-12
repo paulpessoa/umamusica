@@ -2,6 +2,8 @@ import React from 'react';
 import { Music } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 // ─── Inline SVG illustrations (clean modern flat, no weird shapes) ───────────
 
@@ -129,7 +131,9 @@ interface MobileFrameProps {
   children: React.ReactNode;
 }
 
-export default function MobileFrame({ children }: MobileFrameProps) {
+export default function MobileFrame({ children }: { children: React.ReactNode }) {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   return (
     <div
       id="mobile-frame-container"
@@ -234,16 +238,29 @@ export default function MobileFrame({ children }: MobileFrameProps) {
         {/* RIGHT APP FRAME */}
         <div className="flex-1 min-w-0 lg:w-1/2 lg:shrink-0 flex flex-col bg-white relative min-h-screen lg:min-h-0 lg:h-full">
 
-          {/* Floating badge */}
-          <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md shadow-sm rounded-full py-1.5 px-3 border border-gray-100 hidden lg:flex items-center space-x-2 z-50">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Online</span>
+          {/* Floating badge (Desktop) */}
+          <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md shadow-sm rounded-full py-1.5 px-4 border border-gray-100 hidden lg:flex items-center space-x-3 z-50">
+            {user ? (
+              <>
+                <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
+                  Meu Perfil
+                </button>
+                <div className="w-px h-4 bg-gray-200"></div>
+                <button onClick={logout} className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">
+                  Sair
+                </button>
+              </>
+            ) : (
+              <button onClick={() => navigate('/login')} className="text-sm font-bold text-[#FF5A5F] hover:text-[#e0484d] transition-colors">
+                Entrar / Criar Conta
+              </button>
+            )}
           </div>
 
           <div id="phone-frame" className="relative w-full flex-1 flex flex-col overflow-hidden transition-all duration-300 min-h-0">
 
             {/* Header */}
-            <header id="app-brand-header" className="relative z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-center lg:justify-end shrink-0">
+            <header id="app-brand-header" className="relative z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-between lg:justify-end shrink-0">
               {/* Mobile logo — spinning rounded square, static icon */}
               <div className="flex items-center gap-2 lg:hidden">
                 <div className="relative w-8 h-8 flex items-center justify-center">
@@ -280,12 +297,30 @@ export default function MobileFrame({ children }: MobileFrameProps) {
                         ]
                       }}
                       transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-                      className="relative text-sm font-black text-emerald-600"
+                      className="relative text-xs font-black text-emerald-600"
                     >
                       R$ 1 real
                     </motion.span>
                   </div>
                 </div>
+              </div>
+
+              {/* Mobile Auth Actions */}
+              <div className="lg:hidden flex items-center space-x-3">
+                {user ? (
+                  <>
+                    <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
+                      Perfil
+                    </button>
+                    <button onClick={logout} className="text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors">
+                      Sair
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => navigate('/login')} className="text-sm font-bold text-[#FF5A5F] bg-[#FFF0F0] px-3 py-1.5 rounded-full hover:bg-[#ffe4e4] transition-colors">
+                    Entrar
+                  </button>
+                )}
               </div>
             </header>
 

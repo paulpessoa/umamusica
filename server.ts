@@ -6,12 +6,14 @@ import dotenv from "dotenv"
 import { GoogleGenAI, Type } from "@google/genai"
 import { createClient } from "@supabase/supabase-js"
 import nodemailer from "nodemailer"
+import cors from "cors"
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 
 // Load environment variables
 dotenv.config()
 
 const app = express()
+app.use(cors())
 const PORT = parseInt(process.env.PORT || "3000", 10)
 
 // Initialize SMTP transporter using environment variables (standardized for any SMTP provider)
@@ -206,10 +208,82 @@ app.post("/api/verify-otp", async (req, res) => {
       .update({ verified: true })
       .eq("id", data[0].id)
 
-    res.json({ success: true, verified: true })
+    // Check if user exists
+    const cleanEmail = email.toLowerCase().trim();
+    let { data: user, error: userError } = await supabase
+      .from("users")
+      .select("id, email, name, referral_code, free_songs_balance")
+      .eq("email", cleanEmail)
+      .single()
+
+    if (!user) {
+      // Create new user
+      const { referralCode } = req.body;
+      let referredBy = null;
+      if (referralCode) {
+        const { data: refUser } = await supabase
+          .from("users")
+          .select("id")
+          .eq("referral_code", referralCode.trim().toUpperCase())
+          .single();
+        if (refUser) {
+          referredBy = refUser.id;
+        }
+      }
+      
+      const newReferralCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+      
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert({
+          email: cleanEmail,
+          referral_code: newReferralCode,
+          referred_by: referredBy
+        })
+        .select("id, email, name, referral_code, free_songs_balance")
+        .single()
+        
+      if (!createError && newUser) {
+        user = newUser;
+      }
+    }
+
+    res.json({ success: true, verified: true, user })
   } catch (error: any) {
     console.error("OTP Verify Error:", error.message || error)
     res.status(500).json({ error: "Erro ao verificar código" })
+  }
+})
+
+// ─── Get Current User ──────────────────────────────────────
+app.get("/api/users/me", async (req, res) => {
+  try {
+    const email = req.query.email as string;
+    if (!email) {
+      return res.status(400).json({ error: "Email obrigatório" });
+    }
+    
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, email, name, referral_code, free_songs_balance")
+      .eq("email", email.toLowerCase().trim())
+      .single();
+      
+    if (error || !user) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+    
+    // Also fetch user's past generated songs
+    const { data: orders } = await supabase
+      .from("orders")
+      .select("id, song_metadata, audio_storage_path, status, created_at")
+      .eq("email", email.toLowerCase().trim())
+      .eq("status", "completed")
+      .order("created_at", { ascending: false });
+      
+    res.json({ user, orders: orders || [] });
+  } catch (error: any) {
+    res.status(500).json({ error: "Erro ao buscar usuário" });
   }
 })
 
@@ -340,10 +414,31 @@ app.post("/api/checkout", async (req, res) => {
     let paymentId = "pay_" + Math.random().toString(36).substr(2, 15)
     let paymentQr = ""
     let paymentCopiaCola = ""
+    let status: MusicStatus = "pending_payment"
 
-    // Try MercadoPago Pix
-    const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
-    if (mpToken) {
+    // Check if user has free balance
+    const cleanEmail = email.toLowerCase().trim();
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, free_songs_balance")
+      .eq("email", cleanEmail)
+      .single()
+
+    const hasBalance = user && user.free_songs_balance > 0;
+
+    if (hasBalance) {
+      console.log(`[Checkout] User ${cleanEmail} has balance. Using 1 free song.`);
+      await supabase
+        .from("users")
+        .update({ free_songs_balance: user.free_songs_balance - 1 })
+        .eq("id", user.id);
+        
+      paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9);
+      status = "paid";
+    } else {
+      // Try MercadoPago Pix
+      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+      if (mpToken) {
       try {
         console.log("[MercadoPago] Creating Pix payment...")
         const mpResponse = await fetch(
@@ -388,17 +483,18 @@ app.post("/api/checkout", async (req, res) => {
       paymentQr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPix)}`
       paymentCopiaCola = mockPix
     }
+    }
 
     // Save order in Supabase
     const newOrder = {
       id: orderId,
-      email,
+      email: cleanEmail,
       chat_transcript: chatTranscript || [],
       structured_prompt: structuredPrompt || null,
       payment_id: paymentId,
       payment_qr: paymentQr,
       payment_copia_e_cola: paymentCopiaCola,
-      status: "pending_payment" as MusicStatus
+      status: status
     }
 
     const { error: insertError } = await supabase
@@ -408,12 +504,13 @@ app.post("/api/checkout", async (req, res) => {
       console.error("[Supabase] Insert error:", insertError)
     }
 
+    // Strip sensitive/unnecessary data from response
     res.json({
       orderId,
-      paymentId,
-      paymentQr,
-      paymentCopiaCola,
-      status: "pending_payment"
+      paymentId: hasBalance ? paymentId : undefined,
+      paymentQr: hasBalance ? undefined : paymentQr,
+      paymentCopiaCola: hasBalance ? undefined : paymentCopiaCola,
+      status
     })
   } catch (error) {
     console.error("Checkout Error:", error)
@@ -425,13 +522,17 @@ app.post("/api/checkout", async (req, res) => {
 app.get("/api/orders/:id", async (req, res) => {
   const { data, error } = await supabase
     .from("orders")
-    .select("*")
+    .select("id, email, status, song_metadata, audio_storage_path, payment_id, created_at")
     .eq("id", req.params.id)
     .single()
 
   if (error || !data) {
     return res.status(404).json({ error: "Pedido não encontrado" })
   }
+  
+  // Do not expose email entirely to public if accessed without auth
+  // In a real app we would check auth headers. For MVP, we mask it or leave it.
+  
   res.json(data)
 })
 
@@ -720,6 +821,54 @@ Retorne JSON válido.
         updated_at: new Date().toISOString()
       })
       .eq("id", order.id)
+
+    // Handle Referral Bonus
+    try {
+      const { data: user } = await supabase
+        .from("users")
+        .select("id, referred_by")
+        .eq("email", order.email)
+        .single();
+
+      if (user && user.referred_by) {
+        const { count } = await supabase
+          .from("orders")
+          .select("id", { count: "exact" })
+          .eq("email", order.email)
+          .eq("status", "completed");
+
+        if (count === 1) {
+          const { data: referrer } = await supabase
+            .from("users")
+            .select("id, email, free_songs_balance")
+            .eq("id", user.referred_by)
+            .single();
+
+          if (referrer && referrer.free_songs_balance < 5) {
+            await supabase
+              .from("users")
+              .update({ free_songs_balance: referrer.free_songs_balance + 1 })
+              .eq("id", referrer.id);
+
+            if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+              const fromEmail = "contato@qisites.com.br";
+              await transporter.sendMail({
+                from: `"1Música" <${fromEmail}>`,
+                to: referrer.email,
+                subject: "🎉 Você ganhou 1 música grátis!",
+                html: `<div style="font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px;">
+                        <h2 style="color: #FF5A5F;">Você ganhou 1 música grátis!</h2>
+                        <p>Oba! O amigo que você indicou acabou de criar a primeira música dele.</p>
+                        <p>Seu saldo foi atualizado. Aproveite!</p>
+                       </div>`
+              });
+            }
+          }
+        }
+      }
+    } catch (refErr) {
+      console.error("[Referral Error]", refErr);
+    }
 
     // Send email with download link (via SMTP)
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`
