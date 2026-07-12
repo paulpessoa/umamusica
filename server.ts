@@ -19,12 +19,15 @@ const PORT = parseInt(process.env.PORT || "3000", 10)
 
 // Initialize SMTP transporter using environment variables (standardized for any SMTP provider)
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.zoho.com",
-  port: parseInt(process.env.SMTP_PORT || "465", 10),
-  secure: process.env.SMTP_SECURE !== "false", // true for port 465, false for 587
+  host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
+  port: parseInt(process.env.SMTP_PORT || "587", 10),
+  secure: false, // TLS obrigatório para a porta 587 da Brevo
   auth: {
-    user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || ""
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  },
+  tls: {
+    rejectUnauthorized: false // Garante que não vai barrar por certificado em produção
   }
 })
 
