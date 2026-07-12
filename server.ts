@@ -286,7 +286,7 @@ app.post("/api/verify-otp", async (req, res) => {
         }
       }
       
-      const newReferralCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+      const newReferralCode = Math.floor(100000 + Math.random() * 900000).toString();
       
       const { data: newUser, error: createError } = await supabase
         .from("users")

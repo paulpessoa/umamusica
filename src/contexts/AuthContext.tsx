@@ -30,7 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: "mock-dev-id",
           email: "dev@qisites.com.br",
           name: "Desenvolvedor Local",
-          referral_code: "DEV123",
+          referral_code: "999999",
           free_songs_balance: 5
         };
         localStorage.setItem("umamusica_user", JSON.stringify(mockUser));
