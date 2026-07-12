@@ -296,8 +296,8 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
               </div>
 
               {/* Mobile Auth Actions */}
-              <div className="lg:hidden flex items-center space-x-3">
-                {user ? (
+              {user && (
+                <div className="lg:hidden flex items-center space-x-3">
                   <>
                     <button onClick={() => navigate('/perfil')} className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors">
                       Perfil
@@ -306,12 +306,8 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
                       Sair
                     </button>
                   </>
-                ) : (
-                  <button onClick={() => navigate('/login')} className="text-sm font-bold text-[#FF5A5F] bg-[#FFF0F0] px-3 py-1.5 rounded-full hover:bg-[#ffe4e4] transition-colors">
-                    Entrar
-                  </button>
-                )}
-              </div>
+                </div>
+              )}
             </header>
 
             <main id="app-main-content" className="flex-1 flex flex-col min-h-0 relative bg-white">
