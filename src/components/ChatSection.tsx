@@ -335,7 +335,8 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
 
               {/* Input Row: Mic + Text + Send */}
               <div className="flex items-center gap-2">
-                {/* Mic button (WhatsApp style) */}
+                {/* Mic button (WhatsApp style) - Temporarily removed to improve user experience */}
+                {/*
                 <button
                   onMouseDown={startRecording}
                   onMouseUp={stopRecording}
@@ -359,6 +360,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
                     <Mic className="w-5 h-5" />
                   )}
                 </button>
+                */}
 
                 <input
                   type="text"

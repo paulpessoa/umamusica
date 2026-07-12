@@ -66,6 +66,21 @@ async function sendEmailViaBrevo(params: {
   }
 }
 
+// Shared footer template for all system emails
+function getEmailFooterHtml() {
+  return `
+    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 24px 0;" />
+    <p style="font-size: 12px; color: #666; text-align: center; font-style: italic; margin-bottom: 8px;">
+      "Transformando memórias e sentimentos em músicas exclusivas por R$ 1,00."
+    </p>
+    <p style="font-size: 11px; color: #999; text-align: center; margin: 0; line-height: 1.5;">
+      <a href="https://umamusica.vercel.app/termos" style="color: #FF5A5F; text-decoration: none; font-weight: 500;">Termos de Uso</a> &nbsp;•&nbsp;
+      <a href="https://umamusica.vercel.app/faq" style="color: #FF5A5F; text-decoration: none; font-weight: 500;">FAQ</a> &nbsp;•&nbsp;
+      <a href="https://qisites.com.br/privacidade" style="color: #FF5A5F; text-decoration: none; font-weight: 500;">Privacidade</a>
+    </p>
+  `
+}
+
 app.use(express.json({ limit: "25mb" }))
 
 // Disable caching for all API responses
@@ -278,12 +293,7 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
             <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
           </div>
           <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
-          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-          <p>
-            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
-            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
-            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
-          </p>
+          ${getEmailFooterHtml()}
         </div>
       `
     })
@@ -406,12 +416,7 @@ app.post("/api/verify-otp", async (req, res) => {
                     <span style="font-size: 24px; font-weight: bold; color: #FF5A5F;">+1 Música Grátis</span>
                   </div>
                   <p style="color: #888; font-size: 12px;">Seu novo saldo já está disponível na sua conta.</p>
-                  <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-                  <p>
-                    <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
-                    <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
-                    <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
-                  </p>
+                  ${getEmailFooterHtml()}
                 </div>
               `
             })
@@ -1131,13 +1136,7 @@ Retorne JSON válido.
           <div style="text-align: center; margin: 20px 0;">
             <a href="${apiUrl}/api/orders/${order.id}/download" style="color: #666; font-size: 13px;">Download direto do MP3 →</a>
           </div>
-          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-          <p>
-            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
-            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
-            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
-          </p>
-        </div>  
+          ${getEmailFooterHtml()}
         </div>
       `
     })
@@ -1237,12 +1236,7 @@ Retorne JSON válido.
           <p>O valor deve constar na sua conta em alguns minutos.</p>
           <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
           <br/>
-          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-        <p>
-            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
-            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
-            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
-          </p>
+          ${getEmailFooterHtml()}
           </div>
       `
         : `
@@ -1254,12 +1248,7 @@ Retorne JSON válido.
           <p>Como este pedido foi iniciado de forma gratuita (via cupom ou testes), nenhuma cobrança foi realizada e sua compra foi cancelada com sucesso.</p>
           <p>Se tiver qualquer dúvida, entre em contato respondendo a este e-mail ou enviando mensagem para <strong>contato@qisites.com.br</strong>.</p>
           <br/>
-          <p style="font-size: 11px; color: #999; text-align: center;">1Música — Transformando memórias em música por R$ 1,00</p>
-          <p>
-            <a href="https://umamusica.vercel.app/termos" style="color: #999; text-decoration: none;">Termos de Uso</a> •
-            <a href="https://umamusica.vercel.app/faq" style="color: #999; text-decoration: none;">FAQ</a> •
-            <a href="https://qisites.com.br/privacidade" style="color: #999; text-decoration: none;">Privacidade</a>
-          </p>
+          ${getEmailFooterHtml()}
           </div>
       `
 
