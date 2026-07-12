@@ -3,6 +3,7 @@ import { CheckCircle2, Mail, Headphones, Radio, Zap, Volume2, Waves, AlertCircle
 import { motion, AnimatePresence } from "motion/react";
 import { Order } from "../types";
 import AudioPlayer from "./AudioPlayer";
+import { useAuth } from "../contexts/AuthContext";
 
 interface SuccessSectionProps {
   orderId: string;
@@ -11,6 +12,7 @@ interface SuccessSectionProps {
 }
 
 export default function SuccessSection({ orderId, onRestart, isSharedView = false }: SuccessSectionProps) {
+  const { user } = useAuth();
   const [order, setOrder] = useState<Order | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -254,27 +256,28 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             animate={{ opacity: 1 }}
             className="space-y-6"
           >
-            {/* Success Header */}
-            <div className="text-center space-y-2 bg-[#FFF4F2]/80 p-5 rounded-3xl border border-[#FF5A5F]/10 shadow-sm relative overflow-hidden">
-
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
-                <CheckCircle2 className="w-6 h-6" />
+            {/* Success Header - Only shown to the logged-in owner of the music */}
+            {user && order && user.email.toLowerCase().trim() === order.email.toLowerCase().trim() && (
+              <div className="text-center space-y-2 bg-[#FFF4F2]/80 p-5 rounded-3xl border border-[#FF5A5F]/10 shadow-sm relative overflow-hidden">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h2 className="font-bold text-xl text-gray-900">
+                  {isGenerating 
+                    ? "Sua música ficou pronta!" 
+                    : (isSharedView ? "Uma Homenagem para Você!" : "Sua música personalizada")}
+                </h2>
+                {isGenerating ? (
+                  <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                    Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                    Ouça a canção personalizada composta especialmente para você!
+                  </p>
+                )}
               </div>
-              <h2 className="font-bold text-xl text-gray-900">
-                {isGenerating 
-                  ? "Sua música ficou pronta!" 
-                  : (isSharedView ? "Uma Homenagem para Você!" : "Sua música personalizada")}
-              </h2>
-              {isGenerating ? (
-                <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                  Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
-                </p>
-              ) : (
-                <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                  Ouça a canção personalizada composta especialmente para você!
-                </p>
-              )}
-            </div>
+            )}
 
             {/* Audio Player */}
             {order.song_metadata && (
