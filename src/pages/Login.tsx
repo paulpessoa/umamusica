@@ -110,16 +110,21 @@ export default function Login() {
               </p>
 
               <div className="space-y-4">
-                <div>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="exemplo@email.com"
-                    className="w-full px-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF5A5F] focus:border-transparent outline-none transition-all"
-                  />
-                  {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-                </div>
+                 <div>
+                   <input
+                     type="email"
+                     value={email}
+                     onChange={(e) => setEmail(e.target.value)}
+                     onKeyDown={(e) => {
+                       if (e.key === "Enter") {
+                         sendOtp()
+                       }
+                     }}
+                     placeholder="exemplo@email.com"
+                     className="w-full px-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF5A5F] focus:border-transparent outline-none transition-all"
+                   />
+                   {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+                 </div>
 
                 <button
                   onClick={sendOtp}

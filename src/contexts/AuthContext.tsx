@@ -81,15 +81,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           "Authorization": `Bearer ${user.session_token}`
         }
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) throw new Error("Invalid session")
+          return res.json()
+        })
         .then(data => {
           if (data.user) {
-            updateUser(data.user);
+            updateUser(data.user)
           }
         })
-        .catch(err => console.error("Failed to refresh user", err));
+        .catch(err => {
+          console.error("Auth refresh failed:", err)
+          setUser(null)
+          localStorage.removeItem("umamusica_user")
+        })
     }
-  }, []);
+  }, [])
 
   return (
     <AuthContext.Provider value={{ user, login, logout, updateUser }}>
