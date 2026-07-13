@@ -1,203 +1,203 @@
-import React, { useState, useEffect } from "react";
-import { CheckCircle2, Headphones, Radio, Zap, Volume2, Waves, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { Order } from "../types";
-import AudioPlayer from "./AudioPlayer";
-import { useAuth } from "../contexts/AuthContext";
+import React, { useState, useEffect } from "react"
+import {
+  CheckCircle2,
+  Headphones,
+  Radio,
+  Zap,
+  Volume2,
+  Waves,
+  AlertCircle,
+  RefreshCw
+} from "lucide-react"
+import { motion, AnimatePresence } from "motion/react"
+import { useNavigate, useLocation } from "react-router-dom"
+import { Order } from "../types"
+import AudioPlayer from "./AudioPlayer"
+import { useAuth } from "../contexts/AuthContext"
 
 interface SuccessSectionProps {
-  orderId: string;
-  onRestart: () => void;
-  isSharedView?: boolean;
+  orderId: string
+  onRestart: () => void
+  isSharedView?: boolean
 }
 
-export default function SuccessSection({ orderId, onRestart, isSharedView = false }: SuccessSectionProps) {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [order, setOrder] = useState<Order | null>(null);
-  const [loadingStep, setLoadingStep] = useState(0);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isRevising, setIsRevising] = useState(false);
-  const [currentInstrumentIndex, setCurrentInstrumentIndex] = useState(0);
+export default function SuccessSection({
+  orderId,
+  onRestart,
+  isSharedView = false
+}: SuccessSectionProps) {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [order, setOrder] = useState<Order | null>(null)
+  const [loadingStep, setLoadingStep] = useState(0)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [currentInstrumentIndex, setCurrentInstrumentIndex] = useState(0)
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
 
   const instruments = [
     { icon: <Headphones className="w-8 h-8" />, label: "Headphones" },
     { icon: <Volume2 className="w-8 h-8" />, label: "Speaker" },
     { icon: <Waves className="w-8 h-8" />, label: "Waves" },
     { icon: <Radio className="w-8 h-8" />, label: "Radio" },
-    { icon: <Zap className="w-8 h-8" />, label: "Electric" },
-  ];
+    { icon: <Zap className="w-8 h-8" />, label: "Electric" }
+  ]
   const loadingPhrases = [
     "Analisando memórias e sentimentos... 🧠",
     "Compondo versos rimados... ✍️",
     "Estruturando refrões e harmonias... 🎵",
     "Ajustando arranjo e ritmo... 🎸",
     "Sintetizando vocais... 🎙️",
-    "Preparando seu presente... 🎁",
-  ];
+    "Preparando seu presente... 🎁"
+  ]
 
   // Auto-rotate instruments every 1 second
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentInstrumentIndex((prev: number) => (prev + 1) % instruments.length);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+      setCurrentInstrumentIndex(
+        (prev: number) => (prev + 1) % instruments.length
+      )
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
 
-  const [editedLyrics, setEditedLyrics] = useState("");
+  const [editedLyrics, setEditedLyrics] = useState("")
 
   // Check if user came from "Minhas Músicas"
-  const cameFromMySongs = location.state?.from === 'my-songs';
+  const cameFromMySongs = location.state?.from === "my-songs"
 
   // Smart navigation: go back to origin or restart
   const handleBackNavigation = () => {
     if (cameFromMySongs && user) {
-      navigate('/minhas-musicas');
+      navigate("/minhas-musicas")
     } else {
-      onRestart();
+      onRestart()
     }
-  };
+  }
 
   // Initialize edited lyrics when order data loads
   useEffect(() => {
     if (order && order.song_metadata && !editedLyrics) {
-      setEditedLyrics(order.song_metadata.lyrics || "");
+      setEditedLyrics(order.song_metadata.lyrics || "")
     }
-  }, [order]);
+  }, [order])
 
   // Manage isGenerating state reactively based on order status
   useEffect(() => {
     if (order) {
-      if (order.status === "completed" || order.status === "failed" || order.status === "failed_safety") {
-        setIsGenerating(false);
+      if (
+        order.status === "completed" ||
+        order.status === "failed" ||
+        order.status === "failed_safety"
+      ) {
+        setIsGenerating(false)
       }
     }
-  }, [order?.status]);
+  }, [order?.status])
 
   // Fetch order periodically when in paid or processing state
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`
+        )
         if (res.ok) {
-          const data: Order = await res.json();
-          setOrder(data);
+          const data: Order = await res.json()
+          setOrder(data)
         }
       } catch {
-        console.error("Failed to load order");
+        console.error("Failed to load order")
       }
-    };
+    }
 
-    fetchOrder();
+    fetchOrder()
 
-    let intervalId: NodeJS.Timeout | null = null;
+    let intervalId: NodeJS.Timeout | null = null
     if (!order || order.status === "paid" || order.status === "processing") {
-      intervalId = setInterval(fetchOrder, 4000);
+      intervalId = setInterval(fetchOrder, 4000)
     }
 
     return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [orderId, order?.status]);
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [orderId, order?.status])
 
   // Trigger initial composition if status is paid
   useEffect(() => {
     if (order && order.status === "paid" && !isGenerating) {
-      triggerComposition();
+      triggerComposition()
     }
-  }, [order, isGenerating]);
+  }, [order, isGenerating])
 
   useEffect(() => {
-    if (!order || order.status !== "processing") return;
+    if (!order || order.status !== "processing") return
     const timer = setInterval(() => {
-      setLoadingStep((prev: number) => (prev + 1) % loadingPhrases.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [order, loadingPhrases.length]);
+      setLoadingStep((prev: number) => (prev + 1) % loadingPhrases.length)
+    }, 4500)
+    return () => clearInterval(timer)
+  }, [order, loadingPhrases.length])
 
   const triggerComposition = async () => {
-    if (isGenerating) return;
-    setIsGenerating(true);
+    if (isGenerating) return
+    setIsGenerating(true)
     try {
-      setErrorMessage(null);
-      await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      setErrorMessage(null)
+      await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        }
+      )
     } catch {
-      setErrorMessage("Ocorreu um atraso. Tentando novamente...");
-      setIsGenerating(false);
+      setErrorMessage("Ocorreu um atraso. Tentando novamente...")
+      setIsGenerating(false)
     }
-  };
+  }
 
   const handleRecompose = async () => {
-    if (isGenerating) return;
-    setIsGenerating(true);
-    setErrorMessage(null);
+    if (isGenerating) return
+    setIsGenerating(true)
+    setErrorMessage(null)
 
     // Set status to processing locally for immediate loader response
-    setOrder((prev) => (prev ? { ...prev, status: "processing" } : null));
+    setOrder((prev) => (prev ? { ...prev, status: "processing" } : null))
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lyrics: editedLyrics }),
-      });
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lyrics: editedLyrics })
+        }
+      )
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json()
         if (data.error) {
-          setErrorMessage(data.error);
+          setErrorMessage(data.error)
         }
-        setIsGenerating(false);
+        setIsGenerating(false)
         // Force status fetch to sync state
-        const refetch = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
+        const refetch = await fetch(
+          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`
+        )
         if (refetch.ok) {
-          const freshData = await refetch.json();
-          setOrder(freshData);
+          const freshData = await refetch.json()
+          setOrder(freshData)
         }
       }
     } catch {
-      setErrorMessage("Erro ao conectar ao servidor. Tente novamente.");
-      setIsGenerating(false);
-      setOrder((prev) => (prev ? { ...prev, status: "failed_safety" } : null));
+      setErrorMessage("Erro ao conectar ao servidor. Tente novamente.")
+      setIsGenerating(false)
+      setOrder((prev) => (prev ? { ...prev, status: "failed_safety" } : null))
     }
-  };
-
-  // "Revisar com IA": ask the AI to clean the lyrics (e.g. if it was flagged by
-  // the Lyria safety filter) using the chat context, then regenerate the audio.
-  const handleRevise = async () => {
-    if (isGenerating || isRevising) return;
-    setIsRevising(true);
-    setErrorMessage(null);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/revise`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setOrder(data);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setErrorMessage(data.error || "Não foi possível revisar a letra com a IA.");
-        // Restore the previous view
-        const refetch = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
-        if (refetch.ok) setOrder(await refetch.json());
-      }
-    } catch {
-      setErrorMessage("Erro ao conectar ao servidor. Tente novamente.");
-    } finally {
-      setIsRevising(false);
-    }
-  };
+  }
 
   if (!order) {
     return (
@@ -244,7 +244,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
           </div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -274,7 +274,9 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             </div>
 
             <div className="space-y-3">
-              <h3 className="font-bold text-lg text-gray-900">Sua canção está sendo composta!</h3>
+              <h3 className="font-bold text-lg text-gray-900">
+                Sua canção está sendo composta!
+              </h3>
               <p className="text-xs text-[#FF5A5F] font-semibold font-mono tracking-wide">
                 {loadingPhrases[loadingStep]}
               </p>
@@ -292,7 +294,9 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             </div>
 
             {errorMessage && (
-              <p className="text-[10px] text-amber-600 font-mono italic max-w-xs">{errorMessage}</p>
+              <p className="text-[10px] text-amber-600 font-mono italic max-w-xs">
+                {errorMessage}
+              </p>
             )}
           </motion.div>
         ) : order.status === "failed_safety" ? (
@@ -314,11 +318,17 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 Filtro de segurança da IA acionado
               </p>
               <p className="text-xs text-gray-500 leading-relaxed">
-                Algumas palavras ou combinações poéticas na sua letra acionaram as diretrizes de moderação do Google. Não se preocupe! Seu crédito foi preservado. Ajuste o texto abaixo (dica: simplifique metáforas muito intensas ou substitua termos com duplo sentido) e tente novamente.
+                Algumas palavras ou combinações poéticas na sua letra acionaram
+                as diretrizes de moderação do Google. Não se preocupe! Seu
+                crédito foi preservado. Ajuste o texto abaixo (dica: simplifique
+                metáforas muito intensas ou substitua termos com duplo sentido)
+                e tente novamente.
               </p>
 
               <div className="mt-4 text-left space-y-1">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400">Letra da Música</label>
+                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400">
+                  Letra da Música
+                </label>
                 <textarea
                   value={editedLyrics}
                   onChange={(e) => setEditedLyrics(e.target.value)}
@@ -328,7 +338,9 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
               </div>
 
               {errorMessage && (
-                <p className="text-[10px] text-rose-500 font-mono italic mt-2">{errorMessage}</p>
+                <p className="text-[10px] text-rose-500 font-mono italic mt-2">
+                  {errorMessage}
+                </p>
               )}
             </div>
 
@@ -337,24 +349,9 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 onClick={handleBackNavigation}
                 className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
               >
-                {cameFromMySongs ? 'Voltar às Minhas Músicas' : 'Voltar ao Início'}
-              </button>
-              <button
-                onClick={handleRevise}
-                disabled={isRevising || isGenerating}
-                className="flex-1 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {isRevising ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Revisando...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Revisar com IA
-                  </>
-                )}
+                {cameFromMySongs
+                  ? "Voltar às Minhas Músicas"
+                  : "Voltar ao Início"}
               </button>
               <button
                 onClick={handleRecompose}
@@ -378,7 +375,10 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
 
             <div className="space-y-3">
               <h2 className="font-extrabold text-xl text-gray-900">
-                {order.payment_id && !order.payment_id.startsWith("mock") && !order.payment_id.startsWith("simulated") && !order.payment_id.startsWith("coupon")
+                {order.payment_id &&
+                !order.payment_id.startsWith("mock") &&
+                !order.payment_id.startsWith("simulated") &&
+                !order.payment_id.startsWith("coupon")
                   ? "Estorno Efetuado! 💸"
                   : "Erro ao Compor! ⚠️"}
               </h2>
@@ -386,17 +386,26 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 Geração de música indisponível
               </p>
               <p className="text-sm text-gray-600 max-w-xs leading-relaxed">
-                Lamentamos muito! Devido a uma instabilidade no nosso motor de composição de IA, não foi possível gerar a sua música personalizada.
+                Lamentamos muito! Devido a uma instabilidade no nosso motor de
+                composição de IA, não foi possível gerar a sua música
+                personalizada.
               </p>
 
-              {order.payment_id && !order.payment_id.startsWith("mock") && !order.payment_id.startsWith("simulated") && !order.payment_id.startsWith("coupon") ? (
+              {order.payment_id &&
+              !order.payment_id.startsWith("mock") &&
+              !order.payment_id.startsWith("simulated") &&
+              !order.payment_id.startsWith("coupon") ? (
                 <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4.5 text-left text-xs text-emerald-800 space-y-1.5 max-w-xs mx-auto shadow-sm">
                   <span className="font-bold flex items-center gap-1.5 text-emerald-950">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     Estorno Automático Processado!
                   </span>
                   <p className="leading-relaxed text-emerald-700">
-                    Um estorno automático e integral de <strong>R$ 1,00</strong> foi devolvido para a sua conta Pix no Mercado Pago. Você não precisa fazer nada – o reembolso chegará automaticamente em sua conta. Em caso de dúvidas, entre em contato conosco em <span className="font-bold">contato@qisites.com.br</span>.
+                    Um estorno automático e integral de <strong>R$ 1,00</strong>{" "}
+                    foi devolvido para a sua conta Pix no Mercado Pago. Você não
+                    precisa fazer nada – o reembolso chegará automaticamente em
+                    sua conta. Em caso de dúvidas, entre em contato conosco em{" "}
+                    <span className="font-bold">contato@qisites.com.br</span>.
                   </p>
                 </div>
               ) : (
@@ -406,7 +415,13 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                     Pedido Cancelado
                   </span>
                   <p className="leading-relaxed text-gray-600">
-                    Como este pedido foi iniciado via cupom ou ambiente de testes, nenhuma cobrança financeira foi realizada. Em caso de dúvidas, fale conosco em <span className="font-bold text-[#FF5A5F]">contato@qisites.com.br</span>.
+                    Como este pedido foi iniciado via cupom ou ambiente de
+                    testes, nenhuma cobrança financeira foi realizada. Em caso
+                    de dúvidas, fale conosco em{" "}
+                    <span className="font-bold text-[#FF5A5F]">
+                      contato@qisites.com.br
+                    </span>
+                    .
                   </p>
                 </div>
               )}
@@ -416,7 +431,9 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
               onClick={handleBackNavigation}
               className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
             >
-              {cameFromMySongs ? 'Voltar às Minhas Músicas' : 'Voltar ao Início'}
+              {cameFromMySongs
+                ? "Voltar às Minhas Músicas"
+                : "Voltar ao Início"}
             </button>
           </motion.div>
         ) : (
@@ -427,27 +444,36 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             className="space-y-6"
           >
             {/* Success Header - Only shown to the logged-in owner of the music */}
-            {user && order && user.email.toLowerCase().trim() === order.email.toLowerCase().trim() && (
-              <div className="text-center space-y-2 bg-[#FFF4F2]/80 p-5 rounded-3xl border border-[#FF5A5F]/10 shadow-sm relative overflow-hidden">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
-                  <CheckCircle2 className="w-6 h-6" />
+            {user &&
+              order &&
+              user.email.toLowerCase().trim() ===
+                order.email.toLowerCase().trim() && (
+                <div className="text-center space-y-2 bg-[#FFF4F2]/80 p-5 rounded-3xl border border-[#FF5A5F]/10 shadow-sm relative overflow-hidden">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h2 className="font-bold text-xl text-gray-900">
+                    {isGenerating
+                      ? "Sua música ficou pronta!"
+                      : isSharedView
+                        ? "Uma Homenagem para Você!"
+                        : "Sua música personalizada"}
+                  </h2>
+                  {isGenerating ? (
+                    <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                      Enviamos o link de download para:{" "}
+                      <span className="text-[#FF5A5F] font-semibold">
+                        {order.email}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
+                      Ouça a canção personalizada composta especialmente para
+                      você!
+                    </p>
+                  )}
                 </div>
-                <h2 className="font-bold text-xl text-gray-900">
-                  {isGenerating
-                    ? "Sua música ficou pronta!"
-                    : (isSharedView ? "Uma Homenagem para Você!" : "Sua música personalizada")}
-                </h2>
-                {isGenerating ? (
-                  <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                    Enviamos o link de download para: <span className="text-[#FF5A5F] font-semibold">{order.email}</span>
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                    Ouça a canção personalizada composta especialmente para você!
-                  </p>
-                )}
-              </div>
-            )}
+              )}
 
             {/* Audio Player */}
             {order.song_metadata && (
@@ -464,37 +490,11 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
               />
             )}
 
-            {/* Revisar com IA (only for the owner of a paid/completed song) */}
-            {user && order && user.email.toLowerCase().trim() === order.email.toLowerCase().trim() && (
-              <div className="pt-1 text-center">
-                <button
-                  onClick={handleRevise}
-                  disabled={isRevising || isGenerating}
-                  className="inline-flex items-center gap-1.5 bg-white border border-[#FF5A5F]/30 text-[#FF5A5F] hover:bg-[#FFF0F0] text-xs font-bold py-2.5 px-5 rounded-full shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {isRevising ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Revisando...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Revisar com IA
-                    </>
-                  )}
-                </button>
-                <p className="text-[10px] text-gray-400 mt-1.5 max-w-xs mx-auto">
-                  A IA limpa a letra conforme as regras do Google e gera uma nova versão.
-                </p>
-              </div>
-            )}
-
             {/* CTA */}
             <div className="pt-2 text-center space-y-2">
               {cameFromMySongs ? (
                 <button
-                  onClick={() => navigate('/minhas-musicas')}
+                  onClick={() => navigate("/minhas-musicas")}
                   className="inline-flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-3 px-6 rounded-full shadow-sm transition-all cursor-pointer"
                 >
                   Voltar às Minhas Músicas
@@ -504,7 +504,9 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                   onClick={onRestart}
                   className="inline-flex items-center gap-1.5 bg-[#FF5A5F] hover:bg-[#e04f53] text-white text-xs font-bold py-3 px-6 rounded-full shadow-md shadow-[#FF5A5F]/15 transition-all cursor-pointer"
                 >
-                  {isSharedView ? "Quero criar uma música personalizada também! " : "Compor mais uma música?"}
+                  {isSharedView
+                    ? "Quero criar uma música personalizada também! "
+                    : "Compor mais uma música?"}
                 </button>
               )}
             </div>
@@ -512,5 +514,5 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
         )}
       </AnimatePresence>
     </div>
-  );
+  )
 }
