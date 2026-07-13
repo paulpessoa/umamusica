@@ -1150,6 +1150,7 @@ Instruções:
 4. Responda sempre em Português do Brasil.
 5. Se o usuário usar termos ofensivos ou conteúdo impróprio, advirta educadamente que isso pode impedir a geração da música.
 6. Quando tiver informações suficientes e o usuário estiver satisfeito, parabenize-o e diga que ele já pode clicar em "Finalizar e Compor".
+7. Quando oferecer escolhas ao usuário, termine a resposta com exatamente um marcador \`[OPCOES: "Opção A" | "Opção B" | "Opção C"]\` (máximo 4 opções, curtas e diretas). Não use este marcador se não houver escolhas claras.
 `
 
     const chatContents = messages.map((m: any) => ({

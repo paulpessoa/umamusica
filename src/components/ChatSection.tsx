@@ -18,36 +18,42 @@ interface ChatSectionProps {
   email: string
   name?: string
   onFinishChat: (transcript: ChatMessage[]) => void
+  initialMessages?: ChatMessage[]
 }
 
 export default function ChatSection({
   email,
   name,
-  onFinishChat
+  onFinishChat,
+  initialMessages
 }: ChatSectionProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      sender: "ai",
-      text: `Oi! Vou te ajudar a transformar essa história em uma música inesquecível!\n\nEscolha abaixo ou descreva com suas palavras:`,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      }),
-      options: [
-        "💑 Homenagem romântica",
-        "👩‍👦 Presente para a mãe",
-        "🎂 Aniversário especial",
-        "🤝 Agradecimento a amigo",
-        "👨 Música para o pai",
-        "🎓 Formatura / conquista",
-        "👶 Nascimento de bebê / Boas-vindas",
-        "💼 Colega de trabalho / Despedida",
-        "⚽ Paixão pelo time de futebol",
-        "🏍️ Clube de moto / Irmandade",
-        "⛪ Amigos da igreja / Fé"
-      ]
-    }
-  ])
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialMessages && initialMessages.length > 0
+      ? initialMessages
+      : [
+          {
+            sender: "ai",
+            text: `Oi! Vou te ajudar a transformar essa história em uma música inesquecível!\n\nEscolha abaixo ou descreva com suas palavras:`,
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit"
+            }),
+            options: [
+              "💑 Homenagem romântica",
+              "👩‍👦 Presente para a mãe",
+              "🎂 Aniversário especial",
+              "🤝 Agradecimento a amigo",
+              "👨 Música para o pai",
+              "🎓 Formatura / conquista",
+              "👶 Nascimento de bebê / Boas-vindas",
+              "💼 Colega de trabalho / Despedida",
+              "⚽ Paixão pelo time de futebol",
+              "🏍️ Clube de moto / Irmandade",
+              "⛪ Amigos da igreja / Fé"
+            ]
+          }
+        ]
+  )
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
   const [freeformText, setFreeformText] = useState("")

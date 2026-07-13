@@ -177,6 +177,11 @@ export default function SuccessSection({
     }
   }
 
+  const handleRetryCompose = async () => {
+    composedRef.current = false
+    await composeLyrics()
+  }
+
   const handleRecompose = async () => {
     if (isGenerating) return
     setIsGenerating(true)
@@ -314,6 +319,16 @@ export default function SuccessSection({
               <p className="text-[10px] text-amber-600 font-mono italic max-w-xs">
                 {errorMessage}
               </p>
+            )}
+            {errorMessage && (
+              <button
+                onClick={handleRetryCompose}
+                disabled={isGenerating}
+                className="inline-flex items-center gap-1.5 bg-white border border-[#FF5A5F]/30 text-[#FF5A5F] font-bold py-2.5 px-5 rounded-xl hover:bg-[#FFF0F0] transition-all text-xs cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Tentar novamente
+              </button>
             )}
           </motion.div>
         ) : order.status === "lyrics_review" ? (

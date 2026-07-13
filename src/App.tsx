@@ -1,6 +1,7 @@
 import React from "react";
 import { Routes, Route, useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ChatMessage } from "./types";
 import MobileFrame from "./components/MobileFrame";
 import ChatSection from "./components/ChatSection";
 import CheckoutSection from "./components/CheckoutSection";
@@ -27,6 +28,7 @@ import { PlayerProvider } from "./contexts/PlayerContext";
 function ChatRoute() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Protect route
   if (!user) {
@@ -66,9 +68,11 @@ function ChatRoute() {
     }
   };
 
+  const initialMessages = location.state?.initialMessages as ChatMessage[] | undefined;
+
   return (
     <MobileFrame>
-      <ChatSection email={user.email} name={user.name} onFinishChat={handleFinishChat} />
+      <ChatSection email={user.email} name={user.name} onFinishChat={handleFinishChat} initialMessages={initialMessages} />
     </MobileFrame>
   );
 }

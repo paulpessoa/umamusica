@@ -20,13 +20,13 @@ interface PlayerContextType {
   isPlaying: boolean
   currentTime: number
   duration: number
-  // Register a track without auto-playing (so the mini-player can show it)
   setTrack: (t: PlayerTrack) => void
-  // Register and start playback immediately
   playTrack: (t: PlayerTrack) => void
   togglePlay: () => void
   seek: (t: number) => void
   stop: () => void
+  dismiss: () => void
+  skip: (delta: number) => void
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined)
@@ -91,6 +91,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setCurrentTime(0)
   }
 
+  const dismiss = () => {
+    const a = audioRef.current
+    if (a) {
+      a.pause()
+      a.currentTime = 0
+    }
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setCurrentTrack(null)
+  }
+
+  const skip = (delta: number) => {
+    const a = audioRef.current
+    if (!a) return
+    const newTime = Math.max(0, Math.min(a.currentTime + delta, duration || 0))
+    a.currentTime = newTime
+    setCurrentTime(newTime)
+  }
+
   useEffect(() => {
     const a = audioRef.current
     if (!a) return
@@ -121,7 +140,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         playTrack,
         togglePlay,
         seek,
-        stop
+        stop,
+        dismiss,
+        skip
       }}
     >
       {children}

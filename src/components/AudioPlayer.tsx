@@ -163,8 +163,20 @@ export default function AudioPlayer({
     if (!metadata.lyrics) return null;
 
     const normalizedLyrics = metadata.lyrics.replace(/\\n/g, "\n");
+    const lines = normalizedLyrics.split("\n");
+    const activeLines = lines.filter((l) => l.trim().length > 0);
+    const durationPerLine = activeLines.length > 0 && player.duration > 0
+      ? player.duration / activeLines.length
+      : 0;
+    let activeLineIndex = -1;
+    if (durationPerLine > 0) {
+      activeLineIndex = Math.min(
+        Math.floor(player.currentTime / durationPerLine),
+        activeLines.length - 1
+      );
+    }
 
-    return normalizedLyrics.split("\n").map((line, index) => {
+    return lines.map((line, index) => {
       const cleanLine = line.trim();
       if (cleanLine.startsWith("[") && cleanLine.endsWith("]")) {
         return (
@@ -174,8 +186,19 @@ export default function AudioPlayer({
           </h4>
         );
       }
+
+      const nonEmptyIndex = lines.slice(0, index).filter((l) => l.trim().length > 0).length;
+      const isActive = nonEmptyIndex === activeLineIndex;
+
       return (
-        <p key={index} className="text-sm text-gray-600 leading-relaxed min-h-[1.5rem] select-all whitespace-pre-wrap">
+        <p
+          key={index}
+          className={`text-sm leading-relaxed min-h-[1.5rem] select-all whitespace-pre-wrap transition-all duration-300 ${
+            isActive
+              ? "text-[#FF5A5F] font-bold scale-[1.02]"
+              : "text-gray-600"
+          }`}
+        >
           {cleanLine || "\u00A0"}
         </p>
       );

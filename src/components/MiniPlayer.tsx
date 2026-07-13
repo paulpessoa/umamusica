@@ -1,11 +1,11 @@
 import React from "react"
-import { Play, Pause, X, Music } from "lucide-react"
+import { Play, Pause, X, Music, Rewind, FastForward } from "lucide-react"
 import { usePlayer } from "../contexts/PlayerContext"
 
 // Persistent mini-player pinned to the bottom of the screen so the user can
 // keep listening while browsing "Minhas Músicas" or "Perfil".
 export default function MiniPlayer() {
-  const { currentTrack, isPlaying, currentTime, duration, togglePlay, stop } =
+  const { currentTrack, isPlaying, currentTime, duration, togglePlay, stop, dismiss, skip } =
     usePlayer()
 
   if (!currentTrack) return null
@@ -41,8 +41,27 @@ export default function MiniPlayer() {
             <Play className="w-5 h-5 fill-white ml-0.5" />
           )}
         </button>
+
         <button
-          onClick={stop}
+          onClick={() => skip(-10)}
+          disabled={!duration}
+          className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white shrink-0 cursor-pointer disabled:opacity-40"
+          title="Voltar 10s"
+        >
+          <Rewind className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={() => skip(10)}
+          disabled={!duration}
+          className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white shrink-0 cursor-pointer disabled:opacity-40"
+          title="Avançar 10s"
+        >
+          <FastForward className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={dismiss}
           className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white shrink-0 cursor-pointer"
           title="Fechar player"
         >

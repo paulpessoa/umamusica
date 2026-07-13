@@ -94,12 +94,12 @@ export default function ChatHistory() {
                           </div>
                         </div>
                       ))}
-                      <button
-                        onClick={() => navigate(`/musica/${order.id}`, { state: { from: 'my-songs' } })}
-                        className="w-full bg-[#FF5A5F] hover:bg-[#e0484d] text-white font-bold rounded-xl py-2.5 text-xs transition-colors cursor-pointer"
-                      >
-                        Abrir Música
-                      </button>
+                       <button
+                         onClick={() => navigate("/chat", { state: { initialMessages: order.chat_transcript } })}
+                         className="w-full bg-[#FF5A5F] hover:bg-[#e0484d] text-white font-bold rounded-xl py-2.5 text-xs transition-colors cursor-pointer"
+                       >
+                         Retomar Conversa
+                       </button>
                     </div>
                   )}
                 </div>

@@ -15,21 +15,22 @@ import MobileFrame from "../components/MobileFrame"
 function paymentMethodLabel(paymentId: string | undefined): {
   label: string
   icon: "gift" | "card" | "free"
+  value: string
 } {
-  if (!paymentId) return { label: "Outro", icon: "card" }
+  if (!paymentId) return { label: "Outro", icon: "card", value: "R$ 1,00" }
   if (paymentId.startsWith("coupon_"))
-    return { label: "Cupom de Presente", icon: "gift" }
+    return { label: "Cupom de Presente", icon: "gift", value: "Grátis" }
   if (paymentId.startsWith("bonus_balance_"))
-    return { label: "Saldo Grátis", icon: "free" }
+    return { label: "Saldo Grátis", icon: "free", value: "Grátis" }
   if (paymentId.startsWith("pending_mp_"))
-    return { label: "Pix (pendente)", icon: "card" }
+    return { label: "Pix (pendente)", icon: "card", value: "R$ 1,00" }
   if (paymentId.startsWith("pay_"))
-    return { label: "Teste (aprovado)", icon: "card" }
+    return { label: "Teste (aprovado)", icon: "card", value: "R$ 1,00" }
   if (paymentId.startsWith("mock") || paymentId.startsWith("simulated"))
-    return { label: "Ambiente de Teste", icon: "card" }
+    return { label: "Ambiente de Teste", icon: "card", value: "R$ 1,00" }
   if (/^\d+$/.test(paymentId))
-    return { label: "Pix (Mercado Pago)", icon: "card" }
-  return { label: "Outro", icon: "card" }
+    return { label: "Pix (Mercado Pago)", icon: "card", value: "R$ 1,00" }
+  return { label: "Outro", icon: "card", value: "R$ 1,00" }
 }
 
 function statusLabel(status: string): { text: string; tone: string } {
@@ -59,6 +60,10 @@ export default function PurchaseHistory() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refundOrderId, setRefundOrderId] = useState<string | null>(null)
+  const [refundDetail, setRefundDetail] = useState("")
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false)
+  const [refundSuccess, setRefundSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) {
@@ -91,6 +96,40 @@ export default function PurchaseHistory() {
   }, [user, navigate])
 
   if (!user) return null
+
+  const handleSubmitRefund = async () => {
+    if (!refundOrderId || !refundDetail.trim() || isSubmittingRefund) return
+    setIsSubmittingRefund(true)
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.session_token}`
+        },
+        body: JSON.stringify({
+          category: "refund_request",
+          relatedOrderId: refundOrderId,
+          detail: refundDetail.trim(),
+          email: user.email
+        })
+      })
+      if (res.ok) {
+        setRefundSuccess("Solicitação enviada com sucesso!")
+        setRefundDetail("")
+        setTimeout(() => {
+          setRefundOrderId(null)
+          setRefundSuccess(null)
+        }, 2000)
+      } else {
+        alert("Erro ao enviar solicitação. Tente novamente.")
+      }
+    } catch {
+      alert("Erro de conexão. Tente novamente.")
+    } finally {
+      setIsSubmittingRefund(false)
+    }
+  }
 
   return (
     <MobileFrame>
@@ -130,45 +169,108 @@ export default function PurchaseHistory() {
               const status = statusLabel(order.status)
               const title = order.song_metadata?.title || "Música Personalizada"
               return (
-                <button
+                <div
                   key={order.id}
-                  onClick={() =>
-                    navigate(`/musica/${order.id}`, {
-                      state: { from: "my-songs" }
-                    })
-                  }
-                  className="w-full text-left bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between hover:border-[#FF5A5F]/30 transition-all hover:shadow-sm cursor-pointer group"
+                  className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-[#FF5A5F]/30 transition-all hover:shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500">
-                      {method.icon === "gift" ? (
-                        <Gift className="w-4.5 h-4.5" />
-                      ) : method.icon === "free" ? (
-                        <Music className="w-4.5 h-4.5" />
-                      ) : (
-                        <CreditCard className="w-4.5 h-4.5" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900 text-sm">{title}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        {method.label} ·{" "}
-                        {new Date(order.created_at).toLocaleDateString()}
-                      </p>
-                      <span
-                        className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${status.tone}`}
-                      >
-                        {status.text}
-                      </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500 shrink-0">
+                        {method.icon === "gift" ? (
+                          <Gift className="w-4.5 h-4.5" />
+                        ) : method.icon === "free" ? (
+                          <Music className="w-4.5 h-4.5" />
+                        ) : (
+                          <CreditCard className="w-4.5 h-4.5" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm">{title}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {method.label} · {method.value} ·{" "}
+                          {new Date(order.created_at).toLocaleDateString()}
+                        </p>
+                        <span
+                          className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${status.tone}`}
+                        >
+                          {status.text}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
-                </button>
+
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() =>
+                        navigate(`/musica/${order.id}`, {
+                          state: { from: "my-songs" }
+                        })
+                      }
+                      className="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold rounded-xl py-2 text-xs transition-colors cursor-pointer border border-gray-200"
+                    >
+                      Ver Música
+                    </button>
+                    <button
+                      onClick={() => setRefundOrderId(order.id)}
+                      className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-xl py-2 text-xs transition-colors cursor-pointer border border-rose-100 flex items-center justify-center gap-1"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      Solicitar Estorno
+                    </button>
+                  </div>
+                </div>
               )
             })
           )}
         </div>
       </div>
+
+      {/* Refund Request Modal */}
+      {refundOrderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-xl">
+            <h3 className="font-bold text-gray-900 text-sm">
+              Solicitar Estorno
+            </h3>
+            <p className="text-xs text-gray-500">
+              Descreva o motivo do estorno para o pedido{" "}
+              <span className="font-mono text-[10px]">{refundOrderId}</span>.
+              Nossa equipe analisará em até 48h.
+            </p>
+            {refundSuccess && (
+              <p className="text-xs text-emerald-600 font-bold">
+                {refundSuccess}
+              </p>
+            )}
+            <textarea
+              value={refundDetail}
+              onChange={(e) => setRefundDetail(e.target.value)}
+              placeholder="Motivo do estorno..."
+              rows={3}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]/20 focus:border-[#FF5A5F] resize-none"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setRefundOrderId(null)
+                  setRefundDetail("")
+                  setRefundSuccess(null)
+                }}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSubmitRefund}
+                disabled={isSubmittingRefund || !refundDetail.trim()}
+                className="flex-1 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                {isSubmittingRefund ? "Enviando..." : "Enviar Solicitação"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </MobileFrame>
   )
 }
