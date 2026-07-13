@@ -89,8 +89,7 @@ export default function Profile() {
             <div className="bg-gradient-to-br from-[#FFF0F0] to-white border border-[#FF5A5F]/20 rounded-2xl p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Indicações</p>
-                  <p className="text-3xl font-black text-[#FF5A5F]">{user.free_songs_balance || 0} <span className="text-base font-bold text-gray-500">músicas</span></p>
+                  <p className="text-3xl font-black text-[#FF5A5F]">{user.free_songs_balance || 0} <span className="text-base font-bold text-gray-500">músicas grátis</span></p>
                 </div>
               </div>
               <p className="text-xs text-gray-600 leading-relaxed">
