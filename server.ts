@@ -155,6 +155,66 @@ function buildStructuredPrompt(chatTranscript: ChatMessage[]): any {
   }
 }
 
+// Robustly parse & normalize song metadata JSON returned by any AI provider.
+// Groq does not honor responseSchema, so keys may vary in casing/spacing
+// (e.g. "Artist Name", "Lyrics"). This maps them to our canonical shape.
+function parseSongMetadata(rawText: string): SongMetadata | null {
+  if (!rawText) return null
+  let text = rawText.trim()
+
+  // Strip markdown code fences if present (```json ... ```)
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+
+  // If there's surrounding prose, extract the outermost JSON object
+  if (!text.startsWith("{")) {
+    const start = text.indexOf("{")
+    const end = text.lastIndexOf("}")
+    if (start !== -1 && end !== -1 && end > start) {
+      text = text.slice(start, end + 1)
+    }
+  }
+
+  let obj: any
+  try {
+    obj = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!obj || typeof obj !== "object") return null
+
+  // Case/space-insensitive key lookup
+  const norm = (k: string) => k.toLowerCase().replace(/[\s_-]/g, "")
+  const lookup: Record<string, any> = {}
+  for (const key of Object.keys(obj)) {
+    lookup[norm(key)] = obj[key]
+  }
+  const pick = (...names: string[]) => {
+    for (const n of names) {
+      const v = lookup[norm(n)]
+      if (v !== undefined && v !== null && v !== "") return v
+    }
+    return undefined
+  }
+
+  const lyrics = pick("lyrics", "letra", "letras")
+  if (!lyrics) return null
+
+  let keyMemories = pick("keyMemories", "key memories", "memorias", "memories")
+  if (typeof keyMemories === "string") keyMemories = [keyMemories]
+  if (!Array.isArray(keyMemories)) keyMemories = []
+
+  return {
+    title: pick("title", "titulo") || "Minha Canção",
+    artistName: pick("artistName", "artist name", "artista") || "DJ Virtual",
+    style: pick("style", "estilo", "genero", "gênero") || "Pop",
+    tempo: pick("tempo", "andamento") || "Média",
+    vibe: pick("vibe", "tom", "clima") || "Emocionante",
+    lyrics: String(lyrics),
+    keyMemories,
+    dedicatedTo: pick("dedicatedTo", "dedicated to", "dedicadoa", "para") || ""
+  } as SongMetadata
+}
+
 // Global logger and Brevo notifier
 async function logErrorAndNotify(
   error: any,
@@ -167,6 +227,7 @@ async function logErrorAndNotify(
   const errorMessage = error.message || String(error)
   const stackTrace = error.stack || ""
   const requestData = {
+    error_type: errorType, // stored here because error_logs has no dedicated column
     headers: req.headers,
     body: req.body,
     query: req.query,
@@ -178,16 +239,23 @@ async function logErrorAndNotify(
   )
 
   try {
-    // 1. Insert into Supabase error_logs table
-    await supabase.from("error_logs").insert({
+    // 1. Insert into Supabase error_logs table.
+    // NOTE: table has no `error_type` column, so we prefix it into the message
+    // and also keep it inside request_data for filtering.
+    const { error: insertErr } = await supabase.from("error_logs").insert({
       id: ticketId,
       endpoint,
       user_email: userEmail,
       request_data: requestData,
-      error_message: errorMessage,
-      error_type: errorType,
+      error_message: `[${errorType}] ${errorMessage}`,
       stack_trace: stackTrace
     })
+    if (insertErr) {
+      console.error(
+        `[Error Logged] Supabase insert error:`,
+        insertErr.message || insertErr
+      )
+    }
   } catch (dbErr) {
     console.error(`[Error Logged] Failed to save error log in Supabase:`, dbErr)
   }
@@ -305,48 +373,27 @@ async function verifySession(
 // AI PROVIDER CONFIG
 // ============================================================
 
-// ─── Google Gemini models (active, in priority order) ────────
-const GEMINI_MODELS = {
-  // Primary: fastest, best cost-benefit
-  default: "gemini-3.5-flash",
-  alias: "gemini-flash-latest", // dynamic alias — always points to latest flash
-  lite: "gemini-3.1-flash-lite" // ultra-cheap for simple tasks
-}
+// ─── Provider order (provisional) ─────────────────────────────
+// Gemini's prepaid credits are depleted, so Groq is the PRIMARY provider for now.
+// Flip this back to false when Gemini billing is restored.
+const PREFER_GROQ = true
 
-// Models known to be deprecated/removed — map them to the safe default
+// ─── Google Gemini model (single, good cost-benefit) ─────────
+const GEMINI_CHAT_MODEL = "gemini-3.5-flash"
+
+// Legacy/deprecated Gemini names → map to the single current model
 const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
-  "gemini-1.5-flash": GEMINI_MODELS.default,
-  "gemini-1.5-pro": GEMINI_MODELS.default,
-  "gemini-2.0-flash": GEMINI_MODELS.default,
-  "gemini-2.0-flash-lite": GEMINI_MODELS.lite,
-  "gemini-flash-latest": GEMINI_MODELS.alias, // keep alias as-is
-  "gemini-3.5-flash-latest": GEMINI_MODELS.default
+  "gemini-1.5-flash": GEMINI_CHAT_MODEL,
+  "gemini-1.5-pro": GEMINI_CHAT_MODEL,
+  "gemini-2.0-flash": GEMINI_CHAT_MODEL,
+  "gemini-2.0-flash-lite": GEMINI_CHAT_MODEL,
+  "gemini-flash-latest": GEMINI_CHAT_MODEL,
+  "gemini-3.5-flash-latest": GEMINI_CHAT_MODEL,
+  "gemini-3.1-flash-lite": GEMINI_CHAT_MODEL
 }
 
-// Ordered fallback list for Gemini — tried sequentially on failure
-const GEMINI_FALLBACK_CHAIN = [
-  GEMINI_MODELS.default, // gemini-3.5-flash
-  GEMINI_MODELS.alias, // gemini-flash-latest
-  GEMINI_MODELS.lite // gemini-3.1-flash-lite
-]
-
-// ─── Groq models (active) ─────────────────────────────────────
-const GROQ_MODELS = {
-  // Fast / cost-effective (Flash equivalents)
-  fast: "llama-3.1-8b-instant",
-  fast2: "gemma2-9b-it",
-  // Complex / deep reasoning (Pro equivalents)
-  smart: "llama-3.3-70b-specdec",
-  smart2: "mixtral-8x7b-32768"
-}
-
-// Ordered fallback list for Groq
-const GROQ_FALLBACK_CHAIN = [
-  GROQ_MODELS.smart, // llama-3.3-70b-specdec (best quality first)
-  GROQ_MODELS.fast, // llama-3.1-8b-instant  (if quota on above)
-  GROQ_MODELS.smart2, // mixtral-8x7b-32768
-  GROQ_MODELS.fast2 // gemma2-9b-it
-]
+// ─── Groq model (single, best cost-benefit for chat) ─────────
+const GROQ_CHAT_MODEL = "llama-3.1-8b-instant"
 
 // Normalize: replace any deprecated/legacy model name with the current equivalent
 function normalizeGeminiModel(model: string): string {
@@ -355,7 +402,7 @@ function normalizeGeminiModel(model: string): string {
 
 // ─── Groq call (OpenAI-compatible API) ───────────────────────
 async function callGroq(params: {
-  model?: string // specific Groq model, or undefined to use fallback chain
+  model?: string
   contents: any[]
   config?: any
 }): Promise<{ text: string }> {
@@ -368,103 +415,196 @@ async function callGroq(params: {
     messages.push({ role: "system", content: params.config.systemInstruction })
   }
   for (const c of params.contents) {
+    // support plain-string contents (used by music generation)
+    if (typeof c === "string") {
+      messages.push({ role: "user", content: c })
+      continue
+    }
     const role = c.role === "model" ? "assistant" : "user"
     const text = c.parts?.map((p: any) => p.text || "").join("") || ""
     if (text) messages.push({ role, content: text })
   }
 
-  const modelsToTry = params.model ? [params.model] : GROQ_FALLBACK_CHAIN
-  let lastError: any = null
-
-  for (const model of modelsToTry) {
-    try {
-      console.log(`[AI] Trying Groq model: ${model}...`)
-      const res = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${groqApiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature: params.config?.temperature ?? 0.8,
-            max_tokens: 1024
-          })
-        }
-      )
-      if (!res.ok) {
-        const err = await res.text()
-        throw new Error(`Groq ${model} error ${res.status}: ${err}`)
-      }
-      const data = await res.json()
-      const text = data.choices?.[0]?.message?.content || ""
-      console.log(`[AI] Groq model ${model} succeeded`)
-      return { text }
-    } catch (error: any) {
-      lastError = error
-      console.warn(`[AI] Groq model ${model} failed:`, error.message)
-      continue
-    }
+  const model = GROQ_CHAT_MODEL
+  const body: any = {
+    model,
+    messages,
+    temperature: params.config?.temperature ?? 0.8,
+    max_tokens: 2048
   }
-  throw lastError
+  // If the caller asked for JSON, enable Groq's JSON mode
+  if (params.config?.responseMimeType === "application/json") {
+    body.response_format = { type: "json_object" }
+  }
+
+  console.log(`[AI] Trying Groq model: ${model}...`)
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${groqApiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Groq ${model} error ${res.status}: ${err}`)
+  }
+  const data = await res.json()
+  const text = data.choices?.[0]?.message?.content || ""
+  console.log(`[AI] Groq model ${model} succeeded`)
+  return { text }
 }
 
-// ─── Main AI dispatcher: Gemini chain → Groq chain ───────────
-// Usage: pass any model name (current or legacy) — it auto-normalizes and falls back
+// ─── Single Gemini attempt ───────────────────────────────────
+async function callGemini(params: {
+  model: string
+  contents: any[]
+  config?: any
+}) {
+  const modelName = normalizeGeminiModel(params.model)
+  console.log(`[AI] Trying Gemini model: ${modelName}...`)
+  return await ai.models.generateContent({
+    model: modelName,
+    contents: params.contents,
+    config: params.config
+  })
+}
+
+// ─── Main AI dispatcher ───────────────────────────────────────
+// Provisional order: Groq first (Gemini credits depleted), Gemini as fallback.
+// Flip PREFER_GROQ to false to restore Gemini-first when billing returns.
 async function generateContentWithFallback(params: {
   model: string
   contents: any[]
   config?: any
 }) {
-  // Build Gemini chain: normalize requested model, then full fallback list
-  const requestedNormalized = normalizeGeminiModel(params.model)
-  const geminiChain = [requestedNormalized, ...GEMINI_FALLBACK_CHAIN].filter(
-    (v, i, a) => a.indexOf(v) === i
-  ) // deduplicate, preserve order
+  const primary = PREFER_GROQ ? "groq" : "gemini"
+  const run = (p: "groq" | "gemini") =>
+    p === "groq" ? callGroq(params) : callGemini(params)
 
-  let lastGeminiError: any = null
-
-  for (const modelName of geminiChain) {
-    try {
-      console.log(`[AI] Trying Gemini model: ${modelName}...`)
-      return await ai.models.generateContent({
-        model: modelName,
-        contents: params.contents,
-        config: params.config
-      })
-    } catch (error: any) {
-      lastGeminiError = error
-      const shouldTryNext =
-        error?.status === "RESOURCE_EXHAUSTED" ||
-        error?.status === "UNAVAILABLE" ||
-        error?.status === "NOT_FOUND" ||
-        error?.message?.includes("quota") ||
-        error?.message?.includes("429") ||
-        error?.message?.includes("503") ||
-        error?.message?.includes("404") ||
-        error?.message?.includes("not found") ||
-        error?.message?.includes("deprecated") ||
-        error?.message?.includes("invalid")
-      if (shouldTryNext) {
-        console.warn(
-          `[AI] Gemini ${modelName} unavailable (${error?.status || error?.message?.slice(0, 40)}), trying next...`
-        )
-        continue
-      }
-      throw error // non-retryable error (e.g. SAFETY_BLOCK) — propagate immediately
+  let primaryError: any = null
+  try {
+    return await run(primary)
+  } catch (error: any) {
+    primaryError = error
+    console.error(
+      `[AI] Primary provider (${primary}) FAILED → status=${error?.status || "n/a"} | ${error?.message?.slice(0, 200) || error}`
+    )
+    // A safety block should NOT trigger fallback — propagate immediately
+    const msg = (error?.message || "").toLowerCase()
+    if (
+      error?.status === "SAFETY" ||
+      msg.includes("safety") ||
+      msg.includes("blocked") ||
+      msg.includes("prohibited")
+    ) {
+      throw error
     }
   }
 
-  // All Gemini models exhausted → fall back to Groq
-  console.warn("[AI] All Gemini models failed, falling back to Groq chain...")
+  const secondary = primary === "groq" ? "gemini" : "groq"
+  console.warn(`[AI] Falling back to secondary provider (${secondary})...`)
   try {
-    return await callGroq(params)
-  } catch (groqError: any) {
-    console.error("[AI] Groq chain also failed:", groqError.message)
-    throw lastGeminiError // surface original Gemini error
+    return await run(secondary)
+  } catch (secondaryError: any) {
+    console.error(
+      `[AI] Secondary provider (${secondary}) FAILED → ${secondaryError?.message?.slice(0, 200) || secondaryError}`
+    )
+    const groqErr = primary === "groq" ? primaryError : secondaryError
+    const geminiErr = primary === "gemini" ? primaryError : secondaryError
+    const agg = new Error(
+      `All AI providers failed. Groq: ${groqErr?.message || groqErr}. Gemini: ${geminiErr?.status || "n/a"} ${geminiErr?.message || geminiErr}.`
+    )
+    ;(agg as any).providerErrors = {
+      groq: { message: groqErr?.message || String(groqErr) },
+      gemini: { status: geminiErr?.status, message: geminiErr?.message }
+    }
+    throw agg
+  }
+}
+
+// Classify an AI provider error into a debuggable type + user-facing message
+function classifyAIError(error: any): {
+  type: string
+  userMessage: string
+  technical: string
+} {
+  const msg = (error?.message || String(error) || "").toLowerCase()
+  const status = error?.status
+  const providerErrors = error?.providerErrors
+
+  // Quota / billing / credits exhausted (Gemini 429 / RESOURCE_EXHAUSTED)
+  if (
+    status === "RESOURCE_EXHAUSTED" ||
+    msg.includes("quota") ||
+    msg.includes("429") ||
+    msg.includes("credit") ||
+    msg.includes("billing") ||
+    msg.includes("depleted")
+  ) {
+    return {
+      type: "QUOTA_EXCEEDED",
+      userMessage:
+        "Nossos modelos de IA atingiram o limite de uso no momento. Já estamos cientes e ele voltará em breve. Tente novamente em alguns minutos.",
+      technical: `Gemini credits/quota exhausted (429). ${providerErrors?.gemini?.message || error?.message || ""}`
+    }
+  }
+
+  // Safety filter
+  if (
+    status === "SAFETY" ||
+    msg.includes("safety") ||
+    msg.includes("blocked") ||
+    msg.includes("prohibited")
+  ) {
+    return {
+      type: "SAFETY_BLOCK",
+      userMessage:
+        "Sua mensagem pode ter violado as diretrizes de conteúdo da IA. Tente reformular sem termos ofensivos.",
+      technical: `Safety filter triggered. ${error?.message || ""}`
+    }
+  }
+
+  // Model removed / not found / decommissioned
+  if (
+    msg.includes("not found") ||
+    msg.includes("404") ||
+    msg.includes("decommissioned") ||
+    msg.includes("does not exist")
+  ) {
+    return {
+      type: "MODEL_UNAVAILABLE",
+      userMessage:
+        "Houve um problema de configuração nos modelos de IA. A equipe técnica já foi notificada.",
+      technical: `Model unavailable. Gemini: ${providerErrors?.gemini?.message || "n/a"} | Groq: ${providerErrors?.groq?.message || "n/a"}`
+    }
+  }
+
+  // Auth / invalid key
+  if (
+    msg.includes("invalid") ||
+    msg.includes("401") ||
+    msg.includes("403") ||
+    msg.includes("api key") ||
+    msg.includes("unauthorized") ||
+    msg.includes("permission")
+  ) {
+    return {
+      type: "AUTH_ERROR",
+      userMessage:
+        "Falha de autenticação com o provedor de IA. Verifique as chaves de API no servidor.",
+      technical: `Auth/key error. ${error?.message || ""}`
+    }
+  }
+
+  return {
+    type: "UNKNOWN",
+    userMessage:
+      "Opa, tive um pequeno problema para responder agora. Pode tentar novamente em alguns instantes?",
+    technical: providerErrors
+      ? `Gemini: ${JSON.stringify(providerErrors.gemini)} | Groq: ${JSON.stringify(providerErrors.groq)}`
+      : error?.message || String(error)
   }
 }
 
@@ -833,7 +973,9 @@ app.get("/api/users/me", async (req, res) => {
     // Fetch user's past generated songs
     const { data: orders } = await supabase
       .from("orders")
-      .select("id, song_metadata, audio_storage_path, status, created_at")
+      .select(
+        "id, song_metadata, audio_storage_path, payment_id, chat_transcript, status, created_at"
+      )
       .eq("email", email.toLowerCase().trim())
       .in("status", [
         "completed",
@@ -866,15 +1008,21 @@ app.get("/api/users/me", async (req, res) => {
 // ─── Chat Interview (Text) ────────────────────────────────
 app.post("/api/chat", rateLimit(40, 10 * 60 * 1000), async (req, res) => {
   try {
-    const { messages, email } = req.body
+    const { messages, email, name } = req.body
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: "Mensagens inválidas" })
     }
 
+    // Optional personalized name (used by the agent when relevant)
+    const nameLine =
+      name && typeof name === "string" && name.trim()
+        ? `\nO nome deste usuário (opcional, use apenas se fizer sentido para personalizar a conversa): ${name.trim()}.`
+        : ""
+
     const systemInstruction = `
 Você é o Compositor Virtual do 1Música, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam. Não mencione em hipótese alguma valores, preços (como R$ 1,00) ou métodos de pagamento.
 Seu objetivo é conduzir uma entrevista rápida, calorosa e engajadora com o usuário para capturar todas as informações necessárias para gerar a música: contextos detalhados, apelidos, memórias marcantes, piadas internas e histórias reais.
-
+${nameLine}
 Instruções:
 1. Faça perguntas de forma interativa e amigável. Explore detalhes poéticos e curiosidades.
 2. Adapte-se ao estilo do usuário (descontraído com quem usa emojis, polido com quem é formal).
@@ -898,8 +1046,15 @@ Instruções:
     const aiText = response.text || "Desculpe, pode repetir?"
     res.json({ text: aiText })
   } catch (error: any) {
-    console.warn("Chat Error:", error.message || error)
-    res.status(500).json({ error: "Erro ao processar conversa" })
+    const { type, userMessage, technical } = classifyAIError(error)
+    console.error(
+      `[Chat] Erro ao processar conversa | type=${type} | ${technical}`
+    )
+    res.status(500).json({
+      error: userMessage,
+      errorType: type,
+      detail: technical
+    })
   }
 })
 
@@ -973,8 +1128,15 @@ Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo
       triggerCompose: !!parsedData.triggerCompose
     })
   } catch (error: any) {
-    console.warn("Voice Chat Error:", error.message || error)
-    res.status(500).json({ error: "Erro ao processar áudio" })
+    const { type, userMessage, technical } = classifyAIError(error)
+    console.error(
+      `[Voice Chat] Erro ao processar áudio | type=${type} | ${technical}`
+    )
+    res.status(500).json({
+      error: userMessage,
+      errorType: type,
+      detail: technical
+    })
   }
 })
 
@@ -1350,6 +1512,109 @@ app.post("/api/webhook/mercadopago", async (req, res) => {
   }
 })
 
+// ─── Generate audio for an order (sandbox demo vs real Lyria) ─
+async function generateLyriaForOrder(order: any, metadata: SongMetadata): Promise<string> {
+  const isMockPayment =
+    !order.payment_id ||
+    order.payment_id.startsWith("mock") ||
+    order.payment_id.startsWith("simulated")
+  let audioStoragePath: string | null = null
+
+  if (isMockPayment) {
+    console.log("[Music Generation] Sandbox/Coupon mode: copying local example file...")
+    let localFileName = "bodas_de_diamante.mp3"
+    const styleLower = (metadata.style || "").toLowerCase()
+    if (
+      styleLower.includes("sertanejo") ||
+      styleLower.includes("paizao") ||
+      styleLower.includes("sertanejo-do-paizao")
+    ) {
+      localFileName = "sertanejo-do-paizao.mp3"
+    } else if (
+      styleLower.includes("pop") ||
+      styleLower.includes("faculdade") ||
+      styleLower.includes("amor_de_faculdade")
+    ) {
+      localFileName = "amor_de_faculdade.mp3"
+    }
+
+    const possiblePaths = [
+      path.join(process.cwd(), "assets", "examples", localFileName),
+      path.join(process.cwd(), "dist", "assets", "examples", localFileName),
+      path.join(process.cwd(), "src", "assets", "examples", localFileName)
+    ]
+
+    let fileBuffer: Buffer | null = null
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        fileBuffer = fs.readFileSync(p)
+        break
+      }
+    }
+
+    if (fileBuffer) {
+      const filePath = `${order.id}.mp3`
+      const { error: uploadError } = await supabase.storage
+        .from("songs")
+        .upload(filePath, fileBuffer, {
+          contentType: "audio/mpeg",
+          upsert: true
+        })
+      if (!uploadError) audioStoragePath = filePath
+    }
+  } else {
+    // Real transaction: Call Google Lyria.
+    console.log("[Music Generation] Real transaction. Attempting Lyria API call...")
+    const cleanLyrics = removeEmojis(metadata.lyrics)
+      .replace(
+        /\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi,
+        ""
+      )
+      .replace(/\((.*?)\)/g, "")
+      .trim()
+
+    const cleanStyle = removeEmojis(metadata.style || "")
+    const cleanTempo = removeEmojis(metadata.tempo || "")
+    const cleanVibe = removeEmojis(metadata.vibe || "")
+
+    const lyriaPrompt = `Uma canção em português no estilo ${cleanStyle}, andamento ${cleanTempo}, tom ${cleanVibe}. Letra: ${cleanLyrics}`
+    console.log(
+      `[Music Generation] Submitting cleaned prompt to Lyria: "${lyriaPrompt.substring(0, 150)}..."`
+    )
+
+    const lyriaResponse = await (ai as any).interactions.create({
+      model: "models/lyria-3-pro-preview",
+      input: lyriaPrompt
+    })
+
+    if (lyriaResponse?.output_audio?.data) {
+      const audioBuffer = Buffer.from(
+        lyriaResponse.output_audio.data,
+        "base64"
+      )
+      const filePath = `${order.id}.mp3`
+      const { error: uploadError } = await supabase.storage
+        .from("songs")
+        .upload(filePath, audioBuffer, {
+          contentType: lyriaResponse.output_audio.mime_type || "audio/mpeg",
+          upsert: true
+        })
+      if (!uploadError) {
+        audioStoragePath = filePath
+      } else {
+        throw new Error(`Storage upload failed: ${uploadError.message}`)
+      }
+    } else {
+      throw new Error("Lyria response audio output is empty")
+    }
+  }
+
+  if (!audioStoragePath) {
+    throw new Error("Audio generation failed: file path is null")
+  }
+  return audioStoragePath
+}
+
 // ─── Generate Music ────────────────────────────────────────
 app.post("/api/orders/:id/generate", async (req, res) => {
   let fetchedOrder: any = null
@@ -1435,17 +1700,17 @@ Gere as informações completas para uma música personalizada baseada nesta ent
 ${transcriptText}
 ---
 
-Campos obrigatórios:
-1. Title: Título cativante (máx 5 palavras, português).
-2. Artist Name: Nome artístico virtual.
-3. Style: Estilo musical.
-4. Tempo: Lenta, Média ou Rápida.
-5. Vibe: Tom emocional (ex: "Emocionante", "Romântica").
-6. Lyrics: Letra COMPLETA estruturada claramente em estrofes e versos (use quebras de linha '\\n' entre os versos e quebras de linha duplas '\\n\\n' entre as estrofes/seções como [Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro]). Garanta que a letra NUNCA venha em um bloco único de texto, mas sempre dividida em estrofes e versos bem organizados. NUNCA use emojis ou caracteres decorativos na letra.
-7. Key Memories: Lista das memórias utilizadas.
-8. Dedicated To: Nome/apelido da pessoa homenageada.
-
-Retorne JSON válido.
+Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAMENTE estas chaves em minúsculo:
+{
+  "title": "Título cativante (máx 5 palavras, em português)",
+  "artistName": "Nome artístico virtual",
+  "style": "Estilo musical",
+  "tempo": "Lenta, Média ou Rápida",
+  "vibe": "Tom emocional (ex: Emocionante, Romântica)",
+  "lyrics": "Letra COMPLETA estruturada em estrofes e versos. Use quebras de linha (\\n) entre os versos e quebras duplas (\\n\\n) entre as seções ([Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro]). NUNCA um bloco único, sempre bem dividida. NUNCA use emojis.",
+  "keyMemories": ["memória 1", "memória 2"],
+  "dedicatedTo": "Nome/apelido da pessoa homenageada"
+}
 `
 
       const modelResponse = await generateContentWithFallback({
@@ -1483,124 +1748,14 @@ Retorne JSON válido.
         }
       })
 
-      songMetadata = JSON.parse(
-        modelResponse.text?.trim() || "{}"
-      ) as SongMetadata
+      songMetadata = parseSongMetadata(modelResponse.text || "")
     }
 
     if (!songMetadata || !songMetadata.lyrics) {
       throw new Error("Falha ao estruturar os metadados ou letras da música.")
     }
 
-    // Check if we should use actual audio generation or fallback to demonstrative examples
-    const isMockPayment =
-      !order.payment_id ||
-      order.payment_id.startsWith("mock") ||
-      order.payment_id.startsWith("simulated")
-    let audioStoragePath: string | null = null
-
-    if (isMockPayment) {
-      console.log(
-        "[Music Generation] Sandbox/Coupon mode: copying local example file..."
-      )
-      // Copy local asset to storage for demo purposes
-      let localFileName = "bodas_de_diamante.mp3"
-      const styleLower = (songMetadata.style || "").toLowerCase()
-      if (
-        styleLower.includes("sertanejo") ||
-        styleLower.includes("paizao") ||
-        styleLower.includes("sertanejo-do-paizao")
-      ) {
-        localFileName = "sertanejo-do-paizao.mp3"
-      } else if (
-        styleLower.includes("pop") ||
-        styleLower.includes("faculdade") ||
-        styleLower.includes("amor_de_faculdade")
-      ) {
-        localFileName = "amor_de_faculdade.mp3"
-      }
-
-      const possiblePaths = [
-        path.join(process.cwd(), "assets", "examples", localFileName),
-        path.join(process.cwd(), "dist", "assets", "examples", localFileName),
-        path.join(process.cwd(), "src", "assets", "examples", localFileName)
-      ]
-
-      let fileBuffer: Buffer | null = null
-      for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-          fileBuffer = fs.readFileSync(p)
-          break
-        }
-      }
-
-      if (fileBuffer) {
-        const filePath = `${order.id}.mp3`
-        const { error: uploadError } = await supabase.storage
-          .from("songs")
-          .upload(filePath, fileBuffer, {
-            contentType: "audio/mpeg",
-            upsert: true
-          })
-
-        if (!uploadError) {
-          audioStoragePath = filePath
-        }
-      }
-    } else {
-      // Real transaction: Call Google Lyria.
-      console.log(
-        "[Music Generation] Real transaction. Attempting Lyria API call..."
-      )
-      // Strip bracketed sections and parens, and remove emojis to clean up prompt
-      const cleanLyrics = removeEmojis(songMetadata.lyrics)
-        .replace(
-          /\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi,
-          ""
-        )
-        .replace(/\((.*?)\)/g, "")
-        .trim()
-
-      const cleanStyle = removeEmojis(songMetadata.style || "")
-      const cleanTempo = removeEmojis(songMetadata.tempo || "")
-      const cleanVibe = removeEmojis(songMetadata.vibe || "")
-
-      const lyriaPrompt = `Uma canção em português no estilo ${cleanStyle}, andamento ${cleanTempo}, tom ${cleanVibe}. Letra: ${cleanLyrics}`
-      console.log(
-        `[Music Generation] Submitting cleaned prompt to Lyria: "${lyriaPrompt.substring(0, 150)}..."`
-      )
-
-      const lyriaResponse = await (ai as any).interactions.create({
-        model: "models/lyria-3-pro-preview",
-        input: lyriaPrompt
-      })
-
-      if (lyriaResponse?.output_audio?.data) {
-        const audioBuffer = Buffer.from(
-          lyriaResponse.output_audio.data,
-          "base64"
-        )
-        const filePath = `${order.id}.mp3`
-        const { error: uploadError } = await supabase.storage
-          .from("songs")
-          .upload(filePath, audioBuffer, {
-            contentType: lyriaResponse.output_audio.mime_type || "audio/mpeg",
-            upsert: true
-          })
-
-        if (!uploadError) {
-          audioStoragePath = filePath
-        } else {
-          throw new Error(`Storage upload failed: ${uploadError.message}`)
-        }
-      } else {
-        throw new Error("Lyria response audio output is empty")
-      }
-    }
-
-    if (!audioStoragePath) {
-      throw new Error("Audio generation failed: file path is null")
-    }
+    const audioStoragePath = await generateLyriaForOrder(order, songMetadata)
 
     // Save metadata and path, set status to completed
     await supabase
@@ -1730,12 +1885,11 @@ Retorne JSON válido.
         })
       }
 
+      // A real Mercado Pago payment id is purely numeric. Everything else
+      // (pay_, mock, simulated, coupon_, bonus_balance_, pending_mp_) is internal
+      // and must NOT be sent to the refund API.
       const isRealPayment =
-        fetchedOrder.payment_id &&
-        !fetchedOrder.payment_id.startsWith("pay_") &&
-        !fetchedOrder.payment_id.startsWith("mock") &&
-        !fetchedOrder.payment_id.startsWith("simulated") &&
-        !fetchedOrder.payment_id.startsWith("coupon")
+        !!fetchedOrder.payment_id && /^\d+$/.test(fetchedOrder.payment_id)
 
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
 
@@ -1819,6 +1973,141 @@ Retorne JSON válido.
   }
 })
 
+// ─── Revise Lyrics with AI (clean content flagged by safety) ─
+app.post("/api/orders/:id/revise", async (req, res) => {
+  let fetchedOrder: any = null
+  try {
+    const { data: order, error: fetchError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", req.params.id)
+      .single()
+    if (fetchError || !order) {
+      return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+    fetchedOrder = order
+
+    if (!["paid", "completed", "failed_safety"].includes(order.status)) {
+      return res
+        .status(400)
+        .json({ error: "Este pedido não pode ser revisado agora." })
+    }
+
+    // Lock to processing
+    const { data: updatedRows, error: updateError } = await supabase
+      .from("orders")
+      .update({ status: "processing", updated_at: new Date().toISOString() })
+      .eq("id", order.id)
+      .in("status", ["paid", "completed", "failed_safety"])
+      .select()
+    if (updateError || !updatedRows || updatedRows.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "A revisão já foi iniciada por outra requisição." })
+    }
+
+    const transcriptText = (order.chat_transcript || [])
+      .map((m: any) => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
+      .join("\n")
+    const currentLyrics = order.song_metadata?.lyrics || ""
+
+    const revisePrompt = `
+Você é o editor do 1Música. A letra abaixo (gerada a partir da entrevista) pode ter sido parcialmente recusada pelo filtro de segurança do Google AI Studio / Lyria. Reescreva a letra mantendo EXATAMENTE o mesmo tema, estilo, homenageado, memórias e tom emocional, mas removendo/reenquadrando qualquer conteúdo que viole as diretrizes do Lyria.
+
+REGRAS DO LYRIA (Google AI Studio) — conteúdo seguro e familiar-friendly:
+- Sem sexualidade explícita, violência gráfica, discurso de ódio ou drogas.
+- Sem difamação de marcas ou pessoas reais.
+- Linguagem respeitosa; mantenha poesia e emoção com palavras permitidas.
+
+CONTEXTO DA ENTREVISTA COM O CLIENTE:
+---
+${transcriptText}
+---
+
+LETRA ATUAL (que pode ter reprovado):
+---
+${currentLyrics}
+---
+
+Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves em minúsculo:
+{
+  "title": "Título cativante (máx 5 palavras, em português)",
+  "artistName": "Nome artístico virtual",
+  "style": "Estilo musical",
+  "tempo": "Lenta, Média ou Rápida",
+  "vibe": "Tom emocional (ex: Emocionante, Romântica)",
+  "lyrics": "Letra COMPLETA limpa e segura, estruturada em estrofes e versos com quebras de linha (\\n) entre versos e quebras duplas (\\n\\n) entre seções ([Intro], [Verso 1], [Refrão], [Verso 2], [Refrão Final], [Outro]). NUNCA em bloco único. NUNCA use emojis.",
+  "keyMemories": ["memória 1", "memória 2"],
+  "dedicatedTo": "Nome/apelido da pessoa homenageada"
+}
+`
+
+    const modelResponse = await generateContentWithFallback({
+      model: "gemini-3.5-flash",
+      contents: [revisePrompt],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            artistName: { type: Type.STRING },
+            style: { type: Type.STRING },
+            tempo: { type: Type.STRING },
+            vibe: { type: Type.STRING },
+            lyrics: { type: Type.STRING },
+            keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
+            dedicatedTo: { type: Type.STRING }
+          },
+          required: [
+            "title",
+            "artistName",
+            "style",
+            "tempo",
+            "vibe",
+            "lyrics",
+            "keyMemories",
+            "dedicatedTo"
+          ]
+        }
+      }
+    })
+
+    const songMetadata = parseSongMetadata(modelResponse.text || "")
+    if (!songMetadata || !songMetadata.lyrics) {
+      throw new Error("Falha ao reestruturar a letra revisada.")
+    }
+
+    const audioStoragePath = await generateLyriaForOrder(order, songMetadata)
+
+    const { data: updatedOrder } = await supabase
+      .from("orders")
+      .update({
+        song_metadata: songMetadata,
+        audio_storage_path: audioStoragePath,
+        status: "completed",
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", order.id)
+      .select()
+      .single()
+
+    res.json(updatedOrder || { ...order, song_metadata: songMetadata, status: "completed" })
+  } catch (error: any) {
+    const { type, userMessage, technical } = classifyAIError(error)
+    console.error(
+      `[Revise] ❌ Erro ao revisar (order ${fetchedOrder?.id}) | type=${type} | ${technical}`
+    )
+    if (fetchedOrder) {
+      await supabase
+        .from("orders")
+        .update({ status: "failed_safety", updated_at: new Date().toISOString() })
+        .eq("id", fetchedOrder.id)
+    }
+    res.status(500).json({ error: userMessage, errorType: type, detail: technical })
+  }
+})
+
 // ─── Download (Signed URL — never expose Supabase directly) ─
 app.get("/api/orders/:id/download", async (req, res) => {
   try {
@@ -1884,6 +2173,36 @@ app.post("/api/users/me/delete", async (req, res) => {
     res
       .status(500)
       .json({ error: "Erro interno no servidor ao deletar usuário" })
+  }
+})
+
+// ─── Update current user profile (optional name) ───────────
+app.post("/api/users/me/update", async (req, res) => {
+  try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
+    const { name } = req.body
+    const cleanName =
+      typeof name === "string" && name.trim().length <= 60
+        ? name.trim()
+        : null
+
+    const { data: updated, error } = await supabase
+      .from("users")
+      .update({ name: cleanName })
+      .eq("email", verified.email.toLowerCase().trim())
+      .select("id, email, name, referral_code, free_songs_balance")
+      .single()
+
+    if (error || !updated) {
+      return res.status(500).json({ error: "Erro ao atualizar perfil" })
+    }
+
+    res.json({ success: true, user: updated })
+  } catch (error: any) {
+    console.error("Update profile error:", error.message || error)
+    res.status(500).json({ error: "Erro ao atualizar perfil" })
   }
 })
 

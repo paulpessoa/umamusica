@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Headphones, Radio, Zap, Volume2, Waves, AlertCircle } from "lucide-react";
+import { CheckCircle2, Headphones, Radio, Zap, Volume2, Waves, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Order } from "../types";
@@ -20,6 +20,7 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isRevising, setIsRevising] = useState(false);
   const [currentInstrumentIndex, setCurrentInstrumentIndex] = useState(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -170,6 +171,34 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
     }
   };
 
+  // "Revisar com IA": ask the AI to clean the lyrics (e.g. if it was flagged by
+  // the Lyria safety filter) using the chat context, then regenerate the audio.
+  const handleRevise = async () => {
+    if (isGenerating || isRevising) return;
+    setIsRevising(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/revise`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOrder(data);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setErrorMessage(data.error || "Não foi possível revisar a letra com a IA.");
+        // Restore the previous view
+        const refetch = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
+        if (refetch.ok) setOrder(await refetch.json());
+      }
+    } catch {
+      setErrorMessage("Erro ao conectar ao servidor. Tente novamente.");
+    } finally {
+      setIsRevising(false);
+    }
+  };
+
   if (!order) {
     return (
       <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6 bg-white animate-pulse">
@@ -311,11 +340,28 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 {cameFromMySongs ? 'Voltar às Minhas Músicas' : 'Voltar ao Início'}
               </button>
               <button
+                onClick={handleRevise}
+                disabled={isRevising || isGenerating}
+                className="flex-1 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {isRevising ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Revisando...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Revisar com IA
+                  </>
+                )}
+              </button>
+              <button
                 onClick={handleRecompose}
                 disabled={isGenerating || !editedLyrics.trim()}
-                className="bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
+                className="bg-gray-800 hover:bg-gray-900 disabled:opacity-50 text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
               >
-                {isGenerating ? "Compondo..." : "Re-compor Música"}
+                {isGenerating ? "Compondo..." : "Re-compor Manual"}
               </button>
             </div>
           </motion.div>
@@ -416,6 +462,32 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                 duration={duration}
                 setDuration={setDuration}
               />
+            )}
+
+            {/* Revisar com IA (only for the owner of a paid/completed song) */}
+            {user && order && user.email.toLowerCase().trim() === order.email.toLowerCase().trim() && (
+              <div className="pt-1 text-center">
+                <button
+                  onClick={handleRevise}
+                  disabled={isRevising || isGenerating}
+                  className="inline-flex items-center gap-1.5 bg-white border border-[#FF5A5F]/30 text-[#FF5A5F] hover:bg-[#FFF0F0] text-xs font-bold py-2.5 px-5 rounded-full shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isRevising ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Revisando...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Revisar com IA
+                    </>
+                  )}
+                </button>
+                <p className="text-[10px] text-gray-400 mt-1.5 max-w-xs mx-auto">
+                  A IA limpa a letra conforme as regras do Google e gera uma nova versão.
+                </p>
+              </div>
             )}
 
             {/* CTA */}

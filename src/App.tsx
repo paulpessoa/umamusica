@@ -17,6 +17,8 @@ import Invite from "./pages/Invite";
 import CookieBanner from "./components/CookieBanner";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
+import ChatHistory from "./pages/ChatHistory";
+import PurchaseHistory from "./pages/PurchaseHistory";
 
 
 function ChatRoute() {
@@ -63,7 +65,7 @@ function ChatRoute() {
 
   return (
     <MobileFrame>
-      <ChatSection email={user.email} onFinishChat={handleFinishChat} />
+      <ChatSection email={user.email} name={user.name} onFinishChat={handleFinishChat} />
     </MobileFrame>
   );
 }
@@ -104,6 +106,30 @@ function MySongsRoute() {
   return <MySongs />;
 }
 
+function ChatHistoryRoute() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  if (!user) {
+    navigate("/login");
+    return null;
+  }
+
+  return <ChatHistory />;
+}
+
+function PurchaseHistoryRoute() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  if (!user) {
+    navigate("/login");
+    return null;
+  }
+
+  return <PurchaseHistory />;
+}
+
 function SuccessRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -124,6 +150,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/minhas-musicas" element={<MySongsRoute />} />
+        <Route path="/historico-chats" element={<ChatHistoryRoute />} />
+        <Route path="/historico-compras" element={<PurchaseHistoryRoute />} />
         <Route path="/faq" element={<FAQ />} />
         <Route path="/chat" element={<ChatRoute />} />
         <Route path="/checkout/:id" element={<CheckoutRoute />} />
