@@ -19,6 +19,9 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import ChatHistory from "./pages/ChatHistory";
 import PurchaseHistory from "./pages/PurchaseHistory";
+import AdminCosts from "./pages/AdminCosts";
+import MiniPlayer from "./components/MiniPlayer";
+import { PlayerProvider } from "./contexts/PlayerContext";
 
 
 function ChatRoute() {
@@ -145,23 +148,28 @@ function SuccessRoute() {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/perfil" element={<Profile />} />
-        <Route path="/minhas-musicas" element={<MySongsRoute />} />
-        <Route path="/historico-chats" element={<ChatHistoryRoute />} />
-        <Route path="/historico-compras" element={<PurchaseHistoryRoute />} />
-        <Route path="/faq" element={<FAQ />} />
-        <Route path="/chat" element={<ChatRoute />} />
-        <Route path="/checkout/:id" element={<CheckoutRoute />} />
-        <Route path="/musica/:id" element={<SuccessRoute />} />
-        <Route path="/convite/:code" element={<Invite />} />
-        <Route path="/termos" element={<Terms />} />
-        <Route path="/privacidade" element={<Privacy />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-      <CookieBanner />
+      <PlayerProvider>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/perfil" element={<Profile />} />
+          <Route path="/minhas-musicas" element={<MySongsRoute />} />
+          <Route path="/historico-chats" element={<ChatHistoryRoute />} />
+          <Route path="/chats" element={<ChatHistoryRoute />} />
+          <Route path="/historico-compras" element={<PurchaseHistoryRoute />} />
+          <Route path="/admin/custos" element={<AdminCosts />} />
+          <Route path="/faq" element={<FAQ />} />
+          <Route path="/chat" element={<ChatRoute />} />
+          <Route path="/checkout/:id" element={<CheckoutRoute />} />
+          <Route path="/musica/:id" element={<SuccessRoute />} />
+          <Route path="/convite/:code" element={<Invite />} />
+          <Route path="/termos" element={<Terms />} />
+          <Route path="/privacidade" element={<Privacy />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+        <MiniPlayer />
+        <CookieBanner />
+      </PlayerProvider>
     </AuthProvider>
   );
 }

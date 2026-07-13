@@ -1,20 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Download, Music, Disc, Volume2, RefreshCw, Trash2 } from "lucide-react";
+import { Play, Pause, Download, Music, Disc, Volume2, Trash2, Share2 } from "lucide-react";
 import { motion } from "motion/react";
 import { SongMetadata } from "../types";
 import { useAuth } from "../contexts/AuthContext";
+import { usePlayer, PlayerTrack } from "../contexts/PlayerContext";
 import DeleteMusicModal from "./DeleteMusicModal";
 
 interface AudioPlayerProps {
   orderId: string;
   metadata: SongMetadata;
   hasAudio: boolean;
-  isPlaying?: boolean;
-  setIsPlaying?: (playing: boolean) => void;
-  currentTime?: number;
-  setCurrentTime?: (time: number) => void;
-  duration?: number;
-  setDuration?: (dur: number) => void;
   onDeleted?: () => void;
 }
 
@@ -22,38 +17,42 @@ export default function AudioPlayer({
   orderId,
   metadata,
   hasAudio,
-  isPlaying: propIsPlaying,
-  setIsPlaying: propSetIsPlaying,
-  currentTime: propCurrentTime,
-  setCurrentTime: propSetCurrentTime,
-  duration: propDuration,
-  setDuration: propSetDuration,
   onDeleted,
 }: AudioPlayerProps) {
   const { user } = useAuth();
-  const [localIsPlaying, localSetIsPlaying] = useState(false);
-  const [localCurrentTime, localSetCurrentTime] = useState(0);
-  const [localDuration, localSetDuration] = useState(0);
+  const player = usePlayer();
   const [volume, setVolume] = useState(0.8);
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const isPlaying = propIsPlaying !== undefined ? propIsPlaying : localIsPlaying;
-  const setIsPlaying = propSetIsPlaying !== undefined ? propSetIsPlaying : localSetIsPlaying;
-  const currentTime = propCurrentTime !== undefined ? propCurrentTime : localCurrentTime;
-  const setCurrentTime = propSetCurrentTime !== undefined ? propSetCurrentTime : localSetCurrentTime;
-  const duration = propDuration !== undefined ? propDuration : localDuration;
-  const setDuration = propSetDuration !== undefined ? propSetDuration : localSetDuration;
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
 
+  const downloadUrl = `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`;
+
+  const track: PlayerTrack = {
+    orderId,
+    title: metadata.title,
+    artistName: metadata.artistName,
+    src: downloadUrl,
+    metadata,
+  };
+
+  // Register this track in the global player (without interrupting a song
+  // that is already playing elsewhere) so the mini-player can display it.
+  useEffect(() => {
+    if (hasAudio && !player.currentTrack) {
+      player.setTrack(track);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, hasAudio]);
+
   const shareUrl = `${window.location.origin}/musica/${orderId}`;
+  const referralParam = user?.referral_code
+    ? `?ref=${encodeURIComponent(user.referral_code)}`
+    : "";
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
-    `Escuta esta música criada no 1Música! \n\n ${shareUrl}`
+    `Escuta esta música que criei no 1Música! 🎵\n\n ${shareUrl}${referralParam}`
   )}`;
 
   const handleDeleteMusic = async (reasonCategory: string, reasonDetails: string) => {
@@ -74,10 +73,7 @@ export default function AudioPlayer({
         throw new Error("Erro ao deletar música");
       }
 
-      // Callback to notify parent component
-      if (onDeleted) {
-        onDeleted();
-      }
+      if (onDeleted) onDeleted();
     } catch (error: any) {
       throw new Error(error.message || "Erro ao deletar música");
     } finally {
@@ -85,86 +81,32 @@ export default function AudioPlayer({
     }
   };
 
-  // Lazy load audio only when user clicks play — reduces initial bundle
-  const loadAndPlay = async () => {
-    if (!hasAudio) return;
-
-    if (!audioSrc) {
-      setIsAudioLoading(true);
-      // Fetch signed URL via our API (never exposes Supabase)
-      const downloadUrl = `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`;
-      setAudioSrc(downloadUrl);
-    }
-
-    // Wait for next tick so src is set
-    setTimeout(() => {
-      if (audioRef.current) {
-        audioRef.current.volume = volume;
-        audioRef.current.play()
-          .then(() => {
-            setIsPlaying(true);
-          })
-          .catch((e) => {
-            console.log("Playback error:", e);
-            setIsAudioLoading(false);
-          });
-      }
-    }, 150);
-  };
-
   const togglePlay = () => {
-    if (isAudioLoading) return; // Block input while fetching audio file
-
-    if (!audioRef.current || !audioSrc) {
-      loadAndPlay();
+    if (!hasAudio) return;
+    if (!player.currentTrack || player.currentTrack.orderId !== orderId) {
+      player.playTrack(track);
       return;
     }
-
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play().catch((e) => console.log("Playback error:", e));
-      setIsPlaying(true);
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
-  };
-
-  const handleLoadedMetadata = () => {
-    setIsAudioLoading(false); // Stop loader once audio metadata/duration is loaded
-    if (audioRef.current) setDuration(audioRef.current.duration || 45);
+    player.togglePlay();
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!audioRef.current || isAudioLoading) return;
-    const seekValue = parseFloat(e.target.value);
-    audioRef.current.currentTime = seekValue;
-    setCurrentTime(seekValue);
+    player.seek(parseFloat(e.target.value));
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const vol = parseFloat(e.target.value);
     setVolume(vol);
-    if (audioRef.current) audioRef.current.volume = vol;
   };
 
   const formatTime = (time: number) => {
-    if (isAudioLoading && time === 0) return "Carregando...";
     if (isNaN(time)) return "00:00";
     const mins = Math.floor(time / 60);
     const secs = Math.floor(time % 60);
     return `${mins < 10 ? "0" : ""}${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
 
-  const handleAudioEnded = () => {
-    setIsPlaying(false);
-    setCurrentTime(0);
-  };
-
-  // Canvas waveform visualizer
+  // Canvas waveform visualizer (driven by global isPlaying state)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -182,7 +124,7 @@ export default function AudioPlayer({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (let i = 0; i < barsCount; i++) {
-        if (isPlaying) {
+        if (player.isPlaying) {
           const target = Math.random() * 45 + 5 + Math.sin(Date.now() * 0.01 + i) * 15;
           barsArray[i] = barsArray[i] * 0.7 + target * 0.3;
         } else {
@@ -214,13 +156,12 @@ export default function AudioPlayer({
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [isPlaying]);
+  }, [player.isPlaying]);
 
   // Lyrics renderer with support for literal '\n' string escapes
   const renderLyrics = () => {
     if (!metadata.lyrics) return null;
 
-    // Normalize literal "\n" strings into real newlines
     const normalizedLyrics = metadata.lyrics.replace(/\\n/g, "\n");
 
     return normalizedLyrics.split("\n").map((line, index) => {
@@ -247,7 +188,7 @@ export default function AudioPlayer({
       <div className="flex flex-col items-center justify-center space-y-4">
         <div className="relative w-40 h-40 flex items-center justify-center">
           <motion.div
-            animate={{ rotate: isPlaying && !isAudioLoading ? 360 : 0 }}
+            animate={{ rotate: player.isPlaying ? 360 : 0 }}
             transition={{ repeat: Infinity, duration: 12, ease: "linear" }}
             className="absolute inset-0 bg-gray-900 rounded-full border-4 border-gray-800 shadow-lg flex items-center justify-center overflow-hidden"
           >
@@ -255,7 +196,7 @@ export default function AudioPlayer({
             <div className="absolute inset-5 border border-gray-800/25 rounded-full"></div>
             <div className="absolute inset-8 border border-gray-800/30 rounded-full"></div>
             <div className="w-16 h-16 bg-gradient-to-tr from-[#FF5A5F] to-amber-400 rounded-full flex items-center justify-center relative shadow-inner">
-              <Disc className={`w-8 h-8 text-white/90 ${isPlaying && !isAudioLoading ? "animate-pulse" : ""}`} />
+              <Disc className={`w-8 h-8 text-white/90 ${player.isPlaying ? "animate-pulse" : ""}`} />
               <div className="w-4 h-4 bg-gray-950 rounded-full absolute"></div>
             </div>
           </motion.div>
@@ -277,17 +218,6 @@ export default function AudioPlayer({
         </div>
       </div>
 
-      {/* Audio Element (lazy loaded) */}
-      {audioSrc && (
-        <audio
-          ref={audioRef}
-          src={audioSrc}
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handleLoadedMetadata}
-          onEnded={handleAudioEnded}
-        />
-      )}
-
       {/* Waveform */}
       <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 shadow-inner">
         <canvas ref={canvasRef} className="w-full opacity-90" />
@@ -298,15 +228,15 @@ export default function AudioPlayer({
         <input
           type="range"
           min={0}
-          max={duration || 100}
-          value={currentTime}
+          max={player.duration || 100}
+          value={player.currentTime}
           onChange={handleSeek}
-          disabled={isAudioLoading}
+          disabled={!hasAudio}
           className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#FF5A5F] disabled:opacity-50"
         />
         <div className="flex items-center justify-between text-[11px] font-mono text-gray-400">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
+          <span>{formatTime(player.currentTime)}</span>
+          <span>{formatTime(player.duration)}</span>
         </div>
       </div>
 
@@ -321,19 +251,17 @@ export default function AudioPlayer({
             step={0.05}
             value={volume}
             onChange={handleVolumeChange}
-            disabled={isAudioLoading}
+            disabled={!hasAudio}
             className="w-full h-1 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-400 disabled:opacity-50"
           />
         </div>
 
         <button
           onClick={togglePlay}
-          disabled={!hasAudio || isAudioLoading}
+          disabled={!hasAudio}
           className="w-14 h-14 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white rounded-full flex items-center justify-center shadow-md shadow-[#FF5A5F]/15 transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0"
         >
-          {isAudioLoading ? (
-            <RefreshCw className="w-6 h-6 animate-spin text-[#FF5A5F]" />
-          ) : isPlaying ? (
+          {player.isPlaying ? (
             <Pause className="w-6 h-6 fill-white" />
           ) : (
             <Play className="w-6 h-6 fill-white ml-0.5" />
@@ -341,30 +269,23 @@ export default function AudioPlayer({
         </button>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* WhatsApp share button */}
+          {/* WhatsApp share button (with referral link) */}
           <a
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-emerald-600 rounded-xl flex items-center justify-center transition-colors"
-            title="Compartilhar no WhatsApp"
+            title="Compartilhar no WhatsApp / Status"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              className="w-4 h-4 text-emerald-500"
-            >
-              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 0 0 1.37 5.082L2 22l5.102-1.336a9.926 9.926 0 0 0 4.909 1.302h.004c5.505 0 9.988-4.478 9.99-9.985A9.983 9.983 0 0 0 12.012 2zm5.718 14.153c-.314.881-1.523 1.621-2.102 1.713-.578.093-1.127.351-3.693-.701-3.284-1.345-5.358-4.717-5.522-4.939-.165-.221-1.319-1.758-1.319-3.353 0-1.595.825-2.38 1.121-2.696.297-.317.594-.396.792-.396.198 0 .396.002.56.01.178.008.416-.067.652.503.243.585.824 2.013.896 2.16.073.148.122.32.023.518-.098.199-.148.32-.296.495-.148.175-.312.39-.446.522-.149.148-.304.309-.13.606.173.297.768 1.267 1.65 2.051.17.151.32.32.483.479a2.531 2.531 0 0 0 .762.536c.28.113.445.093.61-.098.165-.192.709-.824.9-.11.191.713.693 2.376.762 2.524.069.148.138.247.138.346 0 .099-.074.522-.388 1.403z" />
-            </svg>
+            <Share2 className="w-4 h-4 text-emerald-500" />
           </a>
 
           {/* Download via API (signed URL) */}
           <a
-            href={`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`}
+            href={downloadUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio || isAudioLoading ? "opacity-40 pointer-events-none" : ""}`}
+            className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio ? "opacity-40 pointer-events-none" : ""}`}
             title="Baixar Música"
           >
             <Download className="w-4 h-4" />

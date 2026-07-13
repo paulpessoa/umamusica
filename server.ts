@@ -305,6 +305,41 @@ async function logErrorAndNotify(
   return ticketId
 }
 
+// Cost per song — used to monitor revenue (R$ 1,00) vs spend (Lyria ~R$ 0,20).
+const LYRIA_API_COST = parseFloat(process.env.LYRIA_API_COST || "0.20")
+
+// Lightweight cost logger. Writes to the `cost_logs` table (non-fatal on error).
+// Captures token usage from the chat/compose LLM calls and the flat API cost
+// of each Lyria music generation so we can compute exact cost-per-song.
+async function logCost(params: {
+  orderId?: string | null
+  email?: string | null
+  stage: "chat" | "compose_lyrics" | "music_generation" | "revise"
+  provider?: string | null
+  inputTokens?: number | null
+  outputTokens?: number | null
+  apiCost?: number | null
+  model?: string | null
+  notes?: string | null
+}) {
+  try {
+    await supabase.from("cost_logs").insert({
+      order_id: params.orderId || null,
+      email: params.email || null,
+      stage: params.stage,
+      provider: params.provider || null,
+      input_tokens: params.inputTokens ?? null,
+      output_tokens: params.outputTokens ?? null,
+      api_cost: params.apiCost ?? null,
+      model: params.model || null,
+      notes: params.notes || null,
+      created_at: new Date().toISOString()
+    })
+  } catch (e: any) {
+    console.error("[CostLog] Insert failed (non-fatal):", e?.message || e)
+  }
+}
+
 app.use(express.json({ limit: "25mb" }))
 
 // Disable caching for all API responses
@@ -405,7 +440,10 @@ async function callGroq(params: {
   model?: string
   contents: any[]
   config?: any
-}): Promise<{ text: string }> {
+}): Promise<{
+  text: string
+  usage: { inputTokens: number | null; outputTokens: number | null }
+}> {
   const groqApiKey = process.env.GROQ_API_KEY
   if (!groqApiKey) throw new Error("GROQ_API_KEY not configured")
 
@@ -453,7 +491,13 @@ async function callGroq(params: {
   const data = await res.json()
   const text = data.choices?.[0]?.message?.content || ""
   console.log(`[AI] Groq model ${model} succeeded`)
-  return { text }
+  return {
+    text,
+    usage: {
+      inputTokens: data.usage?.prompt_tokens ?? null,
+      outputTokens: data.usage?.completion_tokens ?? null
+    }
+  }
 }
 
 // ─── Single Gemini attempt ───────────────────────────────────
@@ -464,11 +508,18 @@ async function callGemini(params: {
 }) {
   const modelName = normalizeGeminiModel(params.model)
   console.log(`[AI] Trying Gemini model: ${modelName}...`)
-  return await ai.models.generateContent({
+  const result = await ai.models.generateContent({
     model: modelName,
     contents: params.contents,
     config: params.config
   })
+  return {
+    text: result.text || "",
+    usage: {
+      inputTokens: result.usageMetadata?.promptTokenCount ?? null,
+      outputTokens: result.usageMetadata?.candidatesTokenCount ?? null
+    }
+  }
 }
 
 // ─── Main AI dispatcher ───────────────────────────────────────
@@ -480,8 +531,12 @@ async function generateContentWithFallback(params: {
   config?: any
 }) {
   const primary = PREFER_GROQ ? "groq" : "gemini"
-  const run = (p: "groq" | "gemini") =>
-    p === "groq" ? callGroq(params) : callGemini(params)
+  const run = async (p: "groq" | "gemini") => {
+    if (p === "groq") {
+      return { ...(await callGroq(params)), provider: "groq" as const }
+    }
+    return { ...(await callGemini(params)), provider: "gemini" as const }
+  }
 
   let primaryError: any = null
   try {
@@ -750,6 +805,71 @@ app.post("/api/admin/migrate-orders-userid", async (req, res) => {
   } catch (error: any) {
     console.error("[Migration] Error:", error.message)
     res.status(500).json({ error: "Erro na migração" })
+  }
+})
+
+// ─── Admin: Cost Logs (revenue vs spend monitor) ───────────
+app.get("/api/admin/cost-logs", async (req, res) => {
+  try {
+    const adminKey = req.headers["x-admin-key"]
+    const validKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.ADMIN_DASHBOARD_KEY ||
+      ""
+    if (adminKey !== validKey) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+
+    const { data: rows, error } = await supabase
+      .from("cost_logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200)
+
+    if (error) {
+      return res.status(500).json({ error: "Erro ao ler custos" })
+    }
+
+    // Aggregates
+    let totalCost = 0
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
+    let musicGenerations = 0
+    for (const r of rows || []) {
+      totalCost += Number(r.api_cost || 0)
+      totalInputTokens += Number(r.input_tokens || 0)
+      totalOutputTokens += Number(r.output_tokens || 0)
+      if (r.stage === "music_generation") musicGenerations++
+    }
+
+    // Revenue = number of completed orders x R$ 1,00
+    const { count: completedCount } = await supabase
+      .from("orders")
+      .select("id", { count: "exact" })
+      .eq("status", "completed")
+
+    const revenue = (completedCount || 0) * 1.0
+
+    res.json({
+      summary: {
+        totalCost: Number(totalCost.toFixed(4)),
+        revenue: Number(revenue.toFixed(2)),
+        net: Number((revenue - totalCost).toFixed(2)),
+        avgCostPerSong:
+          musicGenerations > 0
+            ? Number((totalCost / musicGenerations).toFixed(4))
+            : 0,
+        totalInputTokens,
+        totalOutputTokens,
+        musicGenerations,
+        completedOrders: completedCount || 0,
+        targetCostPerSong: LYRIA_API_COST
+      },
+      rows: rows || []
+    })
+  } catch (error: any) {
+    console.error("[Admin Cost Logs] Error:", error?.message || error)
+    res.status(500).json({ error: "Erro interno" })
   }
 })
 
@@ -1044,6 +1164,17 @@ Instruções:
     })
 
     const aiText = response.text || "Desculpe, pode repetir?"
+
+    // Cost logging: capture chat composition token usage per message.
+    await logCost({
+      email: email || null,
+      stage: "chat",
+      provider: response.provider || "groq",
+      inputTokens: response.usage?.inputTokens ?? null,
+      outputTokens: response.usage?.outputTokens ?? null,
+      model: "gemini-3.5-flash"
+    })
+
     res.json({ text: aiText })
   } catch (error: any) {
     const { type, userMessage, technical } = classifyAIError(error)
@@ -1615,6 +1746,157 @@ async function generateLyriaForOrder(order: any, metadata: SongMetadata): Promis
   return audioStoragePath
 }
 
+// ─── Draft metadata (lyrics + style) from the interview ────
+// Generates the song metadata (title, artist, style, tempo, vibe, lyrics) and
+// attaches a stable `seed`, `style_tags` and `instrumental_metadata`. These are
+// preserved across lyric edits so that re-generating the audio keeps the exact
+// same musical style/identity (consistency guardrail).
+async function generateDraftMetadata(order: any): Promise<SongMetadata | null> {
+  const transcriptText = (order.chat_transcript || [])
+    .map((m: any) => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
+    .join("\n")
+
+  const analysisPrompt = `
+Gere as informações completas para uma música personalizada baseada nesta entrevista:
+---
+${transcriptText}
+---
+
+Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAMENTE estas chaves em minúsculo:
+{
+  "title": "Título cativante (máx 5 palavras, em português)",
+  "artistName": "Nome artístico virtual",
+  "style": "Estilo musical",
+  "tempo": "Lenta, Média ou Rápida",
+  "vibe": "Tom emocional (ex: Emocionante, Romântica)",
+  "lyrics": "Letra COMPLETA estruturada em estrofes e versos. Use quebras de linha (\\n) entre os versos e quebras duplas (\\n\\n) entre as seções ([Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro]). NUNCA um bloco único, sempre bem dividida. NUNCA use emojis.",
+  "keyMemories": ["memória 1", "memória 2"],
+  "dedicatedTo": "Nome/apelido da pessoa homenageada"
+}
+`
+
+  const modelResponse = await generateContentWithFallback({
+    model: "gemini-3.5-flash",
+    contents: [analysisPrompt],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          artistName: { type: Type.STRING },
+          style: { type: Type.STRING },
+          tempo: { type: Type.STRING },
+          vibe: { type: Type.STRING },
+          lyrics: {
+            type: Type.STRING,
+            description:
+              "Letra completa da música estruturada de forma clara em estrofes e versos, usando quebras de linha (\\n) entre os versos e quebras de linha duplas (\\n\\n) entre as seções ([Intro], [Verso 1], etc.) para que fique perfeitamente formatada em parágrafos."
+          },
+          keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
+          dedicatedTo: { type: Type.STRING }
+        },
+        required: [
+          "title",
+          "artistName",
+          "style",
+          "tempo",
+          "vibe",
+          "lyrics",
+          "keyMemories",
+          "dedicatedTo"
+        ]
+      }
+    }
+  })
+
+  // Log the composition cost (chat/compose LLM token usage).
+  if (modelResponse.usage) {
+    await logCost({
+      orderId: order.id,
+      email: order.email,
+      stage: "compose_lyrics",
+      provider: modelResponse.provider || "groq",
+      inputTokens: modelResponse.usage.inputTokens ?? null,
+      outputTokens: modelResponse.usage.outputTokens ?? null,
+      model: "gemini-3.5-flash"
+    })
+  }
+
+  const base = parseSongMetadata(modelResponse.text || "")
+  if (!base || !base.lyrics) return null
+
+  return {
+    ...base,
+    // Stable seed + style tags preserved across lyric edits for consistency.
+    seed: Math.floor(Math.random() * 1_000_000_000),
+    style_tags: [base.style, base.tempo, base.vibe],
+    instrumental_metadata: {
+      style: base.style,
+      tempo: base.tempo,
+      vibe: base.vibe
+    }
+  }
+}
+
+// ─── Compose lyrics only (post-payment draft) ──────────────
+// After a successful Pix payment we do NOT generate audio immediately. We
+// compose the lyrics draft, persist it and move the order to `lyrics_review`
+// so the user can review/edit before we ever call Lyria.
+app.post("/api/orders/:id/compose-lyrics", async (req, res) => {
+  let order: any = null
+  try {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", req.params.id)
+      .single()
+    if (error || !data) {
+      return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+    order = data
+
+    if (order.status !== "paid") {
+      return res
+        .status(400)
+        .json({ error: "Pedido não está pronto para composição." })
+    }
+
+    // Atomic: paid -> lyrics_review
+    const { data: locked, error: lockErr } = await supabase
+      .from("orders")
+      .update({ status: "lyrics_review", updated_at: new Date().toISOString() })
+      .eq("id", order.id)
+      .eq("status", "paid")
+      .select()
+    if (lockErr || !locked || locked.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "A composição já foi iniciada por outra requisição." })
+    }
+
+    const metadata = await generateDraftMetadata(order)
+    if (!metadata) throw new Error("Falha ao compor a letra da música.")
+
+    await supabase
+      .from("orders")
+      .update({ song_metadata: metadata })
+      .eq("id", order.id)
+
+    res.json({ status: "lyrics_review", song_metadata: metadata })
+  } catch (error: any) {
+    console.error("[Compose Lyrics] Error:", error?.message || error)
+    // Revert to paid so the user can retry the composition.
+    if (order) {
+      await supabase
+        .from("orders")
+        .update({ status: "paid", updated_at: new Date().toISOString() })
+        .eq("id", order.id)
+    }
+    res.status(500).json({ error: "Erro ao compor a letra. Tente novamente." })
+  }
+})
+
 // ─── Generate Music ────────────────────────────────────────
 app.post("/api/orders/:id/generate", async (req, res) => {
   let fetchedOrder: any = null
@@ -1647,7 +1929,11 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         .status(400)
         .json({ error: "Este pedido falhou e já foi estornado." })
     }
-    if (order.status !== "paid" && order.status !== "failed_safety") {
+    if (
+      order.status !== "paid" &&
+      order.status !== "failed_safety" &&
+      order.status !== "lyrics_review"
+    ) {
       return res
         .status(400)
         .json({ error: "O pedido não está pronto para geração." })
@@ -1658,7 +1944,7 @@ app.post("/api/orders/:id/generate", async (req, res) => {
       .from("orders")
       .update({ status: "processing", updated_at: new Date().toISOString() })
       .eq("id", order.id)
-      .in("status", ["paid", "failed_safety"])
+      .in("status", ["paid", "failed_safety", "lyrics_review"])
       .select()
 
     if (updateError || !updatedRows || updatedRows.length === 0) {
@@ -1686,69 +1972,18 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         vibe: existingMetadata.vibe || "Feliz",
         keyMemories: existingMetadata.keyMemories || [],
         dedicatedTo: existingMetadata.dedicatedTo || "",
+        // Consistency guardrail: keep the same seed, style_tags and
+        // instrumental_metadata from the initial draft so the music style
+        // stays identical — only the words change.
+        seed: existingMetadata.seed,
+        style_tags: existingMetadata.style_tags,
+        instrumental_metadata: existingMetadata.instrumental_metadata,
         lyrics: customLyrics
       }
     } else {
-      // Analyze transcript using Gemini
-      const transcriptText = (order.chat_transcript || [])
-        .map((m: any) => `${m.sender === "user" ? "Cliente" : "IA"}: ${m.text}`)
-        .join("\n")
-
-      const analysisPrompt = `
-Gere as informações completas para uma música personalizada baseada nesta entrevista:
----
-${transcriptText}
----
-
-Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAMENTE estas chaves em minúsculo:
-{
-  "title": "Título cativante (máx 5 palavras, em português)",
-  "artistName": "Nome artístico virtual",
-  "style": "Estilo musical",
-  "tempo": "Lenta, Média ou Rápida",
-  "vibe": "Tom emocional (ex: Emocionante, Romântica)",
-  "lyrics": "Letra COMPLETA estruturada em estrofes e versos. Use quebras de linha (\\n) entre os versos e quebras duplas (\\n\\n) entre as seções ([Intro], [Verso 1], [Pré-Refrão], [Refrão], [Verso 2], [Refrão Final], [Outro]). NUNCA um bloco único, sempre bem dividida. NUNCA use emojis.",
-  "keyMemories": ["memória 1", "memória 2"],
-  "dedicatedTo": "Nome/apelido da pessoa homenageada"
-}
-`
-
-      const modelResponse = await generateContentWithFallback({
-        model: "gemini-3.5-flash",
-        contents: [analysisPrompt],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              artistName: { type: Type.STRING },
-              style: { type: Type.STRING },
-              tempo: { type: Type.STRING },
-              vibe: { type: Type.STRING },
-              lyrics: {
-                type: Type.STRING,
-                description:
-                  "Letra completa da música estruturada de forma clara em estrofes e versos, usando quebras de linha (\\n) entre os versos e quebras de linha duplas (\\n\\n) entre as seções ([Intro], [Verso 1], etc.) para que fique perfeitamente formatada em parágrafos."
-              },
-              keyMemories: { type: Type.ARRAY, items: { type: Type.STRING } },
-              dedicatedTo: { type: Type.STRING }
-            },
-            required: [
-              "title",
-              "artistName",
-              "style",
-              "tempo",
-              "vibe",
-              "lyrics",
-              "keyMemories",
-              "dedicatedTo"
-            ]
-          }
-        }
-      })
-
-      songMetadata = parseSongMetadata(modelResponse.text || "")
+      // Compose lyrics + style directly from the interview transcript.
+      // generateDraftMetadata also logs the composition cost.
+      songMetadata = await generateDraftMetadata(order)
     }
 
     if (!songMetadata || !songMetadata.lyrics) {
@@ -1756,6 +1991,16 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
     }
 
     const audioStoragePath = await generateLyriaForOrder(order, songMetadata)
+
+    // Cost logging: flat API cost per Lyria music generation (~R$ 0,20).
+    await logCost({
+      orderId: order.id,
+      email: order.email,
+      stage: "music_generation",
+      provider: "lyria",
+      apiCost: LYRIA_API_COST,
+      model: "lyria-3-pro-preview"
+    })
 
     // Save metadata and path, set status to completed
     await supabase
@@ -2079,6 +2324,15 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
     }
 
     const audioStoragePath = await generateLyriaForOrder(order, songMetadata)
+
+    await logCost({
+      orderId: order.id,
+      email: order.email,
+      stage: "music_generation",
+      provider: "lyria",
+      apiCost: LYRIA_API_COST,
+      model: "lyria-3-pro-preview"
+    })
 
     const { data: updatedOrder } = await supabase
       .from("orders")

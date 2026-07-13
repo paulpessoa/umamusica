@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, ArrowRight, Music, AlertCircle } from "lucide-react"
+import { ArrowLeft, ArrowRight, Music, AlertCircle, Play, Pause } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
+import { usePlayer } from "../contexts/PlayerContext"
 import MobileFrame from "../components/MobileFrame"
 
 export default function MySongs() {
   const { user } = useAuth()
+  const player = usePlayer()
   const navigate = useNavigate()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,6 +37,22 @@ export default function MySongs() {
   }, [user, navigate])
 
   if (!user) return null
+
+  const playOrder = (order: any) => {
+    const isCurrent =
+      player.currentTrack?.orderId === order.id && player.isPlaying
+    if (isCurrent) {
+      player.togglePlay()
+      return
+    }
+    player.playTrack({
+      orderId: order.id,
+      title: order.song_metadata?.title || "Música Personalizada",
+      artistName: order.song_metadata?.artistName || "1Música",
+      src: `${import.meta.env.VITE_API_URL || ""}/api/orders/${order.id}/download`,
+      metadata: order.song_metadata
+    })
+  }
 
   const completedOrders = orders.filter((o) => o.status !== "pending_payment")
   const pendingOrders = orders.filter((o) => o.status === "pending_payment")
@@ -164,7 +182,26 @@ export default function MySongs() {
                               </p>
                             </div>
                           </div>
-                          <ArrowRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                          <div className="flex items-center gap-2">
+                            {order.status === "completed" && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  playOrder(order)
+                                }}
+                                className="w-9 h-9 rounded-full bg-[#FF5A5F]/10 text-[#FF5A5F] hover:bg-[#FF5A5F] hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                                title="Tocar"
+                              >
+                                {player.currentTrack?.orderId === order.id &&
+                                player.isPlaying ? (
+                                  <Pause className="w-4 h-4 fill-current" />
+                                ) : (
+                                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                                )}
+                              </button>
+                            )}
+                            <ArrowRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                          </div>
                         </div>
                       ))}
                     </div>

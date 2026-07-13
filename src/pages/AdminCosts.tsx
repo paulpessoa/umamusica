@@ -1,0 +1,241 @@
+import React, { useEffect, useState } from "react"
+import { ArrowLeft, RefreshCw, DollarSign, TrendingUp, Music2, Coins } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import MobileFrame from "../components/MobileFrame"
+
+interface CostRow {
+  id: string
+  order_id: string | null
+  email: string | null
+  stage: string
+  provider: string | null
+  input_tokens: number | null
+  output_tokens: number | null
+  api_cost: number | null
+  model: string | null
+  created_at: string
+}
+
+interface Summary {
+  totalCost: number
+  revenue: number
+  net: number
+  avgCostPerSong: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  musicGenerations: number
+  completedOrders: number
+  targetCostPerSong: number
+}
+
+export default function AdminCosts() {
+  const navigate = useNavigate()
+  const [rows, setRows] = useState<CostRow[]>([])
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [adminKey, setAdminKey] = useState(
+    localStorage.getItem("umamusica_admin_key") || ""
+  )
+
+  const load = async () => {
+    if (!adminKey) {
+      setError("Informe a chave de administração.")
+      return
+    }
+    localStorage.setItem("umamusica_admin_key", adminKey)
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/admin/cost-logs`,
+        { headers: { "x-admin-key": adminKey } }
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Acesso negado.")
+      }
+      const data = await res.json()
+      setSummary(data.summary)
+      setRows(data.rows)
+    } catch (e: any) {
+      setError(e.message || "Erro ao carregar custos.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (adminKey) load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const fmtBRL = (v: number) =>
+    `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`
+  const fmtNum = (v: number) => (v || 0).toLocaleString("pt-BR")
+
+  return (
+    <MobileFrame>
+      <div className="flex flex-col h-full bg-white overflow-y-auto">
+        <div className="flex items-center p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-700" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900 ml-2">
+            Custos & Receita
+          </h1>
+          <button
+            onClick={load}
+            className="ml-auto p-2 rounded-full hover:bg-gray-50 text-gray-500"
+            title="Atualizar"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Admin key */}
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 space-y-2">
+            <label className="text-xs font-bold text-gray-600 tracking-wider block">
+              Chave de Administração
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Service Role / Admin Dashboard Key"
+                className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-mono text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
+              />
+              <button
+                onClick={load}
+                className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-2.5 rounded-xl text-xs font-bold"
+              >
+                Ver
+              </button>
+            </div>
+            {error && <p className="text-[11px] text-rose-500">{error}</p>}
+          </div>
+
+          {summary && (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-1.5 text-emerald-700">
+                    <TrendingUp className="w-4 h-4" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Receita
+                    </span>
+                  </div>
+                  <p className="text-xl font-black text-emerald-800 mt-1">
+                    {fmtBRL(summary.revenue)}
+                  </p>
+                  <p className="text-[10px] text-emerald-600">
+                    {summary.completedOrders} músicas (R$ 1,00)
+                  </p>
+                </div>
+
+                <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-1.5 text-rose-700">
+                    <DollarSign className="w-4 h-4" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Custo
+                    </span>
+                  </div>
+                  <p className="text-xl font-black text-rose-800 mt-1">
+                    {fmtBRL(summary.totalCost)}
+                  </p>
+                  <p className="text-[10px] text-rose-600">
+                    {summary.musicGenerations} gerações
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-1.5 text-gray-700">
+                    <Coins className="w-4 h-4" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Lucro
+                    </span>
+                  </div>
+                  <p
+                    className={`text-xl font-black mt-1 ${
+                      summary.net >= 0 ? "text-gray-900" : "text-rose-700"
+                    }`}
+                  >
+                    {fmtBRL(summary.net)}
+                  </p>
+                  <p className="text-[10px] text-gray-500">Receita − Custo</p>
+                </div>
+
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4">
+                  <div className="flex items-center gap-1.5 text-gray-700">
+                    <Music2 className="w-4 h-4" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Custo/música
+                    </span>
+                  </div>
+                  <p className="text-xl font-black text-gray-900 mt-1">
+                    {fmtBRL(summary.avgCostPerSong)}
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    Alvo: {fmtBRL(summary.targetCostPerSong)}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-gray-500 text-center">
+                Tokens — entrada: {fmtNum(summary.totalInputTokens)} · saída:{" "}
+                {fmtNum(summary.totalOutputTokens)}
+              </p>
+            </>
+          )}
+
+          {/* Recent rows */}
+          <div className="space-y-2">
+            <h2 className="text-xs font-bold text-gray-500 tracking-wider">
+              Últimas interações
+            </h2>
+            {rows.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">
+                Nenhum registro de custo ainda.
+              </p>
+            ) : (
+              rows.map((r) => (
+                <div
+                  key={r.id}
+                  className="bg-white border border-gray-100 rounded-xl p-3 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-gray-800 uppercase">
+                      {r.stage}
+                    </span>
+                    <span className="text-gray-400">
+                      {new Date(r.created_at).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1 text-gray-500">
+                    <span>{r.provider || "—"}</span>
+                    <span className="font-mono">
+                      {r.api_cost
+                        ? fmtBRL(r.api_cost)
+                        : `${fmtNum(r.input_tokens || 0)}/${(r.output_tokens || 0)} tok`}
+                    </span>
+                  </div>
+                  {r.email && (
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      {r.email}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </MobileFrame>
+  )
+}

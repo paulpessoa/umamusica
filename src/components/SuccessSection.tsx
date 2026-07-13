@@ -35,10 +35,6 @@ export default function SuccessSection({
   const [isGenerating, setIsGenerating] = useState(false)
   const [currentInstrumentIndex, setCurrentInstrumentIndex] = useState(0)
 
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-
   const instruments = [
     { icon: <Headphones className="w-8 h-8" />, label: "Headphones" },
     { icon: <Volume2 className="w-8 h-8" />, label: "Speaker" },
@@ -118,7 +114,12 @@ export default function SuccessSection({
     fetchOrder()
 
     let intervalId: NodeJS.Timeout | null = null
-    if (!order || order.status === "paid" || order.status === "processing") {
+    if (
+      !order ||
+      order.status === "paid" ||
+      order.status === "processing" ||
+      order.status === "lyrics_review"
+    ) {
       intervalId = setInterval(fetchOrder, 4000)
     }
 
@@ -127,12 +128,15 @@ export default function SuccessSection({
     }
   }, [orderId, order?.status])
 
-  // Trigger initial composition if status is paid
+  // After a successful payment we compose the lyrics draft (no audio yet).
+  // Runs once when the order reaches the `paid` state.
+  const composedRef = React.useRef(false)
   useEffect(() => {
-    if (order && order.status === "paid" && !isGenerating) {
-      triggerComposition()
+    if (order && order.status === "paid" && !composedRef.current) {
+      composedRef.current = true
+      composeLyrics()
     }
-  }, [order, isGenerating])
+  }, [order])
 
   useEffect(() => {
     if (!order || order.status !== "processing") return
@@ -142,20 +146,33 @@ export default function SuccessSection({
     return () => clearInterval(timer)
   }, [order, loadingPhrases.length])
 
-  const triggerComposition = async () => {
+  // Step 1 (post-payment): compose the lyrics draft WITHOUT generating audio.
+  const composeLyrics = async () => {
     if (isGenerating) return
     setIsGenerating(true)
     try {
       setErrorMessage(null)
-      await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`,
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/compose-lyrics`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" }
         }
       )
+      if (res.ok) {
+        const data = await res.json()
+        if (data.song_metadata?.lyrics) {
+          setEditedLyrics(data.song_metadata.lyrics)
+        }
+        setOrder((prev) =>
+          prev ? { ...prev, status: data.status, song_metadata: data.song_metadata } : prev
+        )
+      } else {
+        setErrorMessage("Erro ao compor a letra. Tente novamente.")
+        setIsGenerating(false)
+      }
     } catch {
-      setErrorMessage("Ocorreu um atraso. Tentando novamente...")
+      setErrorMessage("Erro de conexão ao compor a letra.")
       setIsGenerating(false)
     }
   }
@@ -298,6 +315,62 @@ export default function SuccessSection({
                 {errorMessage}
               </p>
             )}
+          </motion.div>
+        ) : order.status === "lyrics_review" ? (
+          <motion.div
+            key="lyrics_review"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col justify-center items-center text-center space-y-5 py-6 px-4"
+          >
+            <div className="w-14 h-14 rounded-full bg-[#FFF0F0] border border-[#FF5A5F]/20 flex items-center justify-center text-[#FF5A5F] shadow-sm">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-2.5 max-w-md w-full">
+              <h2 className="font-extrabold text-xl text-gray-900">
+                Revise sua letra
+              </h2>
+              <p className="text-xs text-[#FF5A5F] font-bold font-mono tracking-wide">
+                Quase lá! Confira o que compusemos
+              </p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Leia a letra abaixo. Você pode ajustar as palavras livremente —
+                o <strong>estilo musical será mantido</strong> exatamente igual
+                quando gerarmos o áudio.
+              </p>
+
+              <div className="mt-4 text-left space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400">
+                  Letra da Música
+                </label>
+                <textarea
+                  value={editedLyrics}
+                  onChange={(e) => setEditedLyrics(e.target.value)}
+                  rows={10}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]/20 focus:border-[#FF5A5F] transition-all resize-none scrollbar-thin"
+                />
+              </div>
+
+              {errorMessage && (
+                <p className="text-[10px] text-rose-500 font-mono italic mt-2">
+                  {errorMessage}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 pt-2 w-full max-w-md">
+              <button
+                onClick={handleRecompose}
+                disabled={isGenerating || !editedLyrics.trim()}
+                className="bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3.5 px-6 rounded-2xl transition-all duration-200 text-sm shadow-sm cursor-pointer"
+              >
+                {isGenerating ? "Gerando sua música..." : "Gerar minha música 🎵"}
+              </button>
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                Ao gerar, você receberá o link por e-mail e poderá compartilhar.
+              </p>
+            </div>
           </motion.div>
         ) : order.status === "failed_safety" ? (
           <motion.div
@@ -481,12 +554,6 @@ export default function SuccessSection({
                 orderId={order.id}
                 metadata={order.song_metadata}
                 hasAudio={!!order.audio_storage_path}
-                isPlaying={isPlaying}
-                setIsPlaying={setIsPlaying}
-                currentTime={currentTime}
-                setCurrentTime={setCurrentTime}
-                duration={duration}
-                setDuration={setDuration}
               />
             )}
 

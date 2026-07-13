@@ -1,0 +1,138 @@
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useRef,
+  useEffect
+} from "react"
+import { SongMetadata } from "../types"
+
+export interface PlayerTrack {
+  orderId: string
+  title: string
+  artistName: string
+  src: string
+  metadata?: SongMetadata | null
+}
+
+interface PlayerContextType {
+  currentTrack: PlayerTrack | null
+  isPlaying: boolean
+  currentTime: number
+  duration: number
+  // Register a track without auto-playing (so the mini-player can show it)
+  setTrack: (t: PlayerTrack) => void
+  // Register and start playback immediately
+  playTrack: (t: PlayerTrack) => void
+  togglePlay: () => void
+  seek: (t: number) => void
+  stop: () => void
+}
+
+const PlayerContext = createContext<PlayerContextType | undefined>(undefined)
+
+export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
+  children
+}) => {
+  const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  if (typeof Audio !== "undefined" && !audioRef.current) {
+    audioRef.current = new Audio()
+  }
+
+  const applySrc = (a: HTMLAudioElement, src: string) => {
+    if (a.src !== src) a.src = src
+  }
+
+  const setTrack = (t: PlayerTrack) => {
+    setCurrentTrack(t)
+    if (audioRef.current) applySrc(audioRef.current, t.src)
+  }
+
+  const playTrack = (t: PlayerTrack) => {
+    setCurrentTrack(t)
+    const a = audioRef.current
+    if (!a) return
+    a.src = t.src
+    a.play()
+      .then(() => setIsPlaying(true))
+      .catch((e) => console.log("Player play error:", e))
+  }
+
+  const togglePlay = () => {
+    const a = audioRef.current
+    if (!a || !currentTrack) return
+    if (isPlaying) {
+      a.pause()
+      setIsPlaying(false)
+    } else {
+      a.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {})
+    }
+  }
+
+  const seek = (t: number) => {
+    if (audioRef.current) audioRef.current.currentTime = t
+    setCurrentTime(t)
+  }
+
+  const stop = () => {
+    const a = audioRef.current
+    if (a) {
+      a.pause()
+      a.currentTime = 0
+    }
+    setIsPlaying(false)
+    setCurrentTime(0)
+  }
+
+  useEffect(() => {
+    const a = audioRef.current
+    if (!a) return
+    const onTime = () => setCurrentTime(a.currentTime)
+    const onMeta = () => setDuration(a.duration || 0)
+    const onEnd = () => {
+      setIsPlaying(false)
+      setCurrentTime(0)
+    }
+    a.addEventListener("timeupdate", onTime)
+    a.addEventListener("loadedmetadata", onMeta)
+    a.addEventListener("ended", onEnd)
+    return () => {
+      a.removeEventListener("timeupdate", onTime)
+      a.removeEventListener("loadedmetadata", onMeta)
+      a.removeEventListener("ended", onEnd)
+    }
+  }, [])
+
+  return (
+    <PlayerContext.Provider
+      value={{
+        currentTrack,
+        isPlaying,
+        currentTime,
+        duration,
+        setTrack,
+        playTrack,
+        togglePlay,
+        seek,
+        stop
+      }}
+    >
+      {children}
+    </PlayerContext.Provider>
+  )
+}
+
+export const usePlayer = () => {
+  const ctx = useContext(PlayerContext)
+  if (ctx === undefined) {
+    throw new Error("usePlayer must be used within PlayerProvider")
+  }
+  return ctx
+}

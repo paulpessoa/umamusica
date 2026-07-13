@@ -2,6 +2,7 @@ export type MusicStatus =
   | "chatting"
   | "pending_payment"
   | "paid"
+  | "lyrics_review"
   | "processing"
   | "completed"
   | "failed"
@@ -23,6 +24,15 @@ export interface SongMetadata {
   artistName: string
   keyMemories: string[]
   dedicatedTo: string
+  // Consistency guardrail: preserved across lyric edits so the audio keeps
+  // the same musical identity (seed + style tags + instrumental metadata).
+  seed?: number
+  style_tags?: string[]
+  instrumental_metadata?: {
+    style: string
+    tempo: string
+    vibe: string
+  }
 }
 
 export interface Order {
