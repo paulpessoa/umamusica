@@ -301,43 +301,171 @@ async function verifySession(
   return { email: user.email }
 }
 
-// Helper to call generateContent with automatic fallback on quota errors
+// ============================================================
+// AI PROVIDER CONFIG
+// ============================================================
+
+// ─── Google Gemini models (active, in priority order) ────────
+const GEMINI_MODELS = {
+  // Primary: fastest, best cost-benefit
+  default: "gemini-3.5-flash",
+  alias: "gemini-flash-latest", // dynamic alias — always points to latest flash
+  lite: "gemini-3.1-flash-lite" // ultra-cheap for simple tasks
+}
+
+// Models known to be deprecated/removed — map them to the safe default
+const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
+  "gemini-1.5-flash": GEMINI_MODELS.default,
+  "gemini-1.5-pro": GEMINI_MODELS.default,
+  "gemini-2.0-flash": GEMINI_MODELS.default,
+  "gemini-2.0-flash-lite": GEMINI_MODELS.lite,
+  "gemini-flash-latest": GEMINI_MODELS.alias, // keep alias as-is
+  "gemini-3.5-flash-latest": GEMINI_MODELS.default
+}
+
+// Ordered fallback list for Gemini — tried sequentially on failure
+const GEMINI_FALLBACK_CHAIN = [
+  GEMINI_MODELS.default, // gemini-3.5-flash
+  GEMINI_MODELS.alias, // gemini-flash-latest
+  GEMINI_MODELS.lite // gemini-3.1-flash-lite
+]
+
+// ─── Groq models (active) ─────────────────────────────────────
+const GROQ_MODELS = {
+  // Fast / cost-effective (Flash equivalents)
+  fast: "llama-3.1-8b-instant",
+  fast2: "gemma2-9b-it",
+  // Complex / deep reasoning (Pro equivalents)
+  smart: "llama-3.3-70b-specdec",
+  smart2: "mixtral-8x7b-32768"
+}
+
+// Ordered fallback list for Groq
+const GROQ_FALLBACK_CHAIN = [
+  GROQ_MODELS.smart, // llama-3.3-70b-specdec (best quality first)
+  GROQ_MODELS.fast, // llama-3.1-8b-instant  (if quota on above)
+  GROQ_MODELS.smart2, // mixtral-8x7b-32768
+  GROQ_MODELS.fast2 // gemma2-9b-it
+]
+
+// Normalize: replace any deprecated/legacy model name with the current equivalent
+function normalizeGeminiModel(model: string): string {
+  return DEPRECATED_GEMINI_MODELS[model] ?? model
+}
+
+// ─── Groq call (OpenAI-compatible API) ───────────────────────
+async function callGroq(params: {
+  model?: string // specific Groq model, or undefined to use fallback chain
+  contents: any[]
+  config?: any
+}): Promise<{ text: string }> {
+  const groqApiKey = process.env.GROQ_API_KEY
+  if (!groqApiKey) throw new Error("GROQ_API_KEY not configured")
+
+  // Convert Gemini-style contents → OpenAI messages
+  const messages: any[] = []
+  if (params.config?.systemInstruction) {
+    messages.push({ role: "system", content: params.config.systemInstruction })
+  }
+  for (const c of params.contents) {
+    const role = c.role === "model" ? "assistant" : "user"
+    const text = c.parts?.map((p: any) => p.text || "").join("") || ""
+    if (text) messages.push({ role, content: text })
+  }
+
+  const modelsToTry = params.model ? [params.model] : GROQ_FALLBACK_CHAIN
+  let lastError: any = null
+
+  for (const model of modelsToTry) {
+    try {
+      console.log(`[AI] Trying Groq model: ${model}...`)
+      const res = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${groqApiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: params.config?.temperature ?? 0.8,
+            max_tokens: 1024
+          })
+        }
+      )
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`Groq ${model} error ${res.status}: ${err}`)
+      }
+      const data = await res.json()
+      const text = data.choices?.[0]?.message?.content || ""
+      console.log(`[AI] Groq model ${model} succeeded`)
+      return { text }
+    } catch (error: any) {
+      lastError = error
+      console.warn(`[AI] Groq model ${model} failed:`, error.message)
+      continue
+    }
+  }
+  throw lastError
+}
+
+// ─── Main AI dispatcher: Gemini chain → Groq chain ───────────
+// Usage: pass any model name (current or legacy) — it auto-normalizes and falls back
 async function generateContentWithFallback(params: {
   model: string
   contents: any[]
   config?: any
 }) {
-  const modelsToTry = [
-    params.model,
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite"
-  ]
-  let lastError: any = null
+  // Build Gemini chain: normalize requested model, then full fallback list
+  const requestedNormalized = normalizeGeminiModel(params.model)
+  const geminiChain = [requestedNormalized, ...GEMINI_FALLBACK_CHAIN].filter(
+    (v, i, a) => a.indexOf(v) === i
+  ) // deduplicate, preserve order
 
-  for (const modelName of modelsToTry) {
+  let lastGeminiError: any = null
+
+  for (const modelName of geminiChain) {
     try {
-      console.log(`[AI] Trying model: ${modelName}...`)
+      console.log(`[AI] Trying Gemini model: ${modelName}...`)
       return await ai.models.generateContent({
         model: modelName,
         contents: params.contents,
         config: params.config
       })
     } catch (error: any) {
-      lastError = error
-      const isQuotaOrUnavailable =
+      lastGeminiError = error
+      const shouldTryNext =
         error?.status === "RESOURCE_EXHAUSTED" ||
         error?.status === "UNAVAILABLE" ||
+        error?.status === "NOT_FOUND" ||
         error?.message?.includes("quota") ||
         error?.message?.includes("429") ||
-        error?.message?.includes("503")
-      if (isQuotaOrUnavailable) {
-        console.warn(`[AI] Model ${modelName} quota exceeded, trying next...`)
+        error?.message?.includes("503") ||
+        error?.message?.includes("404") ||
+        error?.message?.includes("not found") ||
+        error?.message?.includes("deprecated") ||
+        error?.message?.includes("invalid")
+      if (shouldTryNext) {
+        console.warn(
+          `[AI] Gemini ${modelName} unavailable (${error?.status || error?.message?.slice(0, 40)}), trying next...`
+        )
         continue
       }
-      throw error
+      throw error // non-retryable error (e.g. SAFETY_BLOCK) — propagate immediately
     }
   }
-  throw lastError
+
+  // All Gemini models exhausted → fall back to Groq
+  console.warn("[AI] All Gemini models failed, falling back to Groq chain...")
+  try {
+    return await callGroq(params)
+  } catch (groqError: any) {
+    console.error("[AI] Groq chain also failed:", groqError.message)
+    throw lastGeminiError // surface original Gemini error
+  }
 }
 
 // ============================================================
