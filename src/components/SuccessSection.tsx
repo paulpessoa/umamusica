@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Mail, Headphones, Radio, Zap, Volume2, Waves, AlertCircle } from "lucide-react";
+import { CheckCircle2, Headphones, Radio, Zap, Volume2, Waves, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Order } from "../types";
 import AudioPlayer from "./AudioPlayer";
 import { useAuth } from "../contexts/AuthContext";
@@ -13,6 +14,8 @@ interface SuccessSectionProps {
 
 export default function SuccessSection({ orderId, onRestart, isSharedView = false }: SuccessSectionProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [order, setOrder] = useState<Order | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -47,24 +50,44 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch order and trigger composition
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+  const [editedLyrics, setEditedLyrics] = useState("");
 
+  // Check if user came from "Minhas Músicas"
+  const cameFromMySongs = location.state?.from === 'my-songs';
+
+  // Smart navigation: go back to origin or restart
+  const handleBackNavigation = () => {
+    if (cameFromMySongs && user) {
+      navigate('/minhas-musicas');
+    } else {
+      onRestart();
+    }
+  };
+
+  // Initialize edited lyrics when order data loads
+  useEffect(() => {
+    if (order && order.song_metadata && !editedLyrics) {
+      setEditedLyrics(order.song_metadata.lyrics || "");
+    }
+  }, [order]);
+
+  // Manage isGenerating state reactively based on order status
+  useEffect(() => {
+    if (order) {
+      if (order.status === "completed" || order.status === "failed" || order.status === "failed_safety") {
+        setIsGenerating(false);
+      }
+    }
+  }, [order?.status]);
+
+  // Fetch order periodically when in paid or processing state
+  useEffect(() => {
     const fetchOrder = async () => {
       try {
         const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
         if (res.ok) {
           const data: Order = await res.json();
           setOrder(data);
-
-          if (data.status === "paid" && !isGenerating) {
-            triggerComposition();
-          }
-
-          if (data.status === "completed" || data.status === "failed") {
-            clearInterval(intervalId);
-          }
         }
       } catch {
         console.error("Failed to load order");
@@ -72,9 +95,23 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
     };
 
     fetchOrder();
-    intervalId = setInterval(fetchOrder, 4000);
-    return () => clearInterval(intervalId);
-  }, [orderId]);
+
+    let intervalId: NodeJS.Timeout | null = null;
+    if (!order || order.status === "paid" || order.status === "processing") {
+      intervalId = setInterval(fetchOrder, 4000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [orderId, order?.status]);
+
+  // Trigger initial composition if status is paid
+  useEffect(() => {
+    if (order && order.status === "paid" && !isGenerating) {
+      triggerComposition();
+    }
+  }, [order, isGenerating]);
 
   useEffect(() => {
     if (!order || order.status !== "processing") return;
@@ -96,6 +133,40 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
     } catch {
       setErrorMessage("Ocorreu um atraso. Tentando novamente...");
       setIsGenerating(false);
+    }
+  };
+
+  const handleRecompose = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    setErrorMessage(null);
+
+    // Set status to processing locally for immediate loader response
+    setOrder((prev) => (prev ? { ...prev, status: "processing" } : null));
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lyrics: editedLyrics }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        if (data.error) {
+          setErrorMessage(data.error);
+        }
+        setIsGenerating(false);
+        // Force status fetch to sync state
+        const refetch = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`);
+        if (refetch.ok) {
+          const freshData = await refetch.json();
+          setOrder(freshData);
+        }
+      }
+    } catch {
+      setErrorMessage("Erro ao conectar ao servidor. Tente novamente.");
+      setIsGenerating(false);
+      setOrder((prev) => (prev ? { ...prev, status: "failed_safety" } : null));
     }
   };
 
@@ -195,6 +266,59 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
               <p className="text-[10px] text-amber-600 font-mono italic max-w-xs">{errorMessage}</p>
             )}
           </motion.div>
+        ) : order.status === "failed_safety" ? (
+          <motion.div
+            key="failed_safety"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col justify-center items-center text-center space-y-5 py-6 px-4"
+          >
+            <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500 shadow-sm">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-2.5 max-w-md w-full">
+              <h2 className="font-extrabold text-xl text-gray-900">
+                Ajuste sua letra!
+              </h2>
+              <p className="text-xs text-amber-600 font-bold font-mono tracking-wide">
+                Filtro de segurança da IA acionado
+              </p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Algumas palavras ou combinações poéticas na sua letra acionaram as diretrizes de moderação do Google. Não se preocupe! Seu crédito foi preservado. Ajuste o texto abaixo (dica: simplifique metáforas muito intensas ou substitua termos com duplo sentido) e tente novamente.
+              </p>
+
+              <div className="mt-4 text-left space-y-1">
+                <label className="text-[10px] uppercase font-bold tracking-wider text-gray-400">Letra da Música</label>
+                <textarea
+                  value={editedLyrics}
+                  onChange={(e) => setEditedLyrics(e.target.value)}
+                  rows={10}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]/20 focus:border-[#FF5A5F] transition-all resize-none scrollbar-thin"
+                />
+              </div>
+
+              {errorMessage && (
+                <p className="text-[10px] text-rose-500 font-mono italic mt-2">{errorMessage}</p>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={handleBackNavigation}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
+              >
+                {cameFromMySongs ? 'Voltar às Minhas Músicas' : 'Voltar ao Início'}
+              </button>
+              <button
+                onClick={handleRecompose}
+                disabled={isGenerating || !editedLyrics.trim()}
+                className="bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
+              >
+                {isGenerating ? "Compondo..." : "Re-compor Música"}
+              </button>
+            </div>
+          </motion.div>
         ) : order.status === "failed" ? (
           <motion.div
             key="failed"
@@ -243,10 +367,10 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             </div>
 
             <button
-              onClick={onRestart}
+              onClick={handleBackNavigation}
               className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-3 px-6 rounded-2xl transition-all duration-200 text-xs shadow-sm cursor-pointer"
             >
-              Voltar ao Início
+              {cameFromMySongs ? 'Voltar às Minhas Músicas' : 'Voltar ao Início'}
             </button>
           </motion.div>
         ) : (
@@ -263,8 +387,8 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <h2 className="font-bold text-xl text-gray-900">
-                  {isGenerating 
-                    ? "Sua música ficou pronta!" 
+                  {isGenerating
+                    ? "Sua música ficou pronta!"
                     : (isSharedView ? "Uma Homenagem para Você!" : "Sua música personalizada")}
                 </h2>
                 {isGenerating ? (
@@ -295,13 +419,22 @@ export default function SuccessSection({ orderId, onRestart, isSharedView = fals
             )}
 
             {/* CTA */}
-            <div className="pt-2 text-center">
-              <button
-                onClick={onRestart}
-                className="inline-flex items-center gap-1.5 bg-[#FF5A5F] hover:bg-[#e04f53] text-white text-xs font-bold py-3 px-6 rounded-full shadow-md shadow-[#FF5A5F]/15 transition-all cursor-pointer"
-              >
-                {isSharedView ? "Quero criar uma música personalizada também! " : "Compor mais uma música?"}
-              </button>
+            <div className="pt-2 text-center space-y-2">
+              {cameFromMySongs ? (
+                <button
+                  onClick={() => navigate('/minhas-musicas')}
+                  className="inline-flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-3 px-6 rounded-full shadow-sm transition-all cursor-pointer"
+                >
+                  Voltar às Minhas Músicas
+                </button>
+              ) : (
+                <button
+                  onClick={onRestart}
+                  className="inline-flex items-center gap-1.5 bg-[#FF5A5F] hover:bg-[#e04f53] text-white text-xs font-bold py-3 px-6 rounded-full shadow-md shadow-[#FF5A5F]/15 transition-all cursor-pointer"
+                >
+                  {isSharedView ? "Quero criar uma música personalizada também! " : "Compor mais uma música?"}
+                </button>
+              )}
             </div>
           </motion.div>
         )}

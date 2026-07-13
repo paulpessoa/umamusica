@@ -26,7 +26,31 @@ export default function CheckoutSection({
 
   const [localQr, setLocalQr] = useState(paymentQr);
   const [localCopiaCola, setLocalCopiaCola] = useState(paymentCopiaCola);
-  const [isFetchingQr, setIsFetchingQr] = useState(!paymentQr);
+  const [isFetchingQr, setIsFetchingQr] = useState(false);
+  const [isGeneratingPix, setIsGeneratingPix] = useState(false);
+  const [pixError, setPixError] = useState<string | null>(null);
+
+  const handleGeneratePix = async () => {
+    setIsGeneratingPix(true);
+    setPixError(null);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate-pix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLocalQr(data.paymentQr);
+        setLocalCopiaCola(data.paymentCopiaCola);
+      } else {
+        setPixError("Erro ao gerar chave Pix. Tente novamente.");
+      }
+    } catch {
+      setPixError("Erro de conexão ao gerar Pix.");
+    } finally {
+      setIsGeneratingPix(false);
+    }
+  };
 
   // Poll order status every 3 seconds and fetch QR if missing
   useEffect(() => {
@@ -141,53 +165,69 @@ export default function CheckoutSection({
         </span>
 
         <p className="text-xs pt-4 text-gray-500 max-w-xs mx-auto leading-relaxed">
-          Escaneie o QR Code ou copie a chave Pix abaixo. Sua canção será gerada imediatamente após a confirmação.
+          {localQr
+            ? "Escaneie o QR Code ou copie a chave Pix abaixo. Sua canção será gerada imediatamente após a confirmação."
+            : "Escolha como deseja liberar sua música personalizada para prosseguir."}
         </p>
       </div>
 
-      {/* Main QR Code Card */}
-      <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 flex flex-col items-center justify-center space-y-4 shadow-sm">
-
-        <div className="relative w-44 h-44 bg-white rounded-2xl p-2.5 flex items-center justify-center shadow-sm border border-gray-100">
-          {localQr ? (
+      {/* Main QR Code Card / Generate Button */}
+      {!localQr ? (
+        <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 flex flex-col items-center justify-center space-y-4 shadow-sm w-full">
+          <button
+            onClick={handleGeneratePix}
+            disabled={isGeneratingPix}
+            className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-4 px-4 rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 text-sm"
+          >
+            {isGeneratingPix ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Gerando Pix...</span>
+              </>
+            ) : (
+              "Pagar R$ 1,00 via Pix"
+            )}
+          </button>
+          {pixError && (
+            <p className="text-[10px] text-rose-500 font-mono text-center">{pixError}</p>
+          )}
+        </div>
+      ) : (
+        <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 flex flex-col items-center justify-center space-y-4 shadow-sm w-full">
+          <div className="relative w-44 h-44 bg-white rounded-2xl p-2.5 flex items-center justify-center shadow-sm border border-gray-100">
             <img
               src={localQr.startsWith("http") ? localQr : (localQr.startsWith("data:") ? localQr : `data:image/png;base64,${localQr}`)}
               alt="Pix QR Code"
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
             />
-          ) : (
-            <div className="text-gray-300 flex flex-col items-center justify-center text-[10px]">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-400 mb-1" />
-              <span>Gerando QR Code...</span>
-            </div>
-          )}
-        </div>
+          </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-          <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-          <span>O Pix expira em: </span>
-          <span className="font-bold text-amber-600 font-mono">
-            {formatCountdown(secondsLeft)}
-          </span>
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+            <span>O Pix expira em: </span>
+            <span className="font-bold text-amber-600 font-mono">
+              {formatCountdown(secondsLeft)}
+            </span>
+          </div>
+          <button
+            onClick={handleCopy}
+            className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-1.5 shrink-0 text-sm font-semibold shadow-sm cursor-pointer"
+          >
+            {copied ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-200" />
+                <span>Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                <span>Copiar Pix</span>
+              </>
+            )}
+          </button>
         </div>
-        <button
-          onClick={handleCopy}
-          className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-3 rounded-xl transition-all duration-200 flex items-center gap-1.5 shrink-0 text-sm font-semibold shadow-sm cursor-pointer"
-        >
-          {copied ? (
-            <>
-              <Check className="w-4 h-4 text-emerald-200" />
-              <span>Copiado!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-4 h-4" />
-              <span>Copiar Pix</span>
-            </>
-          )}
-        </button>
-      </div>
+      )}
 
       {/* Coupon input form */}
       <div className="bg-gray-50 border border-gray-100 p-4.5 rounded-2xl space-y-2 shadow-sm">

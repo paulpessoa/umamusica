@@ -12,7 +12,7 @@ export default function ChatSection({ email, onFinishChat }: ChatSectionProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       sender: "ai",
-      text: `Olá! Eu sou o seu Compositor e DJ Virtual. Vou te ajudar a transformar sua história em uma música inesquecível por apenas R$ 1,00!\n\nPra começar, escolha abaixo ou descreva com suas palavras:`,
+      text: `Olá! Eu sou o seu Compositor e DJ Virtual. Vou te ajudar a transformar sua história em uma música inesquecível!\n\nPra começar, escolha abaixo ou descreva com suas palavras:`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       options: [
         "💑 Homenagem romântica",

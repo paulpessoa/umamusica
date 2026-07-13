@@ -35,7 +35,7 @@ export default function NotFound() {
         </div>
 
         <div className="py-4 text-center text-[10px] text-gray-400">
-          © 2026 1Música · Estúdio Virtual Autônomo ❤️
+          © 2026 1Música · Feito com ❤️ por Qisites
         </div>
       </div>
     </MobileFrame>

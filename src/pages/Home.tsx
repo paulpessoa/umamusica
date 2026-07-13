@@ -232,7 +232,7 @@ export default function Home() {
           </button>
 
           <div className="text-center space-y-0.5 pt-2 lg:pt-8">
-            <p className="text-[10px] text-gray-400">© 2026 1Música · Estúdio Virtual Autônomo ❤️</p>
+            <p className="text-[10px] text-gray-400">© 2026 1Música · Feito com ❤️ por Qisites</p>
             <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
               <a href="/faq" className="underline hover:text-gray-600 transition-colors cursor-pointer">
                 Perguntas Frequentes

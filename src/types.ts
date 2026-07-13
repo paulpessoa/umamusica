@@ -5,6 +5,7 @@ export type MusicStatus =
   | "processing"
   | "completed"
   | "failed"
+  | "failed_safety"
 
 export interface ChatMessage {
   sender: "user" | "ai"

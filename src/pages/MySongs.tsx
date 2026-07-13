@@ -85,7 +85,7 @@ export default function MySongs() {
                             <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
                           </div>
                           <button
-                            onClick={() => navigate(`/checkout/${order.id}`)}
+                            onClick={() => navigate(`/checkout/${order.id}`, { state: { from: 'my-songs' } })}
                             className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                           >
                             Retomar Pagamento
@@ -104,7 +104,7 @@ export default function MySongs() {
                       {completedOrders.map((order) => (
                         <div
                           key={order.id}
-                          onClick={() => navigate(`/musica/${order.id}`)}
+                          onClick={() => navigate(`/musica/${order.id}`, { state: { from: 'my-songs' } })}
                           className="bg-white border border-gray-200 rounded-2xl p-4.5 flex items-center justify-between hover:border-[#FF5A5F]/30 transition-all hover:shadow-sm cursor-pointer group"
                         >
                           <div className="flex items-center gap-3">
@@ -116,7 +116,9 @@ export default function MySongs() {
                                 {order.song_metadata?.title || "Música Personalizada"}
                               </p>
                               <p className="text-[10px] text-gray-400 mt-0.5">
-                                {order.status === "completed" ? "Música Pronta" : "Processando..."} · {new Date(order.created_at).toLocaleDateString()}
+                                {order.status === "completed"
+                                  ? "Música Pronta"
+                                  : (order.status === "failed_safety" ? "Ajustar Letra ⚠️" : "Processando...")} · {new Date(order.created_at).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
