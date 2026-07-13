@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Download, Music, Disc, Volume2, RefreshCw } from "lucide-react";
+import { Play, Pause, Download, Music, Disc, Volume2, RefreshCw, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { SongMetadata } from "../types";
+import { useAuth } from "../contexts/AuthContext";
+import DeleteMusicModal from "./DeleteMusicModal";
 
 interface AudioPlayerProps {
   orderId: string;
@@ -13,6 +15,7 @@ interface AudioPlayerProps {
   setCurrentTime?: (time: number) => void;
   duration?: number;
   setDuration?: (dur: number) => void;
+  onDeleted?: () => void;
 }
 
 export default function AudioPlayer({
@@ -25,13 +28,17 @@ export default function AudioPlayer({
   setCurrentTime: propSetCurrentTime,
   duration: propDuration,
   setDuration: propSetDuration,
+  onDeleted,
 }: AudioPlayerProps) {
+  const { user } = useAuth();
   const [localIsPlaying, localSetIsPlaying] = useState(false);
   const [localCurrentTime, localSetCurrentTime] = useState(0);
   const [localDuration, localSetDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const isPlaying = propIsPlaying !== undefined ? propIsPlaying : localIsPlaying;
   const setIsPlaying = propSetIsPlaying !== undefined ? propSetIsPlaying : localSetIsPlaying;
@@ -48,6 +55,35 @@ export default function AudioPlayer({
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
     `Escuta esta música criada no 1Música! \n\n ${shareUrl}`
   )}`;
+
+  const handleDeleteMusic = async (reasonCategory: string, reasonDetails: string) => {
+    if (!user) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${user.session_token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ reasonCategory, reasonDetails })
+      });
+
+      if (!res.ok) {
+        throw new Error("Erro ao deletar música");
+      }
+
+      // Callback to notify parent component
+      if (onDeleted) {
+        onDeleted();
+      }
+    } catch (error: any) {
+      throw new Error(error.message || "Erro ao deletar música");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Lazy load audio only when user clicks play — reduces initial bundle
   const loadAndPlay = async () => {
@@ -333,6 +369,16 @@ export default function AudioPlayer({
           >
             <Download className="w-4 h-4" />
           </a>
+
+          {/* Delete button */}
+          <button
+            onClick={() => setIsDeleteModalOpen(true)}
+            disabled={isDeleting}
+            className="w-9 h-9 bg-gray-50 hover:bg-red-50 border border-gray-200 hover:border-red-200 text-gray-500 hover:text-red-500 rounded-xl flex items-center justify-center transition-colors disabled:opacity-50"
+            title="Deletar Música"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -346,6 +392,15 @@ export default function AudioPlayer({
         </div>
         <div className="text-center space-y-1 font-sans">{renderLyrics()}</div>
       </div>
+
+      {/* Delete Music Modal */}
+      <DeleteMusicModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteMusic}
+        songTitle={metadata.title}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

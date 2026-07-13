@@ -184,14 +184,6 @@ export default function Profile() {
           {/* Ações da Conta */}
           <section className="space-y-3 pt-6 border-t border-gray-100">
             <button
-              onClick={logout}
-              className="w-full py-3.5 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold rounded-2xl border border-gray-200 transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer"
-            >
-              <LogOut className="w-4.5 h-4.5 text-gray-500" />
-              Sair da Conta
-            </button>
-
-            <button
               onClick={handleDeleteAccount}
               className="w-full py-3.5 bg-rose-50/30 hover:bg-rose-50 text-rose-600 font-bold rounded-2xl border border-rose-100/50 hover:border-rose-100 transition-colors flex items-center justify-center gap-2 text-xs cursor-pointer"
             >

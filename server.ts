@@ -431,6 +431,60 @@ app.post("/api/feedback", async (req, res) => {
   }
 })
 
+// ─── Admin: Migrate Orders to User ID ────────────────────────────────
+app.post("/api/admin/migrate-orders-userid", async (req, res) => {
+  try {
+    const adminKey = req.headers["x-admin-key"]
+
+    // Simple protection: check for admin key
+    if (adminKey !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+
+    console.log("[Migration] Starting order user_id migration...")
+
+    // Get all orders without user_id
+    const { data: ordersToMigrate } = await supabase
+      .from("orders")
+      .select("id, email")
+      .is("user_id", null)
+      .limit(1000)
+
+    if (!ordersToMigrate || ordersToMigrate.length === 0) {
+      return res.json({ success: true, message: "Nenhuma ordem para migrar" })
+    }
+
+    let successCount = 0
+    for (const order of ordersToMigrate) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", order.email)
+        .single()
+
+      if (user?.id) {
+        await supabase
+          .from("orders")
+          .update({ user_id: user.id })
+          .eq("id", order.id)
+        successCount++
+      }
+    }
+
+    console.log(
+      `[Migration] ✅ ${successCount}/${ordersToMigrate.length} migradas`
+    )
+    res.json({
+      success: true,
+      migrated: successCount,
+      total: ordersToMigrate.length
+    })
+  } catch (error: any) {
+    console.error("[Migration] Error:", error.message)
+    res.status(500).json({ error: "Erro na migração" })
+  }
+})
+
 // ─── OTP Email Verification ────────────────────────────────
 app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
   try {

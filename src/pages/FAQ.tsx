@@ -49,16 +49,6 @@ export default function FAQ() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto text-blue-500">
-              <HelpCircle className="w-6 h-6" />
-            </div>
-            <h2 className="text-xl font-extrabold text-gray-900">Perguntas Frequentes</h2>
-            <p className="text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
-              Tudo o que precisas de saber antes de criar o teu presente musical personalizado.
-            </p>
-          </div>
-
           <div className="space-y-3 pt-2">
             {faqData.map((item, idx) => (
               <details
