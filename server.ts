@@ -284,12 +284,12 @@ async function verifySession(
   }
   const token = authHeader.split(" ")[1]
 
-  // Find user by token
+  // Find user by token — use maybeSingle() to avoid 406 when token not found
   const { data: user, error } = await supabase
     .from("users")
     .select("email, status")
     .eq("session_token", token)
-    .single()
+    .maybeSingle()
 
   if (error || !user || user.status !== "active") {
     res.status(401).json({

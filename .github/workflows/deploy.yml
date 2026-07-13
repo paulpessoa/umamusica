@@ -11,7 +11,7 @@ env:
   GAR_REPO: umamusica
   SERVICE: umamusica
   REGION: us-east1
-  
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -59,6 +59,7 @@ jobs:
             --max-instances=3
             --set-env-vars=NODE_ENV=production
             --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            --set-env-vars=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
             --set-env-vars=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
             --set-env-vars=SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
             --set-env-vars=ML_TOKEN=${{ secrets.ML_TOKEN }}
