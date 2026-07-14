@@ -14,6 +14,7 @@ import {
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import MobileFrame from "../components/MobileFrame"
+import DeleteAccountModal from "../components/DeleteAccountModal"
 
 export default function Profile() {
   const { user, logout, updateUser } = useAuth()
@@ -24,6 +25,8 @@ export default function Profile() {
   const [nameInput, setNameInput] = useState(user?.name || "")
   const [isSavingName, setIsSavingName] = useState(false)
   const [nameSaved, setNameSaved] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -59,13 +62,37 @@ export default function Profile() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleDeleteAccount = async () => {
-    const confirmDelete = window.confirm(
-      "Tem certeza que deseja solicitar a exclusão de sua conta?\n\nSua conta entrará em uma lixeira virtual por 30 dias. Se você não fizer login novamente nesse período, a conta e todos os seus dados e músicas criadas serão excluídos permanentemente."
-    )
-    if (!confirmDelete) return
+  const handleDeleteAccount = () => {
+    setDeleteOpen(true)
+  }
 
+  const handleConfirmDelete = async (
+    reason: string,
+    details: string,
+    email: string
+  ) => {
+    if (!user) return
+    setIsDeleting(true)
     try {
+      // Registra o motivo reutilizando o endpoint/tabela de feedback
+      try {
+        await fetch(
+          `${import.meta.env.VITE_API_URL || ""}/api/feedback`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: user.email,
+              category: "account_deletion",
+              reasonCategory: reason,
+              reasonDetails: details
+            })
+          }
+        )
+      } catch (e) {
+        console.error("Falha ao registrar motivo (não bloqueia):", e)
+      }
+
       const res = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/api/users/me/delete`,
         {
@@ -74,20 +101,18 @@ export default function Profile() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${user.session_token}`
           },
-          body: JSON.stringify({ email: user.email })
+          body: JSON.stringify({ email })
         }
       )
       if (res.ok) {
-        alert(
-          "Sua exclusão de conta foi agendada. A conta foi desativada e será excluída em 30 dias."
-        )
+        setDeleteOpen(false)
         logout()
       } else {
-        alert("Erro ao solicitar a exclusão de conta.")
+        throw new Error("Erro ao solicitar a exclusão de conta.")
       }
-    } catch (err) {
-      console.error(err)
-      alert("Erro ao conectar com o servidor.")
+    } catch (err: any) {
+      setIsDeleting(false)
+      throw new Error(err.message || "Erro ao conectar com o servidor.")
     }
   }
 
@@ -355,6 +380,14 @@ export default function Profile() {
           </section>
         </div>
       </div>
+
+      <DeleteAccountModal
+        isOpen={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleConfirmDelete}
+        userEmail={user.email}
+        isLoading={isDeleting}
+      />
     </MobileFrame>
   )
 }
