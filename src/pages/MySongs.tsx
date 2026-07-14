@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, ArrowRight, Music, AlertCircle, Play, Pause } from "lucide-react"
+import { ArrowLeft, ArrowRight, Music, AlertCircle, Play, Pause, Trash2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import { usePlayer } from "../contexts/PlayerContext"
 import MobileFrame from "../components/MobileFrame"
+import DeleteMusicModal from "../components/DeleteMusicModal"
 
 export default function MySongs() {
   const { user } = useAuth()
@@ -11,6 +12,8 @@ export default function MySongs() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -56,6 +59,34 @@ export default function MySongs() {
 
   const completedOrders = orders.filter((o) => o.status !== "pending_payment")
   const pendingOrders = orders.filter((o) => o.status === "pending_payment")
+
+  const handleDeleteMusic = async (
+    reasonCategory: string,
+    reasonDetails: string
+  ) => {
+    if (!deleteOrderId || !user) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/orders/${deleteOrderId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${user.session_token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ reasonCategory, reasonDetails })
+        }
+      )
+      if (!res.ok) throw new Error("Erro ao deletar música")
+      setOrders((prev) => prev.filter((o) => o.id !== deleteOrderId))
+      setDeleteOrderId(null)
+    } catch (e) {
+      alert("Erro ao deletar a música. Tente novamente.")
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   return (
     <MobileFrame>
@@ -200,6 +231,17 @@ export default function MySongs() {
                                 )}
                               </button>
                             )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDeleteOrderId(order.id)
+                              }}
+                              disabled={isDeleting}
+                              className="w-9 h-9 rounded-full bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 flex items-center justify-center transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                              title="Deletar música"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                             <ArrowRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                           </div>
                         </div>
@@ -212,6 +254,17 @@ export default function MySongs() {
           </div>
         </div>
       </div>
+
+      <DeleteMusicModal
+        isOpen={!!deleteOrderId}
+        onClose={() => setDeleteOrderId(null)}
+        onConfirm={handleDeleteMusic}
+        songTitle={
+          orders.find((o) => o.id === deleteOrderId)?.song_metadata?.title ||
+          "Música"
+        }
+        isLoading={isDeleting}
+      />
     </MobileFrame>
   )
 }

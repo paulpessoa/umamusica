@@ -5,7 +5,6 @@ import {
   Music,
   Gift,
   CreditCard,
-  AlertCircle,
   ChevronRight
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
@@ -60,10 +59,6 @@ export default function PurchaseHistory() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [refundOrderId, setRefundOrderId] = useState<string | null>(null)
-  const [refundDetail, setRefundDetail] = useState("")
-  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false)
-  const [refundSuccess, setRefundSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) {
@@ -96,40 +91,6 @@ export default function PurchaseHistory() {
   }, [user, navigate])
 
   if (!user) return null
-
-  const handleSubmitRefund = async () => {
-    if (!refundOrderId || !refundDetail.trim() || isSubmittingRefund) return
-    setIsSubmittingRefund(true)
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/feedback`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${user.session_token}`
-        },
-        body: JSON.stringify({
-          category: "refund_request",
-          relatedOrderId: refundOrderId,
-          detail: refundDetail.trim(),
-          email: user.email
-        })
-      })
-      if (res.ok) {
-        setRefundSuccess("Solicitação enviada com sucesso!")
-        setRefundDetail("")
-        setTimeout(() => {
-          setRefundOrderId(null)
-          setRefundSuccess(null)
-        }, 2000)
-      } else {
-        alert("Erro ao enviar solicitação. Tente novamente.")
-      }
-    } catch {
-      alert("Erro de conexão. Tente novamente.")
-    } finally {
-      setIsSubmittingRefund(false)
-    }
-  }
 
   return (
     <MobileFrame>
@@ -210,13 +171,6 @@ export default function PurchaseHistory() {
                     >
                       Ver Música
                     </button>
-                    <button
-                      onClick={() => setRefundOrderId(order.id)}
-                      className="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-xl py-2 text-xs transition-colors cursor-pointer border border-rose-100 flex items-center justify-center gap-1"
-                    >
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      Solicitar Estorno
-                    </button>
                   </div>
                 </div>
               )
@@ -225,52 +179,6 @@ export default function PurchaseHistory() {
         </div>
       </div>
 
-      {/* Refund Request Modal */}
-      {refundOrderId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-xl">
-            <h3 className="font-bold text-gray-900 text-sm">
-              Solicitar Estorno
-            </h3>
-            <p className="text-xs text-gray-500">
-              Descreva o motivo do estorno para o pedido{" "}
-              <span className="font-mono text-[10px]">{refundOrderId}</span>.
-              Nossa equipe analisará em até 48h.
-            </p>
-            {refundSuccess && (
-              <p className="text-xs text-emerald-600 font-bold">
-                {refundSuccess}
-              </p>
-            )}
-            <textarea
-              value={refundDetail}
-              onChange={(e) => setRefundDetail(e.target.value)}
-              placeholder="Motivo do estorno..."
-              rows={3}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]/20 focus:border-[#FF5A5F] resize-none"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setRefundOrderId(null)
-                  setRefundDetail("")
-                  setRefundSuccess(null)
-                }}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSubmitRefund}
-                disabled={isSubmittingRefund || !refundDetail.trim()}
-                className="flex-1 bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
-              >
-                {isSubmittingRefund ? "Enviando..." : "Enviar Solicitação"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </MobileFrame>
   )
 }

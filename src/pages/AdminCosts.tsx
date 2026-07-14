@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 import { ArrowLeft, RefreshCw, DollarSign, TrendingUp, Music2, Coins } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import MobileFrame from "../components/MobileFrame"
+import { useAuth } from "../contexts/AuthContext"
 
 interface CostRow {
   id: string
@@ -30,6 +31,7 @@ interface Summary {
 
 export default function AdminCosts() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [rows, setRows] = useState<CostRow[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(false)
@@ -49,7 +51,14 @@ export default function AdminCosts() {
     try {
       const res = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/api/admin/cost-logs`,
-        { headers: { "x-admin-key": adminKey } }
+        {
+          headers: {
+            "x-admin-key": adminKey,
+            ...(user?.session_token
+              ? { Authorization: `Bearer ${user.session_token}` }
+              : {})
+          }
+        }
       )
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

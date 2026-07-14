@@ -22,6 +22,7 @@ import ChatHistory from "./pages/ChatHistory";
 import PurchaseHistory from "./pages/PurchaseHistory";
 import AdminCosts from "./pages/AdminCosts";
 import MiniPlayer from "./components/MiniPlayer";
+import RouteLoader from "./components/RouteLoader";
 import { PlayerProvider } from "./contexts/PlayerContext";
 
 
@@ -173,6 +174,7 @@ export default function App() {
         </Routes>
         <MiniPlayer />
         <CookieBanner />
+        <RouteLoader />
       </PlayerProvider>
     </AuthProvider>
   );

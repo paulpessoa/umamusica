@@ -812,11 +812,39 @@ app.post("/api/admin/migrate-orders-userid", async (req, res) => {
 app.get("/api/admin/cost-logs", async (req, res) => {
   try {
     const adminKey = req.headers["x-admin-key"]
+    const authHeader =
+      req.headers["authorization"] || req.headers["Authorization"]
+    const bearer =
+      typeof authHeader === "string"
+        ? authHeader.replace(/^Bearer\s+/i, "").trim()
+        : ""
+
     const validKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.ADMIN_DASHBOARD_KEY ||
       ""
-    if (adminKey !== validKey) {
+    const adminEmails = (process.env.ADMIN_EMAILS || "paulmspessoa@gmail.com")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+
+    let authorized = !!adminKey && adminKey === validKey
+
+    if (!authorized && bearer) {
+      const { data: adminUser } = await supabase
+        .from("users")
+        .select("email")
+        .eq("session_token", bearer)
+        .single()
+      if (
+        adminUser &&
+        adminEmails.includes((adminUser.email || "").toLowerCase())
+      ) {
+        authorized = true
+      }
+    }
+
+    if (!authorized) {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 
@@ -891,6 +919,15 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
       expires_at: expiresAt.toISOString()
     })
 
+    // Determine frontend URL for the magic link (same 10-min validity as the code)
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      (req.headers.origin as string | undefined) ||
+      "https://1musica.com"
+    const magicLink = `${frontendUrl}/login?email=${encodeURIComponent(
+      email.toLowerCase().trim()
+    )}&token=${code}`
+
     // Send via Brevo API (no IP restrictions!)
     await sendEmailViaBrevo({
       to: email,
@@ -902,6 +939,7 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
           <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
             <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
           </div>
+          <a href="${magicLink}" style="display: inline-block; background: #FF5A5F; color: #fff; text-decoration: none; font-weight: bold; padding: 14px 28px; border-radius: 12px; font-size: 14px; margin: 8px 0 20px;">Entrar com 1 clique</a>
           <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
           ${getEmailFooterHtml()}
         </div>
@@ -1150,7 +1188,7 @@ Instruções:
 4. Responda sempre em Português do Brasil.
 5. Se o usuário usar termos ofensivos ou conteúdo impróprio, advirta educadamente que isso pode impedir a geração da música.
 6. Quando tiver informações suficientes e o usuário estiver satisfeito, parabenize-o e diga que ele já pode clicar em "Finalizar e Compor".
-7. Quando oferecer escolhas ao usuário, termine a resposta com exatamente um marcador \`[OPCOES: "Opção A" | "Opção B" | "Opção C"]\` (máximo 4 opções, curtas e diretas). Não use este marcador se não houver escolhas claras.
+7. Sempre que a sua resposta apresentar uma LISTA DE OPÇÕES ou ESCALHAS para o usuário (estilos musicais, homenageados, ocasiões, sentimentos, etc.), ofereça-as como botões clicáveis. Para isso, termine a resposta com exatamente um marcador \`[OPCOES: "Opção A" | "Opção B" | "Opção C"]\` (máximo 4 opções, curtas e diretas, com no máximo ~4 palavras cada). Não use este marcador se não houver escolhas claras.
 `
 
     const chatContents = messages.map((m: any) => ({

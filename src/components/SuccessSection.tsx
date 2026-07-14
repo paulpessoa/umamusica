@@ -167,6 +167,7 @@ export default function SuccessSection({
         setOrder((prev) =>
           prev ? { ...prev, status: data.status, song_metadata: data.song_metadata } : prev
         )
+        setIsGenerating(false)
       } else {
         setErrorMessage("Erro ao compor a letra. Tente novamente.")
         setIsGenerating(false)
@@ -569,6 +570,7 @@ export default function SuccessSection({
                 orderId={order.id}
                 metadata={order.song_metadata}
                 hasAudio={!!order.audio_storage_path}
+                onDeleted={() => navigate("/minhas-musicas")}
               />
             )}
 

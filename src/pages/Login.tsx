@@ -16,6 +16,18 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const referralCode = searchParams.get("ref");
+  const magicEmail = searchParams.get("email");
+  const magicToken = searchParams.get("token");
+
+  // Auto-login via magic link (same 10-min validity as the OTP code)
+  useEffect(() => {
+    if (magicEmail && magicToken && !loading) {
+      setEmail(magicEmail);
+      setCode(magicToken);
+      verifyOtp(magicToken, magicEmail);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Countdown timer for OTP validity
   useEffect(() => {
@@ -63,8 +75,9 @@ export default function Login() {
     }
   };
 
-  const verifyOtp = async (codeToVerify?: string) => {
+  const verifyOtp = async (codeToVerify?: string, emailOverride?: string) => {
     const activeCode = codeToVerify !== undefined ? codeToVerify : code;
+    const activeEmail = emailOverride ?? email;
     if (!activeCode || activeCode.length !== 6) {
       setError("Insira o código de 6 dígitos");
       return;
@@ -75,7 +88,7 @@ export default function Login() {
       const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: activeCode, referralCode })
+        body: JSON.stringify({ email: activeEmail, code: activeCode, referralCode })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Código inválido");

@@ -78,12 +78,17 @@ export default function ChatSection({
   ): { cleanText: string; options?: string[] } => {
     const optionsMatch = text.match(/\[OPCOES:\s*(.+?)\]/s)
     if (optionsMatch) {
-      const options = optionsMatch[1]
-        .split("|")
-        .map((o) => o.trim().replace(/^["']|["']$/g, ""))
-        .filter(Boolean)
+      const raw = optionsMatch[1].trim()
+      // Split respecting quoted segments so inner " | " is preserved.
+      const options: string[] = []
+      const regex = /"([^"]*)"|'([^']*)'|([^|]+)/g
+      let m: RegExpExecArray | null
+      while ((m = regex.exec(raw)) !== null) {
+        const opt = (m[1] ?? m[2] ?? m[3] ?? "").trim()
+        if (opt) options.push(opt)
+      }
       const cleanText = text.replace(/\[OPCOES:\s*.+?\]/s, "").trim()
-      return { cleanText, options }
+      return { cleanText, options: options.length ? options : undefined }
     }
     return { cleanText: text }
   }

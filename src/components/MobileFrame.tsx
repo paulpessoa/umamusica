@@ -252,7 +252,11 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
             {/* Header */}
             <header id="app-brand-header" className="relative z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-between lg:justify-end shrink-0">
               {/* Mobile logo — spinning rounded square, static icon */}
-              <div className="flex items-center gap-2 lg:hidden">
+              <button
+                onClick={() => navigate("/")}
+                className="flex items-center gap-2 lg:hidden cursor-pointer"
+                aria-label="Ir para o início"
+              >
                 <div className="relative w-8 h-8 flex items-center justify-center">
                   <motion.div
                     animate={{ rotate: 360 }}
@@ -293,7 +297,7 @@ export default function MobileFrame({ children }: { children: React.ReactNode })
                     </motion.span>
                   </div>
                 </div>
-              </div>
+              </button>
 
               {/* Mobile Auth Actions */}
               {user && (

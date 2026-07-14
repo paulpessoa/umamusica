@@ -9,7 +9,6 @@ export default function ChatHistory() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -57,52 +56,26 @@ export default function ChatHistory() {
             </div>
           ) : (
             orders.map((order) => {
-              const isOpen = expanded === order.id;
               const title = order.song_metadata?.title || "Música Personalizada";
               return (
-                <div key={order.id} className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                  <button
-                    onClick={() => setExpanded(isOpen ? null : order.id)}
-                    className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-[#FF5A5F] shrink-0">
-                        <Music className="w-4.5 h-4.5" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-gray-900 text-sm">{title}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">
-                          {new Date(order.created_at).toLocaleDateString()} · {order.chat_transcript.length} mensagens
-                        </p>
-                      </div>
+                <button
+                  key={order.id}
+                  onClick={() => navigate("/chat", { state: { initialMessages: order.chat_transcript } })}
+                  className="w-full bg-white border border-gray-100 rounded-2xl p-4 flex items-center justify-between text-left hover:border-[#FF5A5F]/30 hover:shadow-sm transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-[#FF5A5F] shrink-0">
+                      <Music className="w-4.5 h-4.5" />
                     </div>
-                    <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                  </button>
-
-                  {isOpen && (
-                    <div className="px-4 pb-4 pt-1 space-y-3 bg-gray-50/50 border-t border-gray-100">
-                      {order.chat_transcript.map((m: any, i: number) => (
-                        <div key={i} className={`flex flex-col ${m.sender === "user" ? "items-end" : "items-start"}`}>
-                          <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
-                              m.sender === "user"
-                                ? "bg-[#FF5A5F] text-white rounded-br-none"
-                                : "bg-white text-gray-800 rounded-bl-none border border-gray-100"
-                            }`}
-                          >
-                            <p className="whitespace-pre-line">{m.text}</p>
-                          </div>
-                        </div>
-                      ))}
-                       <button
-                         onClick={() => navigate("/chat", { state: { initialMessages: order.chat_transcript } })}
-                         className="w-full bg-[#FF5A5F] hover:bg-[#e0484d] text-white font-bold rounded-xl py-2.5 text-xs transition-colors cursor-pointer"
-                       >
-                         Retomar Conversa
-                       </button>
+                    <div>
+                      <p className="font-bold text-gray-900 text-sm">{title}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {new Date(order.created_at).toLocaleDateString()} · {order.chat_transcript.length} mensagens
+                      </p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                </button>
               );
             })
           )}
