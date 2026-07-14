@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, RefreshCw, DollarSign, TrendingUp, Music2, Coins } from "lucide-react"
+import {
+  ArrowLeft,
+  RefreshCw,
+  DollarSign,
+  TrendingUp,
+  Music2,
+  Coins
+} from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import MobileFrame from "../components/MobileFrame"
 import { useAuth } from "../contexts/AuthContext"
@@ -26,6 +33,7 @@ interface Summary {
   totalOutputTokens: number
   musicGenerations: number
   completedOrders: number
+  paidOrders: number
   targetCostPerSong: number
 }
 
@@ -41,11 +49,13 @@ export default function AdminCosts() {
   )
 
   const load = async () => {
-    if (!adminKey) {
-      setError("Informe a chave de administração.")
+    if (!adminKey && !user) {
+      setError(
+        "Informe a chave de administração ou faça login com uma conta de admin."
+      )
       return
     }
-    localStorage.setItem("umamusica_admin_key", adminKey)
+    if (adminKey) localStorage.setItem("umamusica_admin_key", adminKey)
     setLoading(true)
     setError(null)
     try {
@@ -75,12 +85,14 @@ export default function AdminCosts() {
   }
 
   useEffect(() => {
-    if (adminKey) load()
+    if (adminKey || user) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fmtBRL = (v: number) =>
-    `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`
+    `R$ ${Number(v || 0)
+      .toFixed(2)
+      .replace(".", ",")}`
   const fmtNum = (v: number) => (v || 0).toLocaleString("pt-BR")
 
   return (
@@ -106,29 +118,6 @@ export default function AdminCosts() {
         </div>
 
         <div className="p-5 space-y-5">
-          {/* Admin key */}
-          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 space-y-2">
-            <label className="text-xs font-bold text-gray-600 tracking-wider block">
-              Chave de Administração
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Service Role / Admin Dashboard Key"
-                className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-mono text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
-              />
-              <button
-                onClick={load}
-                className="bg-[#FF5A5F] hover:bg-[#e04f53] text-white px-4 py-2.5 rounded-xl text-xs font-bold"
-              >
-                Ver
-              </button>
-            </div>
-            {error && <p className="text-[11px] text-rose-500">{error}</p>}
-          </div>
-
           {summary && (
             <>
               {/* Summary cards */}
@@ -144,7 +133,7 @@ export default function AdminCosts() {
                     {fmtBRL(summary.revenue)}
                   </p>
                   <p className="text-[10px] text-emerald-600">
-                    {summary.completedOrders} músicas (R$ 1,00)
+                    {summary.paidOrders} pagas via Mercado Pago (R$ 1,00)
                   </p>
                 </div>
 
@@ -231,7 +220,7 @@ export default function AdminCosts() {
                     <span className="font-mono">
                       {r.api_cost
                         ? fmtBRL(r.api_cost)
-                        : `${fmtNum(r.input_tokens || 0)}/${(r.output_tokens || 0)} tok`}
+                        : `${fmtNum(r.input_tokens || 0)}/${r.output_tokens || 0} tok`}
                     </span>
                   </div>
                   {r.email && (

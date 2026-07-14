@@ -870,13 +870,24 @@ app.get("/api/admin/cost-logs", async (req, res) => {
       if (r.stage === "music_generation") musicGenerations++
     }
 
-    // Revenue = number of completed orders x R$ 1,00
-    const { count: completedCount } = await supabase
+    // Revenue = only REAL Mercado Pago payments (numeric payment_id).
+    // Coupons, simulated (local) and free-balance orders are 100% off (free).
+    const { data: completedOrders, error: coErr } = await supabase
       .from("orders")
-      .select("id", { count: "exact" })
+      .select("payment_id")
       .eq("status", "completed")
 
-    const revenue = (completedCount || 0) * 1.0
+    if (coErr) {
+      return res.status(500).json({ error: "Erro ao ler pedidos" })
+    }
+
+    const isMercadoPago = (pid?: string | null) => !!pid && /^\d+$/.test(pid)
+    const paidOrders = (completedOrders || []).filter((o: any) =>
+      isMercadoPago(o.payment_id)
+    ).length
+    const completedCount = (completedOrders || []).length
+
+    const revenue = paidOrders * 1.0
 
     res.json({
       summary: {
@@ -891,6 +902,7 @@ app.get("/api/admin/cost-logs", async (req, res) => {
         totalOutputTokens,
         musicGenerations,
         completedOrders: completedCount || 0,
+        paidOrders,
         targetCostPerSong: LYRIA_API_COST
       },
       rows: rows || []

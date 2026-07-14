@@ -7,7 +7,8 @@ import {
   Volume2,
   Waves,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  ChevronRight
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { useNavigate, useLocation } from "react-router-dom"
@@ -165,7 +166,13 @@ export default function SuccessSection({
           setEditedLyrics(data.song_metadata.lyrics)
         }
         setOrder((prev) =>
-          prev ? { ...prev, status: data.status, song_metadata: data.song_metadata } : prev
+          prev
+            ? {
+                ...prev,
+                status: data.status,
+                song_metadata: data.song_metadata
+              }
+            : prev
         )
         setIsGenerating(false)
       } else {
@@ -379,9 +386,10 @@ export default function SuccessSection({
               <button
                 onClick={handleRecompose}
                 disabled={isGenerating || !editedLyrics.trim()}
-                className="bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3.5 px-6 rounded-2xl transition-all duration-200 text-sm shadow-sm cursor-pointer"
+                className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 text-sm transition-all cursor-pointer"
               >
-                {isGenerating ? "Gerando sua música..." : "Gerar minha música 🎵"}
+                {isGenerating ? "Gerando sua música..." : "Gerar minha música"}
+                {!isGenerating && <ChevronRight className="w-4 h-4" />}
               </button>
               <p className="text-[10px] text-gray-400 leading-relaxed">
                 Ao gerar, você receberá o link por e-mail e poderá compartilhar.
@@ -532,38 +540,6 @@ export default function SuccessSection({
             animate={{ opacity: 1 }}
             className="space-y-6"
           >
-            {/* Success Header - Only shown to the logged-in owner of the music */}
-            {user &&
-              order &&
-              user.email.toLowerCase().trim() ===
-                order.email.toLowerCase().trim() && (
-                <div className="text-center space-y-2 bg-[#FFF4F2]/80 p-5 rounded-3xl border border-[#FF5A5F]/10 shadow-sm relative overflow-hidden">
-                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
-                    <CheckCircle2 className="w-6 h-6" />
-                  </div>
-                  <h2 className="font-bold text-xl text-gray-900">
-                    {isGenerating
-                      ? "Sua música ficou pronta!"
-                      : isSharedView
-                        ? "Uma Homenagem para Você!"
-                        : "Sua música personalizada"}
-                  </h2>
-                  {isGenerating ? (
-                    <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                      Enviamos o link de download para:{" "}
-                      <span className="text-[#FF5A5F] font-semibold">
-                        {order.email}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-600 max-w-xs mx-auto leading-relaxed">
-                      Ouça a canção personalizada composta especialmente para
-                      você!
-                    </p>
-                  )}
-                </div>
-              )}
-
             {/* Audio Player */}
             {order.song_metadata && (
               <AudioPlayer

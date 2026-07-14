@@ -5,7 +5,7 @@ import { usePlayer } from "../contexts/PlayerContext"
 // Persistent mini-player pinned to the bottom of the screen so the user can
 // keep listening while browsing "Minhas Músicas" or "Perfil".
 export default function MiniPlayer() {
-  const { currentTrack, isPlaying, currentTime, duration, togglePlay, stop, dismiss, skip } =
+  const { currentTrack, isPlaying, currentTime, duration, togglePlay, dismiss, skip, seek } =
     usePlayer()
 
   if (!currentTrack) return null
@@ -14,10 +14,21 @@ export default function MiniPlayer() {
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 bg-gray-900 text-white shadow-2xl lg:max-w-[480px] lg:mx-auto">
-      <div className="h-1 bg-gray-700">
+      <div className="relative h-1.5 bg-gray-700">
         <div
-          className="h-full bg-[#FF5A5F] transition-[width] duration-200"
+          className="absolute inset-y-0 left-0 bg-[#FF5A5F] pointer-events-none"
           style={{ width: `${pct}%` }}
+        />
+        <input
+          type="range"
+          min={0}
+          max={duration || 100}
+          step={0.1}
+          value={currentTime}
+          onChange={(e) => seek(parseFloat(e.target.value))}
+          disabled={!duration}
+          aria-label="Buscar na música"
+          className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer accent-[#FF5A5F] disabled:opacity-50"
         />
       </div>
       <div className="flex items-center gap-3 px-4 py-2.5">
