@@ -2810,6 +2810,58 @@ app.delete("/api/orders/:id", async (req, res) => {
   }
 })
 
+// ─── Delete Chat Transcript ──────────────────────────────────
+app.delete("/api/orders/:id/chat", async (req, res) => {
+  try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
+    const { id } = req.params
+    const { reasonCategory, reasonDetails } = req.body
+
+    const { data: order, error: queryError } = await supabase
+      .from("orders")
+      .select("id, email, user_id")
+      .eq("id", id)
+      .single()
+
+    if (queryError || !order) {
+      return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+
+    await supabase.from("feedback").insert({
+      user_email: verified.email.toLowerCase().trim(),
+      category: "chat_deletion",
+      related_order_id: id,
+      reason_category: reasonCategory || null,
+      reason_details: reasonDetails || null
+    })
+
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({ chat_transcript: [] })
+      .eq("id", id)
+
+    if (updateError) {
+      console.error("[Delete Chat] Update error:", updateError)
+      return res.status(500).json({ error: "Erro ao excluir chat" })
+    }
+
+    res.json({ success: true, message: "Chat excluído com sucesso" })
+  } catch (error: any) {
+    console.error("Delete Chat Error:", error.message || error)
+    res.status(500).json({ error: "Erro ao processar exclusão" })
+  }
+})
+
 // Daily Cleanup Cron Simulation for virtual trash (accounts deleted > 30 days ago)
 async function performHardDeleteCleanup() {
   try {
