@@ -100,8 +100,13 @@ export default function SuccessSection({
   useEffect(() => {
     const fetchOrder = async () => {
       try {
+        const headers: Record<string, string> = {}
+        if (user?.session_token) {
+          headers["Authorization"] = `Bearer ${user.session_token}`
+        }
         const res = await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`
+          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`,
+          { headers }
         )
         if (res.ok) {
           const data: Order = await res.json()
@@ -153,11 +158,15 @@ export default function SuccessSection({
     setIsGenerating(true)
     try {
       setErrorMessage(null)
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (user?.session_token) {
+        headers["Authorization"] = `Bearer ${user.session_token}`
+      }
       const res = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/compose-lyrics`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" }
+          headers
         }
       )
       if (res.ok) {
@@ -199,11 +208,15 @@ export default function SuccessSection({
     setOrder((prev) => (prev ? { ...prev, status: "processing" } : null))
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (user?.session_token) {
+        headers["Authorization"] = `Bearer ${user.session_token}`
+      }
       const res = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({ lyrics: editedLyrics })
         }
       )
@@ -214,8 +227,13 @@ export default function SuccessSection({
         }
         setIsGenerating(false)
         // Force status fetch to sync state
+        const refetchHeaders: Record<string, string> = {}
+        if (user?.session_token) {
+          refetchHeaders["Authorization"] = `Bearer ${user.session_token}`
+        }
         const refetch = await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`
+          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`,
+          { headers: refetchHeaders }
         )
         if (refetch.ok) {
           const freshData = await refetch.json()

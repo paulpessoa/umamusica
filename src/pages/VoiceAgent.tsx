@@ -23,7 +23,9 @@ export default function VoiceAgent() {
   const connectAgent = async () => {
     setStatus("connecting")
     try {
-      const wsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/voice/ws?session_token=${user?.session_token || ""}`
+      const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "")
+      const wsHost = apiBase || window.location.host
+      const wsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${wsHost}/api/voice/ws?session_token=${user?.session_token || ""}`
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
