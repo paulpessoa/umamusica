@@ -2737,7 +2737,25 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
 // ─── Download (Signed URL — never expose Supabase directly) ─
 app.get("/api/orders/:id/download", async (req, res) => {
   try {
-    const verified = await verifySession(req, res)
+    let verified = await verifySession(req, res)
+    let verifiedByToken = false
+
+    if (!verified) {
+      const tokenFromQuery = (req.query.token as string | undefined) || ""
+      if (tokenFromQuery) {
+        const { data: tokenUser, error: tokenError } = await supabase
+          .from("users")
+          .select("email, status, id")
+          .eq("session_token", tokenFromQuery)
+          .maybeSingle()
+
+        if (!tokenError && tokenUser && tokenUser.status === "active") {
+          verified = { email: tokenUser.email, userId: tokenUser.id }
+          verifiedByToken = true
+        }
+      }
+    }
+
     if (!verified) return
 
     const { data: order } = await supabase

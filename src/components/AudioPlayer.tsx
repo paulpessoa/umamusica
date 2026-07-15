@@ -30,6 +30,31 @@ export default function AudioPlayer({
 
   const downloadUrl = `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/download`;
 
+  const handleDownload = async () => {
+    try {
+      const headers: Record<string, string> = {}
+      if (user?.session_token) {
+        headers["Authorization"] = `Bearer ${user.session_token}`
+      }
+      const res = await fetch(downloadUrl, { headers })
+      if (!res.ok) {
+        alert("Não foi possível baixar a música.")
+        return
+      }
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${metadata.title || "musica"}.mp3`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch {
+      alert("Erro ao baixar a música.")
+    }
+  }
+
   const track: PlayerTrack = {
     orderId,
     title: metadata.title,
@@ -287,15 +312,13 @@ export default function AudioPlayer({
           </a>
 
           {/* Download via API (signed URL) */}
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={handleDownload}
             className={`w-9 h-9 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-500 hover:text-[#FF5A5F] rounded-xl flex items-center justify-center transition-colors ${!hasAudio ? "opacity-40 pointer-events-none" : ""}`}
             title="Baixar Música"
           >
             <Download className="w-4 h-4" />
-          </a>
+          </button>
 
           {/* Delete button */}
           <button
