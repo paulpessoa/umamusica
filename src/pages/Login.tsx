@@ -95,7 +95,7 @@ export default function Login() {
 
       if (data.user) {
         login(data.user);
-        navigate("/chat");
+        navigate("/menu");
       } else {
         throw new Error("Erro ao criar usuário. Tente novamente.");
       }

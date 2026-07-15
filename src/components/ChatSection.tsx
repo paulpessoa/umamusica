@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useRef } from "react"
-import {
-  Send,
-  Mic,
-  MicOff,
-  Loader2,
-  ChevronRight
-} from "lucide-react"
-import { motion, AnimatePresence } from "motion/react"
+import { Send, Mic, MicOff, Loader2 } from "lucide-react"
+import { motion } from "motion/react"
 import { ChatMessage } from "../types"
 import { useAuth } from "../contexts/AuthContext"
 
@@ -54,16 +48,10 @@ export default function ChatSection({
   )
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const [freeformText, setFreeformText] = useState("")
-  const [showFreeform, setShowFreeform] = useState(false)
 
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessingAudio, setIsProcessingAudio] = useState(false)
-  const [ttsEnabled, setTtsEnabled] = useState(() => {
-    const saved = localStorage.getItem("umamusica_tts_enabled")
-    return saved === "true"
-  })
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -142,9 +130,6 @@ export default function ChatSection({
             })
           }
         ])
-        if (cleanText) {
-          speakText(cleanText)
-        }
       } else {
         // Show specific rate limit or server error message directly in chat
         setMessages((prev: ChatMessage[]) => [
@@ -214,6 +199,14 @@ export default function ChatSection({
     }
   }
 
+  const toggleRecord = () => {
+    if (isRecording) {
+      stopRecording()
+    } else {
+      startRecording()
+    }
+  }
+
   const sendVoiceMessage = async (audioBlob: Blob) => {
     setIsProcessingAudio(true)
     setIsTyping(true)
@@ -279,53 +272,9 @@ export default function ChatSection({
     }
   }
 
-  const speakText = async (text: string) => {
-    if (!ttsEnabled || !text) return
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/tts`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text })
-        }
-      )
-      const data = await res.json().catch(() => ({}))
-      if (data.audio && data.mimeType === "audio/mp3") {
-        const audio = new Audio(`data:${data.mimeType};base64,${data.audio}`)
-        await audio.play()
-      } else if (data.provider === "browser" || !data.audio) {
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.lang = "pt-BR"
-        utterance.rate = 1
-        speechSynthesis.speak(utterance)
-      }
-    } catch {
-      // silent fallback
-    }
-  }
-
   // ─── Compose Trigger ────────────────────────────────────
   const triggerCompose = () => {
-    if (showFreeform) {
-      if (!freeformText.trim()) return
-      setMessages([
-        ...messages,
-        {
-          sender: "user",
-          text: `[CRIAÇÃO LIVRE]\n${freeformText}`,
-          timestamp: new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit"
-          })
-        }
-      ])
-      setShowFreeform(false)
-      setIsTyping(true)
-      handleSendMessage(`[CRIAÇÃO LIVRE] ${freeformText}`)
-    } else {
-      onFinishChat(messages)
-    }
+    onFinishChat(messages)
   }
 
   const lastMsg = messages[messages.length - 1]?.text || ""
@@ -339,15 +288,11 @@ export default function ChatSection({
       id="chat-container"
       className="flex-1 flex flex-col min-h-0 relative bg-white"
     >
-      <AnimatePresence mode="wait">
-        {!showFreeform ? (
-          <motion.div
-            key="chat-active"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="flex-1 flex flex-col min-h-0"
-          >
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex-1 flex flex-col min-h-0"
+      >
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-200 bg-white">
               {messages.map((msg: ChatMessage, index: number) => (
@@ -425,32 +370,8 @@ export default function ChatSection({
                 </motion.button>
               )}
 
-              {/* Input Row: Mic + Text + Send + TTS */}
+              {/* Input Row: Text + morphing Mic/Send button */}
               <div className="flex items-center gap-2">
-                <button
-                  onMouseDown={startRecording}
-                  onMouseUp={stopRecording}
-                  onMouseLeave={() => isRecording && stopRecording()}
-                  onTouchStart={startRecording}
-                  onTouchEnd={stopRecording}
-                  disabled={isProcessingAudio || isTyping}
-                  className={`p-3 rounded-xl transition-all duration-200 flex items-center justify-center cursor-pointer shrink-0 ${isRecording
-                    ? "bg-red-500 text-white animate-pulse scale-110"
-                    : isProcessingAudio
-                      ? "bg-gray-100 text-gray-400"
-                      : "bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200"
-                    }`}
-                  title={isRecording ? "Solte para enviar" : "Segure para gravar"}
-                >
-                  {isProcessingAudio ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : isRecording ? (
-                    <MicOff className="w-5 h-5" />
-                  ) : (
-                    <Mic className="w-5 h-5" />
-                  )}
-                </button>
-
                 <input
                   type="text"
                   value={inputValue}
@@ -468,76 +389,42 @@ export default function ChatSection({
                 />
 
                 <button
-                  onClick={() => handleSendMessage(inputValue)}
-                  disabled={!inputValue.trim() || isTyping}
-                  className="bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white p-3.5 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer shrink-0"
+                  onClick={() =>
+                    isRecording
+                      ? toggleRecord()
+                      : inputValue.trim()
+                        ? handleSendMessage(inputValue)
+                        : toggleRecord()
+                  }
+                  disabled={isTyping || isProcessingAudio}
+                  className={`p-3 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer shrink-0 ${
+                    isRecording
+                      ? "bg-red-500 text-white animate-pulse scale-110"
+                      : inputValue.trim()
+                        ? "bg-[#FF5A5F] hover:bg-[#e04f53] text-white"
+                        : "bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200"
+                  }`}
+                  title={
+                    isRecording
+                      ? "Clique para parar de gravar"
+                      : inputValue.trim()
+                        ? "Enviar mensagem"
+                        : "Gravar áudio"
+                  }
                 >
-                  <Send className="w-5 h-5" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    const next = !ttsEnabled
-                    setTtsEnabled(next)
-                    localStorage.setItem("umamusica_tts_enabled", String(next))
-                  }}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer shrink-0 ${ttsEnabled
-                    ? "bg-[#FF5A5F]/10 border-[#FF5A5F]/30 text-[#FF5A5F]"
-                    : "bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-600"
-                    }`}
-                  title={ttsEnabled ? "Desativar áudio da IA" : "Ouvir respostas da IA"}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-                </button>
-              </div>
-
-              {/* Freeform bypass link */}
-              <div className="text-center pt-1">
-                <button
-                  onClick={() => setShowFreeform(true)}
-                  className="text-[11px] text-gray-400 hover:text-gray-600 underline transition-colors"
-                >
-                  Prefiro escrever tudo de uma vez
+                  {isRecording ? (
+                    <MicOff className="w-5 h-5" />
+                  ) : isProcessingAudio ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : inputValue.trim() ? (
+                    <Send className="w-5 h-5" />
+                  ) : (
+                    <Mic className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
           </motion.div>
-        ) : (
-          /* FREEFORM VIEW */
-          <motion.div
-            key="chat-freeform"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-white"
-          >
-            <div className="flex-1 flex flex-col min-h-[220px]">
-              <textarea
-                value={freeformText}
-                onChange={(e) => setFreeformText(e.target.value)}
-                placeholder="Exemplo: Quero uma música sertaneja romântica para minha esposa Juliana. Nos conhecemos na faculdade, temos um cachorro chamado Pipoca e fazemos 5 anos de casados..."
-                className="w-full flex-1 bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]/15 resize-none leading-relaxed"
-              />
-            </div>
-
-            <button
-              onClick={triggerCompose}
-              disabled={!freeformText.trim()}
-              className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white font-bold py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 text-sm transition-all cursor-pointer"
-            >
-              Criar Minha Música
-              <ChevronRight className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => setShowFreeform(false)}
-              className="w-full bg-gray-50 hover:bg-gray-100 text-xs text-gray-600 font-semibold py-3 px-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              Voltar para a conversa
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

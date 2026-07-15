@@ -165,7 +165,10 @@ function parseSongMetadata(rawText: string): SongMetadata | null {
   let text = rawText.trim()
 
   // Strip markdown code fences if present (```json ... ```)
-  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+  text = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim()
 
   // If there's surrounding prose, extract the outermost JSON object
   if (!text.startsWith("{")) {
@@ -558,9 +561,7 @@ async function generateContentWithFallback(params: {
   const primary = PREFER_GROQ ? "groq" : "gemini"
   const run = async (p: "groq" | "gemini") => {
     const base =
-      p === "groq"
-        ? await callGroq(params)
-        : await callGemini(params)
+      p === "groq" ? await callGroq(params) : await callGemini(params)
     return { ...base, provider: p }
   }
 
@@ -1243,8 +1244,7 @@ Instruções:
       properties: {
         name: {
           type: "STRING",
-          description:
-            "O nome ou apelido pelo qual o usuário quer ser chamado"
+          description: "O nome ou apelido pelo qual o usuário quer ser chamado"
         }
       },
       required: ["name"]
@@ -1461,98 +1461,64 @@ Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo
 })
 
 // ─── Speech-to-Text (Groq Whisper) ───────────────────────────
-app.post("/api/speech-to-text", rateLimit(20, 10 * 60 * 1000), async (req, res) => {
-  try {
-    const { audio, mimeType } = req.body
-    if (!audio) {
-      return res.status(400).json({ error: "Áudio é obrigatório" })
-    }
-
-    const groqApiKey = process.env.GROQ_API_KEY
-    if (!groqApiKey) {
-      return res.status(500).json({ error: "GROQ_API_KEY não configurada" })
-    }
-
-    // Convert base64 to Buffer
-    const audioBuffer = Buffer.from(audio, "base64")
-
-    // Build multipart form data for Groq Whisper
-    const form = new FormData()
-    form.append("file", new Blob([audioBuffer], { type: mimeType || "audio/webm" }), "audio.webm")
-    form.append("model", "whisper-large-v3")
-    form.append("language", "pt")
-    form.append("response_format", "json")
-
-    const whisperRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${groqApiKey}`
-      },
-      body: form
-    })
-
-    if (!whisperRes.ok) {
-      const errText = await whisperRes.text()
-      console.error("[Whisper] Error:", whisperRes.status, errText)
-      return res.status(500).json({ error: "Erro na transcrição de áudio" })
-    }
-
-    const whisperData = await whisperRes.json()
-    const transcript = whisperData.text?.trim() || ""
-
-    res.json({ transcript })
-  } catch (error: any) {
-    console.error("[Speech-to-Text] Error:", error?.message || error)
-    res.status(500).json({ error: "Erro ao processar áudio" })
-  }
-})
-
-// ─── Text-to-Speech (OpenAI TTS with SpeechSynthesis fallback) ──
-app.post("/api/tts", async (req, res) => {
-  try {
-    const { text, voice } = req.body
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: "Texto é obrigatório" })
-    }
-
-    const openaiKey = process.env.OPENAI_API_KEY
-    const provider = (process.env.TTS_PROVIDER || "openai").toLowerCase()
-
-    // If OpenAI key is configured, use OpenAI TTS API
-    if (openaiKey && provider === "openai") {
-      const ttsRes = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${openaiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "tts-1",
-          input: text.trim(),
-          voice: voice || "alloy",
-          response_format: "mp3"
-        })
-      })
-
-      if (!ttsRes.ok) {
-        const errText = await ttsRes.text()
-        console.error("[TTS] OpenAI error:", ttsRes.status, errText)
-        return res.status(500).json({ error: "Erro ao gerar áudio TTS" })
+app.post(
+  "/api/speech-to-text",
+  rateLimit(20, 10 * 60 * 1000),
+  async (req, res) => {
+    try {
+      const { audio, mimeType } = req.body
+      if (!audio) {
+        return res.status(400).json({ error: "Áudio é obrigatório" })
       }
 
-      const audioBuffer = await ttsRes.arrayBuffer()
-      const base64Audio = Buffer.from(audioBuffer).toString("base64")
-      res.json({ audio: base64Audio, mimeType: "audio/mp3", provider: "openai" })
-      return
-    }
+      const groqApiKey = process.env.GROQ_API_KEY
+      if (!groqApiKey) {
+        return res.status(500).json({ error: "GROQ_API_KEY não configurada" })
+      }
 
-    // Fallback: return text for browser SpeechSynthesis
-    res.json({ text: text.trim(), provider: "browser" })
-  } catch (error: any) {
-    console.error("[TTS] Error:", error?.message || error)
-    res.status(500).json({ error: "Erro ao gerar áudio" })
+      // Convert base64 to Buffer
+      const audioBuffer = Buffer.from(audio, "base64")
+
+      // Build multipart form data for Groq Whisper
+      const form = new FormData()
+      form.append(
+        "file",
+        new Blob([audioBuffer], { type: mimeType || "audio/webm" }),
+        "audio.webm"
+      )
+      form.append("model", "whisper-large-v3")
+      form.append("language", "pt")
+      form.append("response_format", "json")
+
+      const whisperRes = await fetch(
+        "https://api.groq.com/openai/v1/audio/transcriptions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${groqApiKey}`
+          },
+          body: form
+        }
+      )
+
+      if (!whisperRes.ok) {
+        const errText = await whisperRes.text()
+        console.error("[Whisper] Error:", whisperRes.status, errText)
+        return res.status(500).json({ error: "Erro na transcrição de áudio" })
+      }
+
+      const whisperData = await whisperRes.json()
+      const transcript = whisperData.text?.trim() || ""
+
+      res.json({ transcript })
+    } catch (error: any) {
+      console.error("[Speech-to-Text] Error:", error?.message || error)
+      res.status(500).json({ error: "Erro ao processar áudio" })
+    }
   }
-})
+)
+
+// ─── Text-to-Speech route removed: chat TTS moved to native voice call ──
 
 // ─── Checkout (MercadoPago Pix) ────────────────────────────
 app.post("/api/checkout", async (req, res) => {
@@ -1908,7 +1874,9 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     }
 
     const isOwner =
-      (orderData.user_id && verified.userId && orderData.user_id === verified.userId) ||
+      (orderData.user_id &&
+        verified.userId &&
+        orderData.user_id === verified.userId) ||
       orderData.email === verified.email.toLowerCase().trim()
 
     if (!isOwner) {
@@ -2015,7 +1983,10 @@ app.post("/api/webhook/mercadopago", async (req, res) => {
 })
 
 // ─── Generate audio for an order (sandbox demo vs real Lyria) ─
-async function generateLyriaForOrder(order: any, metadata: SongMetadata): Promise<string> {
+async function generateLyriaForOrder(
+  order: any,
+  metadata: SongMetadata
+): Promise<string> {
   const isMockPayment =
     !order.payment_id ||
     order.payment_id.startsWith("mock") ||
@@ -2023,7 +1994,9 @@ async function generateLyriaForOrder(order: any, metadata: SongMetadata): Promis
   let audioStoragePath: string | null = null
 
   if (isMockPayment) {
-    console.log("[Music Generation] Sandbox/Coupon mode: copying local example file...")
+    console.log(
+      "[Music Generation] Sandbox/Coupon mode: copying local example file..."
+    )
     let localFileName = "bodas_de_diamante.mp3"
     const styleLower = (metadata.style || "").toLowerCase()
     if (
@@ -2066,7 +2039,9 @@ async function generateLyriaForOrder(order: any, metadata: SongMetadata): Promis
     }
   } else {
     // Real transaction: Call Google Lyria.
-    console.log("[Music Generation] Real transaction. Attempting Lyria API call...")
+    console.log(
+      "[Music Generation] Real transaction. Attempting Lyria API call..."
+    )
     const cleanLyrics = removeEmojis(metadata.lyrics)
       .replace(
         /\[Intro\]|\[Verso \d+\]|\[Refrão\]|\[Ponte\]|\[Outro\]|\[Pré-Refrão\]/gi,
@@ -2090,10 +2065,7 @@ async function generateLyriaForOrder(order: any, metadata: SongMetadata): Promis
     })
 
     if (lyriaResponse?.output_audio?.data) {
-      const audioBuffer = Buffer.from(
-        lyriaResponse.output_audio.data,
-        "base64"
-      )
+      const audioBuffer = Buffer.from(lyriaResponse.output_audio.data, "base64")
       const filePath = `${order.id}.mp3`
       const { error: uploadError } = await supabase.storage
         .from("songs")
@@ -2753,7 +2725,13 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
       .select()
       .single()
 
-    res.json(updatedOrder || { ...order, song_metadata: songMetadata, status: "completed" })
+    res.json(
+      updatedOrder || {
+        ...order,
+        song_metadata: songMetadata,
+        status: "completed"
+      }
+    )
   } catch (error: any) {
     const { type, userMessage, technical } = classifyAIError(error)
     console.error(
@@ -2762,10 +2740,15 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
     if (fetchedOrder) {
       await supabase
         .from("orders")
-        .update({ status: "failed_safety", updated_at: new Date().toISOString() })
+        .update({
+          status: "failed_safety",
+          updated_at: new Date().toISOString()
+        })
         .eq("id", fetchedOrder.id)
     }
-    res.status(500).json({ error: userMessage, errorType: type, detail: technical })
+    res
+      .status(500)
+      .json({ error: userMessage, errorType: type, detail: technical })
   }
 })
 
@@ -2810,7 +2793,9 @@ app.get("/api/orders/:id/download", async (req, res) => {
       }
 
       const isOwner =
-        (order.user_id && verified.userId && order.user_id === verified.userId) ||
+        (order.user_id &&
+          verified.userId &&
+          order.user_id === verified.userId) ||
         order.email === verified.email.toLowerCase().trim()
 
       if (!isOwner) {
@@ -2819,9 +2804,7 @@ app.get("/api/orders/:id/download", async (req, res) => {
     }
 
     if (!order.audio_storage_path) {
-      return res
-        .status(404)
-        .json({ error: "Arquivo de áudio não disponível" })
+      return res.status(404).json({ error: "Arquivo de áudio não disponível" })
     }
 
     // Stream the audio through our own server so the Supabase URL is
@@ -2841,7 +2824,10 @@ app.get("/api/orders/:id/download", async (req, res) => {
 
     res.setHeader("Content-Type", contentType)
     res.setHeader("Accept-Ranges", "bytes")
-    res.setHeader("Content-Disposition", `inline; filename="${req.params.id}.mp3"`)
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${req.params.id}.mp3"`
+    )
 
     // Support range requests so the <audio> element can seek.
     const range = req.headers.range
@@ -2908,9 +2894,7 @@ app.post("/api/users/me/update", async (req, res) => {
 
     const { name } = req.body
     const cleanName =
-      typeof name === "string" && name.trim().length <= 60
-        ? name.trim()
-        : null
+      typeof name === "string" && name.trim().length <= 60 ? name.trim() : null
 
     const { data: updated, error } = await supabase
       .from("users")
@@ -3108,9 +3092,55 @@ interface AgentSession {
   draft: Record<string, any>
   ws: WebSocket | null
   geminiWs: WebSocket | null
+  transcript: ChatMessage[]
 }
 
 const agentSessions = new Map<string, AgentSession>()
+
+// Append a transcript line, merging consecutive messages from the same sender
+function appendTranscript(
+  transcript: ChatMessage[],
+  sender: "user" | "ai",
+  text: string
+): ChatMessage[] {
+  const trimmed = text.trim()
+  if (!trimmed) return transcript
+  const now = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  })
+  const last = transcript[transcript.length - 1]
+  if (last && last.sender === sender) {
+    return [
+      ...transcript.slice(0, -1),
+      { ...last, text: `${last.text}${trimmed}` }
+    ]
+  }
+  return [...transcript, { sender, text: trimmed, timestamp: now }]
+}
+
+function handleInterviewComplete(
+  session: AgentSession,
+  clientWs: WebSocket
+) {
+  try {
+    logCost({
+      stage: "chat",
+      entryMode: "agent",
+      model: "gemini-2.5-flash-native-audio-latest"
+    })
+  } catch {
+    // non-fatal
+  }
+  if (clientWs.readyState === WebSocket.OPEN) {
+    clientWs.send(
+      JSON.stringify({
+        type: "interview_complete",
+        transcript: session.transcript
+      })
+    )
+  }
+}
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -3142,7 +3172,8 @@ async function startServer() {
       session_token: sessionToken,
       draft: {},
       ws: clientWs,
-      geminiWs: null
+      geminiWs: null,
+      transcript: []
     }
     agentSessions.set(sessionId, session)
 
@@ -3150,20 +3181,48 @@ async function startServer() {
 
     const geminiApiKey = process.env.GEMINI_API_KEY
     if (!geminiApiKey) {
-      clientWs.send(JSON.stringify({ type: "error", message: "GEMINI_API_KEY não configurada" }))
+      clientWs.send(
+        JSON.stringify({
+          type: "error",
+          message: "GEMINI_API_KEY não configurada"
+        })
+      )
       clientWs.close()
       return
     }
 
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`
 
-    const geminiWs = new WebSocket(geminiUrl, { headers: { "User-Agent": "1musica-agent" } })
+    const geminiWs = new WebSocket(geminiUrl, {
+      headers: { "User-Agent": "1musica-agent" }
+    })
     session.geminiWs = geminiWs
 
     geminiWs.on("open", () => {
       const setupMsg = {
         setup: {
-          model: "models/gemini-2.0-flash-exp",
+          model: "models/gemini-2.5-flash-native-audio-latest",
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: "Kore"
+                }
+              }
+            }
+          },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+              endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
+              prefixPaddingMs: 250,
+              silenceDurationMs: 600
+            }
+          },
           systemInstruction: {
             parts: [
               {
@@ -3180,7 +3239,10 @@ async function startServer() {
                   parameters: {
                     type: "object",
                     properties: {
-                      field: { type: "string", description: "Campo (ex: tipo, nome, memoria, estilo)" },
+                      field: {
+                        type: "string",
+                        description: "Campo (ex: tipo, nome, memoria, estilo)"
+                      },
                       value: { type: "string", description: "Valor do campo" }
                     },
                     required: ["field", "value"]
@@ -3188,7 +3250,8 @@ async function startServer() {
                 },
                 {
                   name: "finish_interview",
-                  description: "Finaliza a entrevista quando tiver informações suficientes",
+                  description:
+                    "Finaliza a entrevista quando tiver informações suficientes",
                   parameters: { type: "object", properties: {} }
                 }
               ]
@@ -3202,6 +3265,34 @@ async function startServer() {
     geminiWs.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString())
+
+        // Capture live transcriptions into the session transcript
+        const sc = msg.serverContent
+        if (sc) {
+          if (sc.inputTranscription?.text) {
+            session.transcript = appendTranscript(
+              session.transcript,
+              "user",
+              sc.inputTranscription.text
+            )
+          }
+          if (sc.outputTranscription?.text) {
+            session.transcript = appendTranscript(
+              session.transcript,
+              "ai",
+              sc.outputTranscription.text
+            )
+          }
+          const calls = sc.toolCall?.functionCalls || []
+          if (calls.some((fc: any) => fc.name === "finish_interview")) {
+            handleInterviewComplete(session, clientWs)
+          }
+        }
+
+        if (msg.toolCall?.functionCalls?.some((fc: any) => fc.name === "finish_interview")) {
+          handleInterviewComplete(session, clientWs)
+        }
+
         clientWs.send(JSON.stringify({ type: "gemini", data: msg }))
       } catch {
         clientWs.send(data.toString())
@@ -3209,18 +3300,43 @@ async function startServer() {
     })
 
     geminiWs.on("error", (err) => {
-      clientWs.send(JSON.stringify({ type: "error", message: "Erro na conexão com Gemini" }))
+      clientWs.send(
+        JSON.stringify({ type: "error", message: "Erro na conexão com Gemini" })
+      )
     })
 
     clientWs.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString())
         if (msg.type === "audio" && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: msg.mimeType || "audio/webm", data: msg.data }] } }))
-        } else if (msg.type === "text" && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [{ text: msg.text }] }] } }))
-        } else if (msg.type === "tool_response" && geminiWs.readyState === WebSocket.OPEN) {
-          const toolResponse = { toolResponse: { functionResponses: msg.responses } }
+          geminiWs.send(
+            JSON.stringify({
+              realtimeInput: {
+                audio: {
+                  data: msg.data,
+                  mimeType: msg.mimeType || "audio/pcm;rate=16000"
+                }
+              }
+            })
+          )
+        } else if (
+          msg.type === "text" &&
+          geminiWs.readyState === WebSocket.OPEN
+        ) {
+          geminiWs.send(
+            JSON.stringify({
+              clientContent: {
+                turns: [{ role: "user", parts: [{ text: msg.text }] }]
+              }
+            })
+          )
+        } else if (
+          msg.type === "tool_response" &&
+          geminiWs.readyState === WebSocket.OPEN
+        ) {
+          const toolResponse = {
+            toolResponse: { functionResponses: msg.responses }
+          }
           geminiWs.send(JSON.stringify(toolResponse))
         }
       } catch {
