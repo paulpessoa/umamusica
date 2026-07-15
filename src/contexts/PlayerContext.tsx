@@ -145,6 +145,79 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [])
 
+  // Sync with Media Session API (OS-level media controls like Spotify)
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || !currentTrack) return
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentTrack.title,
+      artist: currentTrack.artistName,
+      album: "1Música",
+      artwork: [
+        {
+          src: `${window.location.origin}/logo.png`,
+          sizes: "512x512",
+          type: "image/png",
+        },
+      ],
+    })
+
+    const actionHandlers: [MediaSessionAction, () => void][] = [
+      ["play", togglePlay],
+      ["pause", togglePlay],
+    ]
+
+    for (const [action, handler] of actionHandlers) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler)
+      } catch (error) {
+        console.warn(`Media session action "${action}" is not supported.`, error)
+      }
+    }
+
+    try {
+      navigator.mediaSession.setActionHandler("seekbackward", (details) => {
+        skip(-(details.seekOffset || 10))
+      })
+      navigator.mediaSession.setActionHandler("seekforward", (details) => {
+        skip(details.seekOffset || 10)
+      })
+    } catch (e) {
+      console.warn("Media session seek actions are not supported.", e)
+    }
+
+    return () => {
+      const actions: MediaSessionAction[] = ["play", "pause", "seekbackward", "seekforward"]
+      actions.forEach((action) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, null)
+        } catch (e) {}
+      })
+    }
+  }, [currentTrack, isPlaying]) // update on isPlaying changes to bind the correct togglePlay closure state if needed
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused"
+  }, [isPlaying])
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || !currentTrack) return
+    if (!("setPositionState" in navigator.mediaSession)) return
+
+    try {
+      if (duration && !isNaN(duration) && !isNaN(currentTime) && currentTime >= 0 && currentTime <= duration) {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: 1.0,
+          position: currentTime,
+        })
+      }
+    } catch (e) {
+      console.warn("Failed to set Media Session position state:", e)
+    }
+  }, [currentTime, duration, currentTrack])
+
   return (
     <PlayerContext.Provider
       value={{
