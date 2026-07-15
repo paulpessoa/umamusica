@@ -5,7 +5,8 @@ import {
   DollarSign,
   TrendingUp,
   Music2,
-  Coins
+  Coins,
+  Filter
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import MobileFrame from "../components/MobileFrame"
@@ -36,6 +37,7 @@ interface Summary {
   completedOrders: number
   paidOrders: number
   targetCostPerSong: number
+  byStage: Record<string, { cost: number; count: number }>
 }
 
 export default function AdminCosts() {
@@ -48,6 +50,10 @@ export default function AdminCosts() {
   const [adminKey, setAdminKey] = useState(
     localStorage.getItem("umamusica_admin_key") || ""
   )
+  const [stageFilter, setStageFilter] = useState("")
+  const [providerFilter, setProviderFilter] = useState("")
+  const [fromFilter, setFromFilter] = useState("")
+  const [toFilter, setToFilter] = useState("")
 
   const load = async () => {
     if (!adminKey && !user) {
@@ -60,8 +66,14 @@ export default function AdminCosts() {
     setLoading(true)
     setError(null)
     try {
+      const params = new URLSearchParams()
+      if (stageFilter) params.set("stage", stageFilter)
+      if (providerFilter) params.set("provider", providerFilter)
+      if (fromFilter) params.set("from", fromFilter)
+      if (toFilter) params.set("to", toFilter)
+
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/admin/cost-logs`,
+        `${import.meta.env.VITE_API_URL || ""}/api/admin/cost-logs?${params.toString()}`,
         {
           headers: {
             "x-admin-key": adminKey,
@@ -87,14 +99,30 @@ export default function AdminCosts() {
 
   useEffect(() => {
     if (adminKey || user) load()
-     
   }, [])
+
+  const clearFilters = () => {
+    setStageFilter("")
+    setProviderFilter("")
+    setFromFilter("")
+    setToFilter("")
+  }
 
   const fmtBRL = (v: number) =>
     `R$ ${Number(v || 0)
       .toFixed(2)
       .replace(".", ",")}`
   const fmtNum = (v: number) => (v || 0).toLocaleString("pt-BR")
+
+  const stageLabels: Record<string, string> = {
+    chat: "Chat",
+    transcription: "Transcrição",
+    compose_lyrics: "Compor Letra",
+    music_generation: "Geração Musical",
+    revise: "Revisão"
+  }
+
+  const hasFilters = stageFilter || providerFilter || fromFilter || toFilter
 
   return (
     <MobileFrame>
@@ -190,8 +218,94 @@ export default function AdminCosts() {
                 Tokens — entrada: {fmtNum(summary.totalInputTokens)} · saída:{" "}
                 {fmtNum(summary.totalOutputTokens)}
               </p>
+
+              {/* Stage breakdown */}
+              {summary.byStage && Object.keys(summary.byStage).length > 0 && (
+                <div className="space-y-2">
+                  <h2 className="text-xs font-bold text-gray-500 tracking-wider">
+                    Custo por etapa
+                  </h2>
+                  <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+                    {Object.entries(summary.byStage)
+                      .sort((a, b) => b[1].cost - a[1].cost)
+                      .map(([stage, data]) => (
+                        <div
+                          key={stage}
+                          className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-b-0"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-gray-800">
+                              {stageLabels[stage] || stage}
+                            </span>
+                            <span className="text-[10px] text-gray-400">
+                              {data.count} {data.count === 1 ? "chamada" : "chamadas"}
+                            </span>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-gray-900">
+                            {fmtBRL(data.cost)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
+
+          {/* Filters */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <h2 className="text-xs font-bold text-gray-500 tracking-wider">
+                Filtros
+              </h2>
+              {hasFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="text-[10px] text-[#FF5A5F] font-bold uppercase tracking-wider"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                placeholder="Etapa (ex: chat)"
+                value={stageFilter}
+                onChange={(e) => setStageFilter(e.target.value)}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
+              />
+              <input
+                type="text"
+                placeholder="Provedor (ex: groq)"
+                value={providerFilter}
+                onChange={(e) => setProviderFilter(e.target.value)}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
+              />
+              <input
+                type="date"
+                placeholder="De"
+                value={fromFilter}
+                onChange={(e) => setFromFilter(e.target.value)}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
+              />
+              <input
+                type="date"
+                placeholder="Até"
+                value={toFilter}
+                onChange={(e) => setToFilter(e.target.value)}
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
+              />
+            </div>
+            <button
+              onClick={load}
+              disabled={loading}
+              className="w-full bg-[#FF5A5F] hover:bg-[#e04f53] disabled:opacity-50 text-white font-bold py-3 rounded-2xl text-xs transition-colors"
+            >
+              {loading ? "Carregando..." : "Aplicar filtros"}
+            </button>
+          </div>
 
           {/* Recent rows */}
           <div className="space-y-2">
@@ -217,23 +331,23 @@ export default function AdminCosts() {
                     </span>
                   </div>
                    <div className="flex items-center justify-between mt-1 text-gray-500">
-                     <span>{r.provider || "—"}</span>
-                     <span className="font-mono">
-                       {r.api_cost
-                         ? fmtBRL(r.api_cost)
-                         : `${fmtNum(r.input_tokens || 0)}/${r.output_tokens || 0} tok`}
-                     </span>
-                   </div>
-                   {r.entry_mode && (
-                     <p className="text-[10px] text-gray-400 mt-0.5">
-                       Modo: {r.entry_mode}
-                     </p>
-                   )}
-                   {r.email && (
-                     <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                       {r.email}
-                     </p>
-                   )}
+                      <span>{r.provider || "—"}</span>
+                      <span className="font-mono">
+                        {r.api_cost
+                          ? fmtBRL(r.api_cost)
+                          : `${fmtNum(r.input_tokens || 0)}/${r.output_tokens || 0} tok`}
+                      </span>
+                    </div>
+                    {r.entry_mode && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        Modo: {r.entry_mode}
+                      </p>
+                    )}
+                    {r.email && (
+                      <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                        {r.email}
+                      </p>
+                    )}
                 </div>
               ))
             )}

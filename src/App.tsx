@@ -28,7 +28,6 @@ import ChatHistory from "./pages/ChatHistory"
 import PurchaseHistory from "./pages/PurchaseHistory"
 import AdminCosts from "./pages/AdminCosts"
 import Friends from "./pages/Friends"
-import VoiceAgent from "./pages/VoiceAgent"
 import MiniPlayer from "./components/MiniPlayer"
 import RouteLoader from "./components/RouteLoader"
 import PictureInPictureManager from "./components/PictureInPictureManager"
@@ -168,18 +167,6 @@ function FriendsRoute() {
   return <Friends />
 }
 
-function VoiceAgentRoute() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-
-  if (!user) {
-    navigate("/login")
-    return null
-  }
-
-  return <VoiceAgent />
-}
-
 function SuccessRoute() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -211,7 +198,6 @@ export default function App() {
           <Route path="/historico-compras" element={<PurchaseHistoryRoute />} />
           <Route path="/amigos" element={<FriendsRoute />} />
           <Route path="/indicacoes" element={<FriendsRoute />} />
-          <Route path="/agente" element={<VoiceAgentRoute />} />
           <Route path="/admin/custos" element={<AdminCosts />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/chat" element={<ChatRoute />} />

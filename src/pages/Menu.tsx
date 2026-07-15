@@ -240,39 +240,6 @@ export default function Menu() {
               <ChevronRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
             </button>
 
-            <button
-              onClick={() => navigate("/agente")}
-              className="w-full bg-white border border-gray-100 hover:border-gray-200 shadow-sm rounded-2xl p-4.5 flex items-center justify-between transition-all group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500 group-hover:scale-105 transition-transform">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" x2="12" y1="19" y2="22" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold text-sm text-gray-900">
-                    Conversar com o Agente
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">
-                    Modo voz (A/B test)
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
-            </button>
 
             <button
               onClick={() => navigate("/minhas-musicas")}

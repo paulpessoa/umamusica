@@ -8,7 +8,6 @@ import { createClient } from "@supabase/supabase-js"
 import cors from "cors"
 import crypto from "crypto"
 import http from "http"
-import { WebSocketServer, WebSocket } from "ws"
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 
 // Load environment variables
@@ -319,7 +318,7 @@ const LYRIA_API_COST = parseFloat(process.env.LYRIA_API_COST || "0.20")
 async function logCost(params: {
   orderId?: string | null
   email?: string | null
-  stage: "chat" | "compose_lyrics" | "music_generation" | "revise"
+  stage: "chat" | "transcription" | "compose_lyrics" | "music_generation" | "revise"
   provider?: string | null
   inputTokens?: number | null
   outputTokens?: number | null
@@ -875,11 +874,23 @@ app.get("/api/admin/cost-logs", async (req, res) => {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 
-    const { data: rows, error } = await supabase
+    const stage = (req.query.stage as string | undefined)?.trim()
+    const provider = (req.query.provider as string | undefined)?.trim()
+    const from = (req.query.from as string | undefined)?.trim()
+    const to = (req.query.to as string | undefined)?.trim()
+
+    let query = supabase
       .from("cost_logs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200)
+
+    if (stage) query = query.eq("stage", stage)
+    if (provider) query = query.eq("provider", provider)
+    if (from) query = query.gte("created_at", from)
+    if (to) query = query.lte("created_at", to)
+
+    const { data: rows, error } = await query
 
     if (error) {
       return res.status(500).json({ error: "Erro ao ler custos" })
@@ -890,11 +901,17 @@ app.get("/api/admin/cost-logs", async (req, res) => {
     let totalInputTokens = 0
     let totalOutputTokens = 0
     let musicGenerations = 0
+    const byStage: Record<string, { cost: number; count: number }> = {}
     for (const r of rows || []) {
-      totalCost += Number(r.api_cost || 0)
+      const cost = Number(r.api_cost || 0)
+      totalCost += cost
       totalInputTokens += Number(r.input_tokens || 0)
       totalOutputTokens += Number(r.output_tokens || 0)
       if (r.stage === "music_generation") musicGenerations++
+      const s = r.stage || "unknown"
+      if (!byStage[s]) byStage[s] = { cost: 0, count: 0 }
+      byStage[s].cost += cost
+      byStage[s].count += 1
     }
 
     // Revenue = only REAL Mercado Pago payments (numeric payment_id).
@@ -930,7 +947,8 @@ app.get("/api/admin/cost-logs", async (req, res) => {
         musicGenerations,
         completedOrders: completedCount || 0,
         paidOrders,
-        targetCostPerSong: LYRIA_API_COST
+        targetCostPerSong: LYRIA_API_COST,
+        byStage
       },
       rows: rows || []
     })
@@ -950,14 +968,36 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
 
     const code = Math.floor(100000 + Math.random() * 900000).toString()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 min
+    const cleanEmail = email.toLowerCase().trim()
 
     if (process.env.NODE_ENV !== "production") {
-      console.log(`[OTP DEV] email=${email} code=${code}`)
+      console.log(`[OTP DEV] email=${cleanEmail} code=${code}`)
     }
+
+    await supabase
+      .from("otp_codes")
+      .delete()
+      .eq("email", cleanEmail)
+      .lt("expires_at", new Date().toISOString())
+
+    // Best-effort global cleanup of expired OTPs (non-blocking)
+    ;(async () => {
+      try {
+        await supabase
+          .from("otp_codes")
+          .delete()
+          .lt("expires_at", new Date().toISOString())
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[OTP] Global expired cleanup completed")
+        }
+      } catch (e) {
+        console.warn("[OTP] Global cleanup failed:", e)
+      }
+    })()
 
     // Store OTP in Supabase
     await supabase.from("otp_codes").insert({
-      email: email.toLowerCase().trim(),
+      email: cleanEmail,
       code,
       expires_at: expiresAt.toISOString()
     })
@@ -968,7 +1008,7 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
       (req.headers.origin as string | undefined) ||
       "https://1musica.com"
     const magicLink = `${frontendUrl}/login?email=${encodeURIComponent(
-      email.toLowerCase().trim()
+      cleanEmail
     )}&token=${code}`
 
     // Send via Brevo API (no IP restrictions!)
@@ -1008,7 +1048,6 @@ app.post("/api/verify-otp", async (req, res) => {
       .select("*")
       .eq("email", email.toLowerCase().trim())
       .eq("code", code)
-      .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
       .limit(1)
@@ -1017,10 +1056,10 @@ app.post("/api/verify-otp", async (req, res) => {
       return res.status(400).json({ error: "Código inválido ou expirado" })
     }
 
-    // Mark as verified
+    // Delete OTP after successful verification to prevent reuse
     await supabase
       .from("otp_codes")
-      .update({ verified: true })
+      .delete()
       .eq("id", data[0].id)
 
     const sessionToken = crypto.randomUUID()
@@ -1378,88 +1417,6 @@ Instruções:
   }
 })
 
-// ─── Chat Voice (Audio message — like WhatsApp) ────────────
-app.post("/api/chat-voice", rateLimit(25, 10 * 60 * 1000), async (req, res) => {
-  try {
-    const { audio, mimeType, messages, email } = req.body
-    if (!audio) {
-      return res.status(400).json({ error: "Áudio é obrigatório" })
-    }
-
-    const systemInstruction = `
-Você é o Compositor Virtual do 1Música. Você recebeu um áudio do usuário.
-Transcreva o áudio e continue a entrevista para coletar informações para a música personalizada.
-Responda de forma curta (2-3 frases) e faça uma pergunta por vez.
-Responda em Português do Brasil.
-Se o usuário usar termos impróprios, advirta educadamente.
-Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo).
-`
-
-    const chatContents = (messages || [])
-      .filter((m: any) => m.text && m.text.trim())
-      .map((m: any) => ({
-        role: m.sender === "user" ? "user" : "model",
-        parts: [{ text: m.text }]
-      }))
-
-    chatContents.push({
-      role: "user",
-      parts: [
-        { inlineData: { mimeType: mimeType || "audio/webm", data: audio } },
-        {
-          text: "Transcreva o áudio acima em português do Brasil e continue a entrevista de composição."
-        }
-      ]
-    })
-
-    const response = await generateContentWithFallback({
-      model: "gemini-3.5-flash",
-      contents: chatContents,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            userTranscript: { type: Type.STRING },
-            aiResponse: { type: Type.STRING },
-            triggerCompose: { type: Type.BOOLEAN }
-          },
-          required: ["userTranscript", "aiResponse", "triggerCompose"]
-        }
-      }
-    })
-
-    const dataText = response.text?.trim() || "{}"
-    let parsedData: any = {}
-    try {
-      parsedData = JSON.parse(dataText)
-    } catch {
-      parsedData = {
-        userTranscript: "Áudio enviado",
-        aiResponse: dataText || "Interessante! Me conta mais?",
-        triggerCompose: false
-      }
-    }
-
-    res.json({
-      userTranscript: parsedData.userTranscript || "Áudio enviado",
-      aiResponse: parsedData.aiResponse || "Entendido! Vamos em frente.",
-      triggerCompose: !!parsedData.triggerCompose
-    })
-  } catch (error: any) {
-    const { type, userMessage, technical } = classifyAIError(error)
-    console.error(
-      `[Voice Chat] Erro ao processar áudio | type=${type} | ${technical}`
-    )
-    res.status(500).json({
-      error: userMessage,
-      errorType: type,
-      detail: technical
-    })
-  }
-})
-
 // ─── Speech-to-Text (Groq Whisper) ───────────────────────────
 app.post(
   "/api/speech-to-text",
@@ -1509,6 +1466,14 @@ app.post(
 
       const whisperData = await whisperRes.json()
       const transcript = whisperData.text?.trim() || ""
+
+      await logCost({
+        stage: "transcription",
+        provider: "groq",
+        model: "whisper-large-v3",
+        apiCost: null,
+        notes: "groq-whisper-large-v3"
+      })
 
       res.json({ transcript })
     } catch (error: any) {
@@ -3083,65 +3048,6 @@ setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000)
 // VITE DEV / PRODUCTION SERVING
 // ============================================================
 
-// ============================================================
-// VOICE AGENT WEBSOCKET PROXY (Live API)
-// ============================================================
-
-interface AgentSession {
-  session_token: string
-  draft: Record<string, any>
-  ws: WebSocket | null
-  geminiWs: WebSocket | null
-  transcript: ChatMessage[]
-}
-
-const agentSessions = new Map<string, AgentSession>()
-
-// Append a transcript line, merging consecutive messages from the same sender
-function appendTranscript(
-  transcript: ChatMessage[],
-  sender: "user" | "ai",
-  text: string
-): ChatMessage[] {
-  const trimmed = text.trim()
-  if (!trimmed) return transcript
-  const now = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit"
-  })
-  const last = transcript[transcript.length - 1]
-  if (last && last.sender === sender) {
-    return [
-      ...transcript.slice(0, -1),
-      { ...last, text: `${last.text}${trimmed}` }
-    ]
-  }
-  return [...transcript, { sender, text: trimmed, timestamp: now }]
-}
-
-function handleInterviewComplete(
-  session: AgentSession,
-  clientWs: WebSocket
-) {
-  try {
-    logCost({
-      stage: "chat",
-      entryMode: "agent",
-      model: "gemini-2.5-flash-native-audio-latest"
-    })
-  } catch {
-    // non-fatal
-  }
-  if (clientWs.readyState === WebSocket.OPEN) {
-    clientWs.send(
-      JSON.stringify({
-        type: "interview_complete",
-        transcript: session.transcript
-      })
-    )
-  }
-}
-
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer } = await import("vite")
@@ -3160,197 +3066,6 @@ async function startServer() {
   }
 
   const server = http.createServer(app)
-
-  const wss = new WebSocketServer({ server, path: "/api/voice/ws" })
-
-  wss.on("connection", (clientWs, req) => {
-    const url = new URL(req.url || "", `http://localhost:${PORT}`)
-    const sessionToken = url.searchParams.get("session_token") || ""
-    const sessionId = `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-
-    const session: AgentSession = {
-      session_token: sessionToken,
-      draft: {},
-      ws: clientWs,
-      geminiWs: null,
-      transcript: []
-    }
-    agentSessions.set(sessionId, session)
-
-    clientWs.send(JSON.stringify({ type: "connected", sessionId }))
-
-    const geminiApiKey = process.env.GEMINI_API_KEY
-    if (!geminiApiKey) {
-      clientWs.send(
-        JSON.stringify({
-          type: "error",
-          message: "GEMINI_API_KEY não configurada"
-        })
-      )
-      clientWs.close()
-      return
-    }
-
-    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`
-
-    const geminiWs = new WebSocket(geminiUrl, {
-      headers: { "User-Agent": "1musica-agent" }
-    })
-    session.geminiWs = geminiWs
-
-    geminiWs.on("open", () => {
-      const setupMsg = {
-        setup: {
-          model: "models/gemini-2.5-flash-native-audio-latest",
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: "Kore"
-                }
-              }
-            }
-          },
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              disabled: false,
-              startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
-              endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
-              prefixPaddingMs: 250,
-              silenceDurationMs: 600
-            }
-          },
-          systemInstruction: {
-            parts: [
-              {
-                text: `Você é o Compositor Virtual do 1Música em modo voz. Conduza uma entrevista curta e calorosa em português do Brasil para coletar informações para uma música personalizada. Pergunte sobre: tipo de homenagem, nome da pessoa, memória principal, estilo musical preferido. Quando tiver informações suficientes, chame a ferramenta finish_interview. NÃO mencione valores.`
-              }
-            ]
-          },
-          tools: [
-            {
-              functionDeclarations: [
-                {
-                  name: "save_song_info",
-                  description: "Salva um campo da música",
-                  parameters: {
-                    type: "object",
-                    properties: {
-                      field: {
-                        type: "string",
-                        description: "Campo (ex: tipo, nome, memoria, estilo)"
-                      },
-                      value: { type: "string", description: "Valor do campo" }
-                    },
-                    required: ["field", "value"]
-                  }
-                },
-                {
-                  name: "finish_interview",
-                  description:
-                    "Finaliza a entrevista quando tiver informações suficientes",
-                  parameters: { type: "object", properties: {} }
-                }
-              ]
-            }
-          ]
-        }
-      }
-      geminiWs.send(JSON.stringify(setupMsg))
-    })
-
-    geminiWs.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString())
-
-        // Capture live transcriptions into the session transcript
-        const sc = msg.serverContent
-        if (sc) {
-          if (sc.inputTranscription?.text) {
-            session.transcript = appendTranscript(
-              session.transcript,
-              "user",
-              sc.inputTranscription.text
-            )
-          }
-          if (sc.outputTranscription?.text) {
-            session.transcript = appendTranscript(
-              session.transcript,
-              "ai",
-              sc.outputTranscription.text
-            )
-          }
-          const calls = sc.toolCall?.functionCalls || []
-          if (calls.some((fc: any) => fc.name === "finish_interview")) {
-            handleInterviewComplete(session, clientWs)
-          }
-        }
-
-        if (msg.toolCall?.functionCalls?.some((fc: any) => fc.name === "finish_interview")) {
-          handleInterviewComplete(session, clientWs)
-        }
-
-        clientWs.send(JSON.stringify({ type: "gemini", data: msg }))
-      } catch {
-        clientWs.send(data.toString())
-      }
-    })
-
-    geminiWs.on("error", (err) => {
-      clientWs.send(
-        JSON.stringify({ type: "error", message: "Erro na conexão com Gemini" })
-      )
-    })
-
-    clientWs.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString())
-        if (msg.type === "audio" && geminiWs.readyState === WebSocket.OPEN) {
-          geminiWs.send(
-            JSON.stringify({
-              realtimeInput: {
-                audio: {
-                  data: msg.data,
-                  mimeType: msg.mimeType || "audio/pcm;rate=16000"
-                }
-              }
-            })
-          )
-        } else if (
-          msg.type === "text" &&
-          geminiWs.readyState === WebSocket.OPEN
-        ) {
-          geminiWs.send(
-            JSON.stringify({
-              clientContent: {
-                turns: [{ role: "user", parts: [{ text: msg.text }] }]
-              }
-            })
-          )
-        } else if (
-          msg.type === "tool_response" &&
-          geminiWs.readyState === WebSocket.OPEN
-        ) {
-          const toolResponse = {
-            toolResponse: { functionResponses: msg.responses }
-          }
-          geminiWs.send(JSON.stringify(toolResponse))
-        }
-      } catch {
-        // ignore parse errors
-      }
-    })
-
-    clientWs.on("close", () => {
-      if (geminiWs.readyState === WebSocket.OPEN) {
-        geminiWs.close()
-      }
-      agentSessions.delete(sessionId)
-    })
-  })
 
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`1Música server running on http://localhost:${PORT}`)
