@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai"
 import { createClient } from "@supabase/supabase-js"
 import cors from "cors"
 import crypto from "crypto"
+import http from "http"
 import { WebSocketServer, WebSocket } from "ws"
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 
@@ -3034,7 +3035,7 @@ interface AgentSession {
 const agentSessions = new Map<string, AgentSession>()
 
 async function startServer() {
-  const server = require("http").createServer(app)
+  const server = http.createServer(app)
 
   const wss = new WebSocketServer({ server, path: "/api/voice/ws" })
 

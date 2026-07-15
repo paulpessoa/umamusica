@@ -357,7 +357,7 @@ export default function MobileFrame({
                 onClick={() => navigate("/menu")}
                 className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors"
               >
-                Perfil
+                Menu
               </button>
               <div className="w-px h-4 bg-gray-200"></div>
               <button
@@ -450,7 +450,7 @@ export default function MobileFrame({
                       onClick={() => navigate("/menu")}
                       className="text-sm font-bold text-gray-700 hover:text-[#FF5A5F] transition-colors"
                     >
-                      Perfil
+                      Menu
                     </button>
                     <button
                       onClick={logout}
