@@ -379,7 +379,7 @@ const supabase = createClient(
 async function verifySession(
   req: express.Request,
   res: express.Response
-): Promise<{ email: string } | null> {
+): Promise<{ email: string; userId?: string } | null> {
   const authHeader = req.headers.authorization
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({ error: "Token de sessão ausente ou inválido" })
@@ -387,10 +387,9 @@ async function verifySession(
   }
   const token = authHeader.split(" ")[1]
 
-  // Find user by token — use maybeSingle() to avoid 406 when token not found
   const { data: user, error } = await supabase
     .from("users")
-    .select("email, status")
+    .select("email, status, id")
     .eq("session_token", token)
     .maybeSingle()
 
@@ -401,7 +400,7 @@ async function verifySession(
     return null
   }
 
-  return { email: user.email }
+  return { email: user.email, userId: user.id }
 }
 
 // ============================================================
@@ -440,9 +439,11 @@ async function callGroq(params: {
   model?: string
   contents: any[]
   config?: any
+  tools?: any
 }): Promise<{
   text: string
   usage: { inputTokens: number | null; outputTokens: number | null }
+  toolCalls?: any
 }> {
   const groqApiKey = process.env.GROQ_API_KEY
   if (!groqApiKey) throw new Error("GROQ_API_KEY not configured")
@@ -474,6 +475,11 @@ async function callGroq(params: {
   if (params.config?.responseMimeType === "application/json") {
     body.response_format = { type: "json_object" }
   }
+  // OpenAI-format function calling tools
+  if (params.tools) {
+    body.tools = params.tools
+    body.tool_choice = "auto"
+  }
 
   console.log(`[AI] Trying Groq model: ${model}...`)
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -493,6 +499,7 @@ async function callGroq(params: {
   console.log(`[AI] Groq model ${model} succeeded`)
   return {
     text,
+    toolCalls: data.choices?.[0]?.message?.tool_calls ?? null,
     usage: {
       inputTokens: data.usage?.prompt_tokens ?? null,
       outputTokens: data.usage?.completion_tokens ?? null
@@ -505,6 +512,7 @@ async function callGemini(params: {
   model: string
   contents: any[]
   config?: any
+  tools?: any
 }) {
   const modelName = normalizeGeminiModel(params.model)
   console.log(`[AI] Trying Gemini model: ${modelName}...`)
@@ -515,6 +523,7 @@ async function callGemini(params: {
   })
   return {
     text: result.text || "",
+    functionCalls: (result as any).functionCalls ?? null,
     usage: {
       inputTokens: result.usageMetadata?.promptTokenCount ?? null,
       outputTokens: result.usageMetadata?.candidatesTokenCount ?? null
@@ -529,13 +538,15 @@ async function generateContentWithFallback(params: {
   model: string
   contents: any[]
   config?: any
+  tools?: any
 }) {
   const primary = PREFER_GROQ ? "groq" : "gemini"
   const run = async (p: "groq" | "gemini") => {
-    if (p === "groq") {
-      return { ...(await callGroq(params)), provider: "groq" as const }
-    }
-    return { ...(await callGemini(params)), provider: "gemini" as const }
+    const base =
+      p === "groq"
+        ? await callGroq(params)
+        : await callGemini(params)
+    return { ...base, provider: p as const }
   }
 
   let primaryError: any = null
@@ -1130,7 +1141,7 @@ app.get("/api/users/me", async (req, res) => {
       return res.status(403).json({ error: "Acesso proibido." })
     }
 
-    const { data: user, error } = await supabase
+    const { data: user, error: userError } = await supabase
       .from("users")
       .select("id, email, name, referral_code, free_songs_balance")
       .eq("email", email.toLowerCase().trim())
@@ -1140,13 +1151,13 @@ app.get("/api/users/me", async (req, res) => {
       return res.status(404).json({ error: "Usuário não encontrado" })
     }
 
-    // Fetch user's past generated songs
-    const { data: orders } = await supabase
+    // Fetch user's past generated songs — prefer user_id, fallback to email for legacy rows
+    const userId = user.id
+    const baseOrderQuery = supabase
       .from("orders")
       .select(
-        "id, song_metadata, audio_storage_path, payment_id, chat_transcript, status, created_at"
+        "id, song_metadata, audio_storage_path, payment_id, chat_transcript, status, created_at, user_id"
       )
-      .eq("email", email.toLowerCase().trim())
       .in("status", [
         "completed",
         "paid",
@@ -1155,6 +1166,10 @@ app.get("/api/users/me", async (req, res) => {
         "failed_safety"
       ])
       .order("created_at", { ascending: false })
+
+    const { data: orders } = userId
+      ? await baseOrderQuery.eq("user_id", userId)
+      : await baseOrderQuery.eq("email", email.toLowerCase().trim())
 
     // Fetch referred contacts (masked for privacy)
     const { data: referredUsers } = await supabase
@@ -1189,10 +1204,14 @@ app.post("/api/chat", rateLimit(40, 10 * 60 * 1000), async (req, res) => {
         ? `\nO nome deste usuário (opcional, use apenas se fizer sentido para personalizar a conversa): ${name.trim()}.`
         : ""
 
+    const nameGuidance = name
+      ? ""
+      : `\nATENÇÃO: Você AINDA NÃO sabe o nome do usuário. Em algum momento natural e amigável da conversa (de preferência no início), pergunte como ele gosta de ser chamado UMA ÚNICA VEZ. Quando ele responder o nome, chame a ferramenta save_user_name com o nome informado e continue a entrevista normalmente. Nunca peça o nome de novo depois de saber.`
+
     const systemInstruction = `
 Você é o Compositor Virtual do 1Música, um assistente caloroso, simpático e super criativo que ajuda pessoas a criarem músicas personalizadas e emocionantes para quem amam. Não mencione em hipótese alguma valores, preços (como R$ 1,00) ou métodos de pagamento.
 Seu objetivo é conduzir uma entrevista rápida, calorosa e engajadora com o usuário para capturar todas as informações necessárias para gerar a música: contextos detalhados, apelidos, memórias marcantes, piadas internas e histórias reais.
-${nameLine}
+${nameLine}${nameGuidance}
 Instruções:
 1. Faça perguntas de forma interativa e amigável. Explore detalhes poéticos e curiosidades.
 2. Adapte-se ao estilo do usuário (descontraído com quem usa emojis, polido com quem é formal).
@@ -1203,6 +1222,52 @@ Instruções:
 7. Sempre que a sua resposta apresentar uma LISTA DE OPÇÕES ou ESCALHAS para o usuário (estilos musicais, homenageados, ocasiões, sentimentos, etc.), ofereça-as como botões clicáveis. Para isso, termine a resposta com exatamente um marcador \`[OPCOES: "Opção A" | "Opção B" | "Opção C"]\` (máximo 4 opções, curtas e diretas, com no máximo ~4 palavras cada). Não use este marcador se não houver escolhas claras.
 `
 
+    // ─── Tool: salvar o nome do usuário (function calling) ───
+    const SAVE_NAME_PARAMETERS = {
+      type: "OBJECT",
+      properties: {
+        name: {
+          type: "STRING",
+          description:
+            "O nome ou apelido pelo qual o usuário quer ser chamado"
+        }
+      },
+      required: ["name"]
+    }
+    const geminiTools = [
+      {
+        functionDeclarations: [
+          {
+            name: "save_user_name",
+            description:
+              "Salva o nome de preferência do usuário para personalizar a conversa. Use APENAS quando o usuário informar explicitamente como quer ser chamado.",
+            parameters: SAVE_NAME_PARAMETERS
+          }
+        ]
+      }
+    ]
+    const openaiTools = [
+      {
+        type: "function",
+        function: {
+          name: "save_user_name",
+          description:
+            "Salva o nome de preferência do usuário para personalizar a conversa. Use APENAS quando o usuário informar explicitamente como quer ser chamado.",
+          parameters: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description:
+                  "O nome ou apelido pelo qual o usuário quer ser chamado"
+              }
+            },
+            required: ["name"]
+          }
+        }
+      }
+    ]
+
     const chatContents = messages.map((m: any) => ({
       role: m.sender === "user" ? "user" : "model",
       parts: [{ text: m.text }]
@@ -1211,10 +1276,63 @@ Instruções:
     const response = await generateContentWithFallback({
       model: "gemini-3.5-flash",
       contents: chatContents,
-      config: { systemInstruction, temperature: 0.8 }
+      config: { systemInstruction, temperature: 0.8 },
+      tools: PREFER_GROQ ? openaiTools : geminiTools
     })
 
-    const aiText = response.text || "Desculpe, pode repetir?"
+    let aiText = response.text || "Desculpe, pode repetir?"
+
+    // ─── Handle save_user_name tool call ─────────────────────
+    let nameSaved: string | null = null
+    const toolCalls: any[] =
+      (response as any).functionCalls || (response as any).toolCalls || []
+    if (Array.isArray(toolCalls) && toolCalls.length) {
+      const call = toolCalls.find(
+        (t: any) => (t.name || t.function?.name) === "save_user_name"
+      )
+      if (call) {
+        const rawArgs = call.args || call.function?.arguments
+        let args: any = rawArgs
+        if (typeof rawArgs === "string") {
+          try {
+            args = JSON.parse(rawArgs)
+          } catch {
+            args = {}
+          }
+        }
+        const newName = (args?.name || "").toString().trim().slice(0, 60)
+        if (newName && email) {
+          try {
+            await supabase
+              .from("users")
+              .update({ name: newName })
+              .eq("email", email.toLowerCase().trim())
+            nameSaved = newName
+
+            // Second (tool-free) call to get the model's closing reply.
+            const followContents = [
+              ...chatContents,
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: `O usuário informou o nome dele: "${newName}". Confirme de forma curta e amigável que você já sabe como chamá-lo e continue a entrevista de composição normalmente.`
+                  }
+                ]
+              }
+            ]
+            const r2 = await generateContentWithFallback({
+              model: "gemini-3.5-flash",
+              contents: followContents,
+              config: { systemInstruction, temperature: 0.8 }
+            })
+            if (r2.text) aiText = r2.text
+          } catch (e: any) {
+            console.error("[Chat] Falha ao salvar nome:", e?.message || e)
+          }
+        }
+      }
+    }
 
     // Cost logging: capture chat composition token usage per message.
     await logCost({
@@ -1226,7 +1344,11 @@ Instruções:
       model: "gemini-3.5-flash"
     })
 
-    res.json({ text: aiText })
+    res.json({
+      text: aiText,
+      nameSaved: nameSaved ? true : false,
+      name: nameSaved || undefined
+    })
   } catch (error: any) {
     const { type, userMessage, technical } = classifyAIError(error)
     console.error(
@@ -1346,8 +1468,9 @@ app.post("/api/checkout", async (req, res) => {
     let paymentCopiaCola = ""
     let status: MusicStatus = "pending_payment"
 
-    // Check if user has free balance
     const cleanEmail = email.toLowerCase().trim()
+
+    // Check if user has free balance
     const { data: user } = await supabase
       .from("users")
       .select("id, free_songs_balance")
@@ -1376,6 +1499,7 @@ app.post("/api/checkout", async (req, res) => {
     const newOrder = {
       id: orderId,
       email: cleanEmail,
+      user_id: verified.userId || null,
       chat_transcript: chatTranscript || [],
       structured_prompt: optimizedPrompt, // ✅ Using optimized format
       payment_id: paymentId,
@@ -1408,6 +1532,9 @@ app.post("/api/checkout", async (req, res) => {
 // ─── Generate Pix On-Demand ─────────────────────────────────
 app.post("/api/orders/:id/generate-pix", async (req, res) => {
   try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
     const { id } = req.params
     const { data: order, error } = await supabase
       .from("orders")
@@ -1417,6 +1544,15 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
 
     if (error || !order) {
       return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+
+    // Verify ownership by user_id (preferred) or email (legacy fallback)
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
     }
 
     if (order.status !== "pending_payment") {
@@ -1529,30 +1665,68 @@ app.post("/api/logout", async (req, res) => {
 
 // ─── Get Order Status ──────────────────────────────────────
 app.get("/api/orders/:id", async (req, res) => {
-  const { data, error } = await supabase
-    .from("orders")
-    .select(
-      "id, email, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, created_at"
-    )
-    .eq("id", req.params.id)
-    .single()
+  try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
 
-  if (error || !data) {
-    return res.status(404).json({ error: "Pedido não encontrado" })
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select(
+        "id, email, user_id, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, created_at"
+      )
+      .eq("id", req.params.id)
+      .single()
+
+    if (error || !data) {
+      return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+
+    // Verify ownership by user_id (preferred) or email (legacy fallback)
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+
+    res.json(order)
+  } catch (error: any) {
+    res.status(500).json({ error: "Erro ao buscar pedido" })
   }
-
-  res.json(data)
 })
 
 // ─── Simulate Payment (Testing) ────────────────────────────
 app.post("/api/orders/:id/simulate-payment", async (req, res) => {
   try {
-    const { error } = await supabase
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
+    const { id } = req.params
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select("id, email, user_id")
+      .eq("id", id)
+      .single()
+
+    if (error || !order) {
+      return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+
+    const { error: updateError } = await supabase
       .from("orders")
       .update({ status: "paid", updated_at: new Date().toISOString() })
-      .eq("id", req.params.id)
+      .eq("id", id)
 
-    if (error) {
+    if (updateError) {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
     res.json({ status: "paid", success: true })
@@ -1564,6 +1738,10 @@ app.post("/api/orders/:id/simulate-payment", async (req, res) => {
 // ─── Apply Coupon ──────────────────────────────────────────
 app.post("/api/orders/:id/apply-coupon", async (req, res) => {
   try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
+    const { id } = req.params
     const { coupon } = req.body
     const cleanCoupon = coupon ? coupon.trim().toUpperCase() : ""
 
@@ -1588,12 +1766,24 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
       return res.status(400).json({ error: "Este cupom já expirou" })
     }
 
-    // Fetch current order to see if it has a Mercado Pago payment to cancel
-    const { data: orderData } = await supabase
+    // Fetch current order to verify ownership and see if it has a Mercado Pago payment to cancel
+    const { data: orderData, error: orderError } = await supabase
       .from("orders")
-      .select("payment_id")
-      .eq("id", req.params.id)
+      .select("id, email, user_id, payment_id")
+      .eq("id", id)
       .single()
+
+    if (orderError || !orderData) {
+      return res.status(404).json({ error: "Pedido não encontrado" })
+    }
+
+    const isOwner =
+      (orderData.user_id && verified.userId && orderData.user_id === verified.userId) ||
+      orderData.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
 
     if (orderData && orderData.payment_id) {
       const isMPPayment = /^\d+$/.test(orderData.payment_id) // Mercado Pago payment IDs are purely numeric
@@ -1632,7 +1822,7 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
           `coupon_${cleanCoupon}_` + Math.random().toString(36).substr(2, 6),
         updated_at: new Date().toISOString()
       })
-      .eq("id", req.params.id)
+      .eq("id", id)
 
     // Increment usage
     await supabase
@@ -1897,15 +2087,27 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
 app.post("/api/orders/:id/compose-lyrics", async (req, res) => {
   let order: any = null
   try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
     const { data, error } = await supabase
       .from("orders")
       .select("*")
       .eq("id", req.params.id)
       .single()
+
     if (error || !data) {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
     order = data
+
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
 
     if (order.status !== "paid") {
       return res
@@ -1953,6 +2155,9 @@ app.post("/api/orders/:id/generate", async (req, res) => {
   let fetchedOrder: any = null
   let songMetadata: SongMetadata | null = null
   try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
     const { lyrics: customLyrics } = req.body
 
     const { data: order, error: fetchError } = await supabase
@@ -1965,6 +2170,14 @@ app.post("/api/orders/:id/generate", async (req, res) => {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
     fetchedOrder = order
+
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
 
     // Check current status before starting generation
     if (order.status === "completed") {
@@ -2272,16 +2485,29 @@ app.post("/api/orders/:id/generate", async (req, res) => {
 // ─── Revise Lyrics with AI (clean content flagged by safety) ─
 app.post("/api/orders/:id/revise", async (req, res) => {
   let fetchedOrder: any = null
+  let songMetadata: SongMetadata | null = null
   try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
     const { data: order, error: fetchError } = await supabase
       .from("orders")
       .select("*")
       .eq("id", req.params.id)
       .single()
+
     if (fetchError || !order) {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
     fetchedOrder = order
+
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
 
     if (!["paid", "completed", "failed_safety"].includes(order.status)) {
       return res
@@ -2416,9 +2642,12 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
 // ─── Download (Signed URL — never expose Supabase directly) ─
 app.get("/api/orders/:id/download", async (req, res) => {
   try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
     const { data: order } = await supabase
       .from("orders")
-      .select("audio_storage_path, song_metadata, status")
+      .select("audio_storage_path, song_metadata, status, email, user_id")
       .eq("id", req.params.id)
       .single()
 
@@ -2426,6 +2655,14 @@ app.get("/api/orders/:id/download", async (req, res) => {
       return res
         .status(404)
         .json({ error: "Música não encontrada ou ainda em processamento" })
+    }
+
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
+      return res.status(403).json({ error: "Acesso proibido" })
     }
 
     if (!order.audio_storage_path) {
@@ -2523,7 +2760,7 @@ app.delete("/api/orders/:id", async (req, res) => {
     // Get order to verify ownership
     const { data: order, error: queryError } = await supabase
       .from("orders")
-      .select("id, email")
+      .select("id, email, user_id")
       .eq("id", id)
       .single()
 
@@ -2531,8 +2768,12 @@ app.delete("/api/orders/:id", async (req, res) => {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
 
-    // Verify user owns this order
-    if (order.email !== verified.email.toLowerCase().trim()) {
+    // Verify user owns this order by user_id (preferred) or email (legacy)
+    const isOwner =
+      (order.user_id && verified.userId && order.user_id === verified.userId) ||
+      order.email === verified.email.toLowerCase().trim()
+
+    if (!isOwner) {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 

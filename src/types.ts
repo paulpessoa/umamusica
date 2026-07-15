@@ -38,6 +38,7 @@ export interface SongMetadata {
 export interface Order {
   id: string
   email: string
+  user_id?: string | null
   chat_transcript: ChatMessage[]
   structured_prompt: string | null
   song_metadata: SongMetadata | null
