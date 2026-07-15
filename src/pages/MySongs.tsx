@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react"
-import { ArrowLeft, ArrowRight, Music, AlertCircle, Play, Pause, Trash2 } from "lucide-react"
+import {
+  ArrowLeft,
+  ArrowRight,
+  Music,
+  AlertCircle,
+  Play,
+  Pause,
+  Trash2
+} from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import { usePlayer } from "../contexts/PlayerContext"
@@ -95,7 +103,7 @@ export default function MySongs() {
         <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
           <div className="flex items-center">
             <button
-              onClick={() => navigate("/perfil")}
+              onClick={() => navigate("/menu")}
               className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-gray-700" />

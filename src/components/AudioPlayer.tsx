@@ -158,46 +158,29 @@ export default function AudioPlayer({
     };
   }, [player.isPlaying]);
 
-  // Lyrics renderer with support for literal '\n' string escapes
+  // Lyrics renderer (estático — sem destaque sincronizado de karaoke,
+  // já que não há mapeamento real de tempos dos versos).
   const renderLyrics = () => {
     if (!metadata.lyrics) return null;
 
     const normalizedLyrics = metadata.lyrics.replace(/\\n/g, "\n");
     const lines = normalizedLyrics.split("\n");
-    const activeLines = lines.filter((l) => l.trim().length > 0);
-    const durationPerLine = activeLines.length > 0 && player.duration > 0
-      ? player.duration / activeLines.length
-      : 0;
-    let activeLineIndex = -1;
-    if (durationPerLine > 0) {
-      activeLineIndex = Math.min(
-        Math.floor(player.currentTime / durationPerLine),
-        activeLines.length - 1
-      );
-    }
 
     return lines.map((line, index) => {
       const cleanLine = line.trim();
       if (cleanLine.startsWith("[") && cleanLine.endsWith("]")) {
         return (
-          <h4 key={index} className="text-[#FF5A5F] font-bold text-xs mt-4 mb-2  tracking-widest font-mono flex items-center justify-center gap-1.5">
-            <span className="w-1.5 h-1.5 bg-[#FF5A5F] rounded-full animate-pulse"></span>
+          <h4 key={index} className="text-[#FF5A5F] font-bold text-xs mt-4 mb-2 tracking-widest font-mono flex items-center justify-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-[#FF5A5F] rounded-full" />
             {cleanLine}
           </h4>
         );
       }
 
-      const nonEmptyIndex = lines.slice(0, index).filter((l) => l.trim().length > 0).length;
-      const isActive = nonEmptyIndex === activeLineIndex;
-
       return (
         <p
           key={index}
-          className={`text-sm leading-relaxed min-h-[1.5rem] select-all whitespace-pre-wrap transition-all duration-300 ${
-            isActive
-              ? "text-[#FF5A5F] font-bold scale-[1.02]"
-              : "text-gray-600"
-          }`}
+          className="text-sm leading-relaxed min-h-[1.5rem] select-all whitespace-pre-wrap text-gray-600"
         >
           {cleanLine || "\u00A0"}
         </p>

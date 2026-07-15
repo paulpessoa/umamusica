@@ -97,7 +97,7 @@ export default function PurchaseHistory() {
       <div className="flex flex-col h-full bg-white overflow-y-auto">
         <div className="flex items-center p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
           <button
-            onClick={() => navigate("/perfil")}
+            onClick={() => navigate("/menu")}
             className="p-2 -ml-2 rounded-full hover:bg-gray-50 transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-700" />
@@ -146,7 +146,9 @@ export default function PurchaseHistory() {
                         )}
                       </div>
                       <div>
-                        <p className="font-bold text-gray-900 text-sm">{title}</p>
+                        <p className="font-bold text-gray-900 text-sm">
+                          {title}
+                        </p>
                         <p className="text-[10px] text-gray-400 mt-0.5">
                           {method.label} · {method.value} ·{" "}
                           {new Date(order.created_at).toLocaleDateString()}
@@ -178,7 +180,6 @@ export default function PurchaseHistory() {
           )}
         </div>
       </div>
-
     </MobileFrame>
   )
 }

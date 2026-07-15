@@ -27,6 +27,8 @@ export default function ChatSection({
   onFinishChat,
   initialMessages
 }: ChatSectionProps) {
+  const { updateUser } = useAuth()
+
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialMessages && initialMessages.length > 0
       ? initialMessages
@@ -125,6 +127,9 @@ export default function ChatSection({
 
       if (response.ok) {
         const { cleanText, options } = parseAiResponse(data.text)
+        if (data.nameSaved && data.name) {
+          updateUser({ name: data.name })
+        }
         setMessages((prev: ChatMessage[]) => [
           ...prev,
           {
