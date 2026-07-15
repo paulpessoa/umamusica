@@ -1,11 +1,11 @@
 import React from "react"
-import { Play, Pause, X, Music, Rewind, FastForward } from "lucide-react"
+import { Play, Pause, X, Music, Rewind, FastForward, PictureInPicture } from "lucide-react"
 import { usePlayer } from "../contexts/PlayerContext"
 
 // Persistent mini-player pinned to the bottom of the screen so the user can
 // keep listening while browsing "Minhas Músicas" or "Perfil".
 export default function MiniPlayer() {
-  const { currentTrack, isPlaying, currentTime, duration, togglePlay, dismiss, skip, seek } =
+  const { currentTrack, isPlaying, currentTime, duration, togglePlay, dismiss, skip, seek, isPiP, togglePiP } =
     usePlayer()
 
   if (!currentTrack) return null
@@ -77,6 +77,14 @@ export default function MiniPlayer() {
           title="Fechar player"
         >
           <X className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={togglePiP}
+          className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white shrink-0 cursor-pointer"
+          title={isPiP ? "Sair do PiP" : "Abrir PiP"}
+        >
+          <PictureInPicture className="w-4 h-4" />
         </button>
       </div>
     </div>

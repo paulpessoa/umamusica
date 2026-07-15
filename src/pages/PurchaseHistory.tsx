@@ -52,6 +52,41 @@ function statusLabel(status: string): { text: string; tone: string } {
   }
 }
 
+function statusAction(
+  status: string | undefined,
+  navigate: any
+) {
+  if (status === "pending_payment") {
+    return {
+      label: "Pagar Agora",
+      tone: "bg-amber-500 hover:bg-amber-600 text-white",
+      action: (orderId: string) =>
+        navigate(`/checkout/${orderId}`, { state: { from: "purchase-history" } })
+    }
+  }
+  if (status === "completed" || status === "paid") {
+    return {
+      label: "Abrir Música",
+      tone: "bg-[#FF5A5F] hover:bg-[#e04f53] text-white",
+      action: (orderId: string) =>
+        navigate(`/musica/${orderId}`, { state: { from: "purchase-history" } })
+    }
+  }
+  if (status === "refunded" || status === "estornado") {
+    return {
+      label: "Estornado",
+      tone: "bg-gray-100 text-gray-400 cursor-default",
+      action: () => {}
+    }
+  }
+  return {
+    label: "Ver Música",
+    tone: "bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200",
+    action: (orderId: string) =>
+      navigate(`/musica/${orderId}`, { state: { from: "purchase-history" } })
+  }
+}
+
 export default function PurchaseHistory() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -127,12 +162,13 @@ export default function PurchaseHistory() {
               const method = paymentMethodLabel(order.payment_id)
               const status = statusLabel(order.status)
               const title = order.song_metadata?.title || "Música Personalizada"
+              const action = statusAction(order.status, navigate)
               return (
                 <div
                   key={order.id}
                   className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-[#FF5A5F]/30 transition-all hover:shadow-sm"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500 shrink-0">
                         {method.icon === "gift" ? (
@@ -151,25 +187,22 @@ export default function PurchaseHistory() {
                           {method.label} · {method.value} ·{" "}
                           {new Date(order.created_at).toLocaleDateString()}
                         </p>
-                        <span
-                          className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${status.tone}`}
-                        >
-                          {status.text}
-                        </span>
                       </div>
                     </div>
+                    <span
+                      className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${status.tone}`}
+                    >
+                      {status.text}
+                    </span>
                   </div>
 
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex items-center justify-end mt-3">
                     <button
-                      onClick={() =>
-                        navigate(`/musica/${order.id}`, {
-                          state: { from: "my-songs" }
-                        })
-                      }
-                      className="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold rounded-xl py-2 text-xs transition-colors cursor-pointer border border-gray-200"
+                      onClick={() => action.action(order.id)}
+                      disabled={action.label === "Estornado"}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${action.tone} disabled:opacity-50`}
                     >
-                      Ver Música
+                      {action.label}
                     </button>
                   </div>
                 </div>

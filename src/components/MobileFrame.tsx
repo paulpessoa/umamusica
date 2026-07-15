@@ -238,7 +238,11 @@ export default function MobileFrame({
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-white rounded-full opacity-40 blur-3xl pointer-events-none" />
 
           {/* Logo + headline */}
-          <div className="relative z-10">
+          <button
+            onClick={() => navigate("/")}
+            className="relative z-10 text-left cursor-pointer"
+            aria-label="Ir para o início"
+          >
             <div className="flex items-center space-x-2 mb-10">
               <div className="relative w-10 h-10 flex items-center justify-center">
                 <motion.div
@@ -293,7 +297,7 @@ export default function MobileFrame({
               Transforme memórias e histórias reais em uma canção exclusiva,
               letras perfeitas baseadas em quem você quer homenagear.
             </p>
-          </div>
+          </button>
 
           {/* Feature bullets com animação */}
           <div className="space-y-5 relative z-10">

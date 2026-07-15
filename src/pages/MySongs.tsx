@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Music,
-  AlertCircle,
   Play,
   Pause,
   Trash2
@@ -166,7 +165,6 @@ export default function MySongs() {
                                 ).toLocaleDateString()}
                               </p>
                             </div>
-                            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
                           </div>
                           <button
                             onClick={() =>
@@ -174,9 +172,12 @@ export default function MySongs() {
                                 state: { from: "my-songs" }
                               })
                             }
-                            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                            className="self-end px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-2 cursor-pointer"
                           >
                             Retomar Pagamento
+                            <span className="text-[10px] opacity-90">
+                              R$ 1,00
+                            </span>
                             <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         </div>
