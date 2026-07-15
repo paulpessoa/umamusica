@@ -62,25 +62,34 @@ export default function ChatSection({
   }, [messages, isTyping])
 
   // ─── Parse quick options from AI text ─────────────────
-  // The AI can include a line like: [OPCOES: "Opção 1" | "Opção 2" | "Opção 3"]
+  // The AI may emit the marker with or without accents/quotes, e.g.
+  //   [OPCOES: "Opção A" | "Opção B"]
+  //   [OPÇÕES: Descontraído | Polido | Outro]
+  const OPTIONS_MARKER = /\[\s*OP[ÇC][OÕ]ES\s*:\s*(.+?)\s*\]\.?\s*/is
+
   const parseAiResponse = (
     text: string
   ): { cleanText: string; options?: string[] } => {
-    const optionsMatch = text.match(/\[OPCOES:\s*(.+?)\]/s)
-    if (optionsMatch) {
-      const raw = optionsMatch[1].trim()
-      // Split respecting quoted segments so inner " | " is preserved.
-      const options: string[] = []
-      const regex = /"([^"]*)"|'([^']*)'|([^|]+)/g
-      let m: RegExpExecArray | null
-      while ((m = regex.exec(raw)) !== null) {
-        const opt = (m[1] ?? m[2] ?? m[3] ?? "").trim()
-        if (opt) options.push(opt)
-      }
-      const cleanText = text.replace(/\[OPCOES:\s*.+?\]/s, "").trim()
-      return { cleanText, options: options.length ? options : undefined }
+    const markerMatch = text.match(OPTIONS_MARKER)
+    if (!markerMatch) return { cleanText: text }
+
+    const raw = markerMatch[1].trim()
+    // Split on "|", respecting optional quotes so inner " | " is preserved.
+    const options: string[] = []
+    const segmentRegex = /"([^"]*)"|'([^']*)'|([^|]+)/g
+    let m: RegExpExecArray | null
+    while ((m = segmentRegex.exec(raw)) !== null) {
+      const opt = (m[1] ?? m[2] ?? m[3] ?? "")
+        .trim()
+        .replace(/^["']|["']$/g, "")
+      if (opt) options.push(opt)
     }
-    return { cleanText: text }
+
+    const cleanText = text
+      .replace(OPTIONS_MARKER, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+    return { cleanText, options: options.length ? options : undefined }
   }
 
   // ─── Send Text Message ──────────────────────────────────
