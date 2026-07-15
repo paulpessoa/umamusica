@@ -76,19 +76,16 @@ export default function Menu() {
     try {
       // Registra o motivo reutilizando o endpoint/tabela de feedback
       try {
-        await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/api/feedback`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: user.email,
-              category: "account_deletion",
-              reasonCategory: reason,
-              reasonDetails: details
-            })
-          }
-        )
+        await fetch(`${import.meta.env.VITE_API_URL || ""}/api/feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: user.email,
+            category: "account_deletion",
+            reasonCategory: reason,
+            reasonDetails: details
+          })
+        })
       } catch (e) {
         console.error("Falha ao registrar motivo (não bloqueia):", e)
       }
@@ -176,11 +173,6 @@ export default function Menu() {
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Quando o seu amigo se cadastrar e confirmar o e-mail,{" "}
-                <strong>você e ele ganham 1 música grátis!</strong> (Limite de 5
-                amigos por mês).
-              </p>
 
               <button
                 onClick={() => navigate("/amigos")}
@@ -188,7 +180,8 @@ export default function Menu() {
               >
                 <div className="text-left">
                   <p className="text-xs font-bold text-gray-900">
-                    {referredUsers.length} amigo(s) · {user.free_songs_balance || 0} músicas grátis
+                    {referredUsers.length} amigo(s) ·{" "}
+                    {user.free_songs_balance || 0} músicas grátis
                   </p>
                   <p className="text-[10px] text-gray-400 mt-0.5">
                     Ver lista e compartilhar link
@@ -252,6 +245,26 @@ export default function Menu() {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
+              onClick={() => navigate("/agente")}
+              className="w-full bg-white border border-gray-100 hover:border-gray-200 shadow-sm rounded-2xl p-4.5 flex items-center justify-between transition-all group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500 group-hover:scale-105 transition-transform">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-sm text-gray-900">
+                    Conversar com o Agente
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Modo voz (A/B test)
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             <button
@@ -338,9 +351,7 @@ export default function Menu() {
           {/* Usuário conectado (discreto) */}
           <section className="pt-2">
             <div className="flex flex-col items-center text-center">
-              <p className="text-[11px] text-gray-400">
-                usuário conectado
-              </p>
+              <p className="text-[11px] text-gray-400">usuário conectado</p>
               <p className="text-xs font-medium text-gray-500 truncate max-w-full">
                 {user.email}
               </p>

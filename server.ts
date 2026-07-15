@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai"
 import { createClient } from "@supabase/supabase-js"
 import cors from "cors"
 import crypto from "crypto"
+import { WebSocketServer, WebSocket } from "ws"
 import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 
 // Load environment variables
@@ -3019,24 +3020,128 @@ setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000)
 // VITE DEV / PRODUCTION SERVING
 // ============================================================
 
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer } = await import("vite")
-    const vite = await createServer({
-      server: { middlewareMode: true },
-      appType: "spa"
-    })
-    app.use(vite.middlewares)
-  } else {
-    const distPath = path.join(process.cwd(), "dist")
-    app.use("/assets", express.static(path.join(process.cwd(), "assets")))
-    app.use(express.static(distPath))
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"))
-    })
-  }
+// ============================================================
+// VOICE AGENT WEBSOCKET PROXY (Live API)
+// ============================================================
 
-  app.listen(PORT, "0.0.0.0", () => {
+interface AgentSession {
+  session_token: string
+  draft: Record<string, any>
+  ws: WebSocket | null
+  geminiWs: WebSocket | null
+}
+
+const agentSessions = new Map<string, AgentSession>()
+
+async function startServer() {
+  const server = require("http").createServer(app)
+
+  const wss = new WebSocketServer({ server, path: "/api/voice/ws" })
+
+  wss.on("connection", (clientWs, req) => {
+    const url = new URL(req.url || "", `http://localhost:${PORT}`)
+    const sessionToken = url.searchParams.get("session_token") || ""
+    const sessionId = `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+    const session: AgentSession = {
+      session_token: sessionToken,
+      draft: {},
+      ws: clientWs,
+      geminiWs: null
+    }
+    agentSessions.set(sessionId, session)
+
+    clientWs.send(JSON.stringify({ type: "connected", sessionId }))
+
+    const geminiApiKey = process.env.GEMINI_API_KEY
+    if (!geminiApiKey) {
+      clientWs.send(JSON.stringify({ type: "error", message: "GEMINI_API_KEY não configurada" }))
+      clientWs.close()
+      return
+    }
+
+    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`
+
+    const geminiWs = new WebSocket(geminiUrl, { headers: { "User-Agent": "1musica-agent" } })
+    session.geminiWs = geminiWs
+
+    geminiWs.on("open", () => {
+      const setupMsg = {
+        setup: {
+          model: "models/gemini-2.0-flash-exp",
+          systemInstruction: {
+            parts: [
+              {
+                text: `Você é o Compositor Virtual do 1Música em modo voz. Conduza uma entrevista curta e calorosa em português do Brasil para coletar informações para uma música personalizada. Pergunte sobre: tipo de homenagem, nome da pessoa, memória principal, estilo musical preferido. Quando tiver informações suficientes, chame a ferramenta finish_interview. NÃO mencione valores.`
+              }
+            ]
+          },
+          tools: [
+            {
+              functionDeclarations: [
+                {
+                  name: "save_song_info",
+                  description: "Salva um campo da música",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      field: { type: "string", description: "Campo (ex: tipo, nome, memoria, estilo)" },
+                      value: { type: "string", description: "Valor do campo" }
+                    },
+                    required: ["field", "value"]
+                  }
+                },
+                {
+                  name: "finish_interview",
+                  description: "Finaliza a entrevista quando tiver informações suficientes",
+                  parameters: { type: "object", properties: {} }
+                }
+              ]
+            }
+          ]
+        }
+      }
+      geminiWs.send(JSON.stringify(setupMsg))
+    })
+
+    geminiWs.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString())
+        clientWs.send(JSON.stringify({ type: "gemini", data: msg }))
+      } catch {
+        clientWs.send(data.toString())
+      }
+    })
+
+    geminiWs.on("error", (err) => {
+      clientWs.send(JSON.stringify({ type: "error", message: "Erro na conexão com Gemini" }))
+    })
+
+    clientWs.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString())
+        if (msg.type === "audio" && geminiWs.readyState === WebSocket.OPEN) {
+          geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: msg.mimeType || "audio/webm", data: msg.data }] } }))
+        } else if (msg.type === "text" && geminiWs.readyState === WebSocket.OPEN) {
+          geminiWs.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [{ text: msg.text }] }] } }))
+        } else if (msg.type === "tool_response" && geminiWs.readyState === WebSocket.OPEN) {
+          const toolResponse = { toolResponse: { functionResponses: msg.responses } }
+          geminiWs.send(JSON.stringify(toolResponse))
+        }
+      } catch {
+        // ignore parse errors
+      }
+    })
+
+    clientWs.on("close", () => {
+      if (geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.close()
+      }
+      agentSessions.delete(sessionId)
+    })
+  })
+
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`1Música server running on http://localhost:${PORT}`)
   })
 }
