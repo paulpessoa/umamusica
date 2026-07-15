@@ -29,8 +29,6 @@ interface PlayerContextType {
   stop: () => void
   dismiss: () => void
   skip: (delta: number) => void
-  isFloating: boolean
-  toggleFloating: () => void
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined)
@@ -43,7 +41,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolumeState] = useState(0.8)
-  const [isFloating, setIsFloating] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   if (typeof Audio !== "undefined" && !audioRef.current) {
@@ -69,10 +66,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setCurrentTrack(t)
     const a = audioRef.current
     if (!a) return
-    a.src = t.src
+    if (a.src !== t.src) a.src = t.src
     a.play()
       .then(() => setIsPlaying(true))
-      .catch((e) => console.log("Player play error:", e))
+      .catch((e) => {
+        if (e?.name !== "AbortError") console.error("Player play error:", e)
+      })
   }
 
   const togglePlay = () => {
@@ -120,10 +119,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const newTime = Math.max(0, Math.min(a.currentTime + delta, duration || 0))
     a.currentTime = newTime
     setCurrentTime(newTime)
-  }
-
-  const toggleFloating = () => {
-    setIsFloating((v) => !v)
   }
 
   useEffect(() => {
@@ -233,9 +228,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         seek,
         stop,
         dismiss,
-        skip,
-        isFloating,
-        toggleFloating
+        skip
       }}
     >
       {children}
