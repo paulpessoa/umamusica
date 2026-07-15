@@ -184,7 +184,13 @@ function VoiceAgentRoute() {
 function SuccessRoute() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   if (!id) return null
+
+  if (!user) {
+    navigate("/login")
+    return null
+  }
 
   return (
     <MobileFrame>

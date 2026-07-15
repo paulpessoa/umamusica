@@ -68,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateUser = (userData: Partial<User>) => {
     setUser((prev) => {
       if (!prev) return null;
-      const updated = { ...prev, ...userData };
+      const updated = { ...prev, ...userData, session_token: prev.session_token };
       localStorage.setItem("umamusica_user", JSON.stringify(updated));
       return updated;
     });
