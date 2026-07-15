@@ -379,14 +379,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 )
 
-// Helper to verify session token
-async function verifySession(
-  req: express.Request,
-  res: express.Response
+// Returns the authenticated user (email + id) or null WITHOUT writing a
+// response. Routes decide what to do when auth is missing (e.g. allow
+// public access to completed songs shared via link).
+async function authenticate(
+  req: express.Request
 ): Promise<{ email: string; userId?: string } | null> {
   const authHeader = req.headers.authorization
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Token de sessão ausente ou inválido" })
     return null
   }
   const token = authHeader.split(" ")[1]
@@ -398,13 +398,24 @@ async function verifySession(
     .maybeSingle()
 
   if (error || !user || user.status !== "active") {
-    res.status(401).json({
-      error: "Sessão expirada ou inválida. Por favor, faça login novamente."
-    })
     return null
   }
 
   return { email: user.email, userId: user.id }
+}
+
+// Helper to verify session token (sends 401 on failure).
+async function verifySession(
+  req: express.Request,
+  res: express.Response
+): Promise<{ email: string; userId?: string } | null> {
+  const verified = await authenticate(req)
+  if (!verified) {
+    res.status(401).json({
+      error: "Sessão expirada ou inválida. Por favor, faça login novamente."
+    })
+  }
+  return verified
 }
 
 // ============================================================
@@ -938,6 +949,10 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
 
     const code = Math.floor(100000 + Math.random() * 900000).toString()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 min
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[OTP DEV] email=${email} code=${code}`)
+    }
 
     // Store OTP in Supabase
     await supabase.from("otp_codes").insert({
@@ -1761,8 +1776,7 @@ app.post("/api/logout", async (req, res) => {
 // ─── Get Order Status ──────────────────────────────────────
 app.get("/api/orders/:id", async (req, res) => {
   try {
-    const verified = await verifySession(req, res)
-    if (!verified) return
+    const verified = await authenticate(req)
 
     const { data: order, error } = await supabase
       .from("orders")
@@ -1776,6 +1790,25 @@ app.get("/api/orders/:id", async (req, res) => {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
 
+    // Completed songs are publicly viewable so shared links work for
+    // anyone (no login required). Sensitive fields (email, payment data,
+    // storage path) are omitted so nothing private is ever exposed.
+    if (order.status === "completed") {
+      return res.json({
+        id: order.id,
+        status: order.status,
+        song_metadata: order.song_metadata,
+        hasAudio: !!order.audio_storage_path,
+        created_at: order.created_at
+      })
+    }
+
+    if (!verified) {
+      return res
+        .status(401)
+        .json({ error: "Token de sessão ausente ou inválido" })
+    }
+
     // Verify ownership by user_id (preferred) or email (legacy fallback)
     const isOwner =
       (order.user_id && verified.userId && order.user_id === verified.userId) ||
@@ -1785,7 +1818,9 @@ app.get("/api/orders/:id", async (req, res) => {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 
-    res.json(order)
+    // Never expose the internal storage path to the client.
+    const { audio_storage_path, ...safeOrder } = order
+    res.json({ ...safeOrder, hasAudio: !!audio_storage_path })
   } catch (error: any) {
     res.status(500).json({ error: "Erro ao buscar pedido" })
   }
@@ -2737,8 +2772,7 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
 // ─── Download (Signed URL — never expose Supabase directly) ─
 app.get("/api/orders/:id/download", async (req, res) => {
   try {
-    let verified = await verifySession(req, res)
-    let verifiedByToken = false
+    let verified = await authenticate(req)
 
     if (!verified) {
       const tokenFromQuery = (req.query.token as string | undefined) || ""
@@ -2751,47 +2785,82 @@ app.get("/api/orders/:id/download", async (req, res) => {
 
         if (!tokenError && tokenUser && tokenUser.status === "active") {
           verified = { email: tokenUser.email, userId: tokenUser.id }
-          verifiedByToken = true
         }
       }
     }
 
-    if (!verified) return
-
-    const { data: order } = await supabase
+    const { data: order, error: orderErr } = await supabase
       .from("orders")
       .select("audio_storage_path, song_metadata, status, email, user_id")
       .eq("id", req.params.id)
       .single()
 
-    if (!order || order.status !== "completed") {
-      return res
-        .status(404)
-        .json({ error: "Música não encontrada ou ainda em processamento" })
+    if (orderErr || !order) {
+      return res.status(404).json({ error: "Música não encontrada" })
     }
 
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
+    // Completed songs are publicly shareable — anyone with the link can
+    // listen/download without logging in. We only verify ownership for
+    // songs that are still being created.
+    if (order.status !== "completed") {
+      if (!verified) {
+        return res
+          .status(401)
+          .json({ error: "Token de sessão ausente ou inválido" })
+      }
 
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
+      const isOwner =
+        (order.user_id && verified.userId && order.user_id === verified.userId) ||
+        order.email === verified.email.toLowerCase().trim()
+
+      if (!isOwner) {
+        return res.status(403).json({ error: "Acesso proibido" })
+      }
     }
 
     if (!order.audio_storage_path) {
-      return res.status(404).json({ error: "Arquivo de áudio não disponível" })
+      return res
+        .status(404)
+        .json({ error: "Arquivo de áudio não disponível" })
     }
 
-    // Generate signed URL (expires in 60 minutes)
-    const { data: signedUrl, error } = await supabase.storage
+    // Stream the audio through our own server so the Supabase URL is
+    // NEVER exposed to the client. The bytes are fetched server-side using
+    // the service-role key (private bucket) and piped back to the browser.
+    const { data: fileData, error: dlErr } = await supabase.storage
       .from("songs")
-      .createSignedUrl(order.audio_storage_path, 3600)
+      .download(order.audio_storage_path)
 
-    if (error || !signedUrl) {
-      return res.status(500).json({ error: "Erro ao gerar link de download" })
+    if (dlErr || !fileData) {
+      console.error("Download storage error:", dlErr)
+      return res.status(500).json({ error: "Erro ao obter o áudio" })
     }
 
-    res.redirect(signedUrl.signedUrl)
+    const buffer = Buffer.from(await fileData.arrayBuffer())
+    const contentType = "audio/mpeg"
+
+    res.setHeader("Content-Type", contentType)
+    res.setHeader("Accept-Ranges", "bytes")
+    res.setHeader("Content-Disposition", `inline; filename="${req.params.id}.mp3"`)
+
+    // Support range requests so the <audio> element can seek.
+    const range = req.headers.range
+    if (range) {
+      const match = /bytes=(\d+)-(\d*)/.exec(range.toString())
+      const start = match ? parseInt(match[1], 10) : 0
+      const end = match && match[2] ? parseInt(match[2], 10) : buffer.length - 1
+      const clampedEnd = Math.min(end, buffer.length - 1)
+      res.status(206)
+      res.setHeader(
+        "Content-Range",
+        `bytes ${start}-${clampedEnd}/${buffer.length}`
+      )
+      res.setHeader("Content-Length", clampedEnd - start + 1)
+      return res.end(buffer.subarray(start, clampedEnd + 1))
+    }
+
+    res.setHeader("Content-Length", buffer.length)
+    return res.end(buffer)
   } catch (error) {
     console.error("Download Error:", error)
     res.status(500).json({ error: "Erro no download" })

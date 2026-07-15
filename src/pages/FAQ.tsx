@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, HelpCircle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import MobileFrame from "../components/MobileFrame";
 

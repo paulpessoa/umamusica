@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import MobileFrame from "../components/MobileFrame"
-import { Mic, MicOff, Loader2, Phone, PhoneOff } from "lucide-react"
+import { MicOff, Phone, PhoneOff } from "lucide-react"
 
 export default function VoiceAgent() {
   const { user } = useAuth()

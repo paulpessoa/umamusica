@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from "react"
 import {
   ArrowLeft,
-  Check,
   Music,
   Gift,
-  CreditCard,
-  ChevronRight
+  CreditCard
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"

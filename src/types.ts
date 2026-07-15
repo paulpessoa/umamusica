@@ -47,6 +47,7 @@ export interface Order {
   payment_copia_e_cola: string
   status: MusicStatus
   audio_storage_path: string | null // Supabase storage path (never exposed to user)
+  hasAudio?: boolean // true when audio_storage_path exists
   upsell_paid: boolean
   video_url: string | null
   created_at: string

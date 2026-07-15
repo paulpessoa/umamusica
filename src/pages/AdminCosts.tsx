@@ -87,7 +87,7 @@ export default function AdminCosts() {
 
   useEffect(() => {
     if (adminKey || user) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   const fmtBRL = (v: number) =>

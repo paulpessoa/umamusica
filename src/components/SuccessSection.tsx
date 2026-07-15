@@ -15,6 +15,7 @@ import { useNavigate, useLocation } from "react-router-dom"
 import { Order } from "../types"
 import AudioPlayer from "./AudioPlayer"
 import { useAuth } from "../contexts/AuthContext"
+import { apiFetch } from "../lib/api"
 
 interface SuccessSectionProps {
   orderId: string
@@ -100,14 +101,7 @@ export default function SuccessSection({
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const headers: Record<string, string> = {}
-        if (user?.session_token) {
-          headers["Authorization"] = `Bearer ${user.session_token}`
-        }
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`,
-          { headers }
-        )
+        const res = await apiFetch(`/api/orders/${orderId}`)
         if (res.ok) {
           const data: Order = await res.json()
           setOrder(data)
@@ -155,20 +149,13 @@ export default function SuccessSection({
   // Step 1 (post-payment): compose the lyrics draft WITHOUT generating audio.
   const composeLyrics = async () => {
     if (isGenerating) return
-    setIsGenerating(true)
-    try {
-      setErrorMessage(null)
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (user?.session_token) {
-        headers["Authorization"] = `Bearer ${user.session_token}`
-      }
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/compose-lyrics`,
-        {
-          method: "POST",
-          headers
-        }
-      )
+      setIsGenerating(true)
+      try {
+        setErrorMessage(null)
+        const res = await apiFetch(
+          `/api/orders/${orderId}/compose-lyrics`,
+          { method: "POST" }
+        )
       if (res.ok) {
         const data = await res.json()
         if (data.song_metadata?.lyrics) {
@@ -212,11 +199,10 @@ export default function SuccessSection({
       if (user?.session_token) {
         headers["Authorization"] = `Bearer ${user.session_token}`
       }
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate`,
+      const res = await apiFetch(
+        `/api/orders/${orderId}/generate`,
         {
           method: "POST",
-          headers,
           body: JSON.stringify({ lyrics: editedLyrics })
         }
       )
@@ -227,14 +213,7 @@ export default function SuccessSection({
         }
         setIsGenerating(false)
         // Force status fetch to sync state
-        const refetchHeaders: Record<string, string> = {}
-        if (user?.session_token) {
-          refetchHeaders["Authorization"] = `Bearer ${user.session_token}`
-        }
-        const refetch = await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`,
-          { headers: refetchHeaders }
-        )
+        const refetch = await apiFetch(`/api/orders/${orderId}`)
         if (refetch.ok) {
           const freshData = await refetch.json()
           setOrder(freshData)
@@ -563,7 +542,7 @@ export default function SuccessSection({
               <AudioPlayer
                 orderId={order.id}
                 metadata={order.song_metadata}
-                hasAudio={!!order.audio_storage_path}
+                hasAudio={order.hasAudio ?? false}
                 onDeleted={() => navigate("/minhas-musicas")}
               />
             )}

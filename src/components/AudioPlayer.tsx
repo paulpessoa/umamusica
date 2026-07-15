@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { SongMetadata } from "../types";
 import { useAuth } from "../contexts/AuthContext";
 import { usePlayer, PlayerTrack } from "../contexts/PlayerContext";
+import { apiFetch } from "../lib/api";
 import DeleteMusicModal from "./DeleteMusicModal";
 
 interface AudioPlayerProps {
@@ -21,7 +22,6 @@ export default function AudioPlayer({
 }: AudioPlayerProps) {
   const { user } = useAuth();
   const player = usePlayer();
-  const [volume, setVolume] = useState(0.8);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -32,11 +32,7 @@ export default function AudioPlayer({
 
   const handleDownload = async () => {
     try {
-      const headers: Record<string, string> = {}
-      if (user?.session_token) {
-        headers["Authorization"] = `Bearer ${user.session_token}`
-      }
-      const res = await fetch(downloadUrl, { headers })
+      const res = await apiFetch(downloadUrl)
       if (!res.ok) {
         alert("Não foi possível baixar a música.")
         return
@@ -69,7 +65,7 @@ export default function AudioPlayer({
     if (hasAudio && !player.currentTrack) {
       player.setTrack(track);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [orderId, hasAudio]);
 
   const shareUrl = `${window.location.origin}/musica/${orderId}`;
@@ -85,14 +81,13 @@ export default function AudioPlayer({
 
     setIsDeleting(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`, {
-        method: "DELETE",
-        headers: {
-          "Authorization": `Bearer ${user.session_token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ reasonCategory, reasonDetails })
-      });
+      const res = await apiFetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`,
+        {
+          method: "DELETE",
+          body: JSON.stringify({ reasonCategory, reasonDetails })
+        }
+      );
 
       if (!res.ok) {
         throw new Error("Erro ao deletar música");
@@ -120,8 +115,7 @@ export default function AudioPlayer({
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const vol = parseFloat(e.target.value);
-    setVolume(vol);
+    player.setVolume(parseFloat(e.target.value));
   };
 
   const formatTime = (time: number) => {
@@ -280,7 +274,7 @@ export default function AudioPlayer({
             min={0}
             max={1}
             step={0.05}
-            value={volume}
+            value={player.volume}
             onChange={handleVolumeChange}
             disabled={!hasAudio}
             className="w-full h-1 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-400 disabled:opacity-50"

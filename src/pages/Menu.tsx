@@ -1,15 +1,11 @@
 import React, { useEffect, useState } from "react"
 import {
   ArrowLeft,
-  Copy,
   Check,
-  Gift,
   Music,
   HelpCircle,
   ChevronRight,
-  LogOut,
-  Trash2,
-  User
+  Trash2
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
@@ -22,9 +18,6 @@ export default function Menu() {
   const [copied, setCopied] = useState(false)
   const [orders, setOrders] = useState<any[]>([])
   const [referredUsers, setReferredUsers] = useState<any[]>([])
-  const [nameInput, setNameInput] = useState(user?.name || "")
-  const [isSavingName, setIsSavingName] = useState(false)
-  const [nameSaved, setNameSaved] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -253,7 +246,21 @@ export default function Menu() {
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500 group-hover:scale-105 transition-transform">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" x2="12" y1="19" y2="22" />
+                  </svg>
                 </div>
                 <div className="text-left">
                   <p className="font-bold text-sm text-gray-900">

@@ -2,14 +2,10 @@ import React, { useState, useEffect } from "react"
 import {
   Check,
   Copy,
-  HelpCircle,
-  Shield,
   AlertCircle,
-  Sparkles,
-  RefreshCw,
-  Smartphone
+  RefreshCw
 } from "lucide-react"
-import { motion } from "motion/react"
+import { apiFetch } from "../lib/api"
 
 interface CheckoutSectionProps {
   orderId: string
@@ -42,14 +38,11 @@ export default function CheckoutSection({
   const handleGeneratePix = async () => {
     setIsGeneratingPix(true)
     setPixError(null)
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/generate-pix`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        }
-      )
+      try {
+        const res = await apiFetch(
+          `/api/orders/${orderId}/generate-pix`,
+          { method: "POST" }
+        )
       if (res.ok) {
         const data = await res.json()
         setLocalQr(data.paymentQr)
@@ -73,8 +66,8 @@ export default function CheckoutSection({
 
     const pollStatus = async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}`
+        const res = await apiFetch(
+          `/api/orders/${orderId}`
         )
         if (res.ok) {
           const order = await res.json()
@@ -124,15 +117,14 @@ export default function CheckoutSection({
     setIsApplyingCoupon(true)
     setCouponError(null)
     setCouponSuccess(null)
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/apply-coupon`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ coupon: couponCode.trim() })
-        }
-      )
+      try {
+        const res = await apiFetch(
+          `/api/orders/${orderId}/apply-coupon`,
+          {
+            method: "POST",
+            body: JSON.stringify({ coupon: couponCode.trim() })
+          }
+        )
       if (res.ok) {
         const data = await res.json()
         setCouponSuccess(data.message || "Cupom aplicado com sucesso!")
@@ -154,14 +146,11 @@ export default function CheckoutSection({
   const handleSimulatePayment = async () => {
     setIsSimulating(true)
     setPollingError(null)
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/orders/${orderId}/simulate-payment`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" }
-        }
-      )
+      try {
+        const res = await apiFetch(
+          `/api/orders/${orderId}/simulate-payment`,
+          { method: "POST" }
+        )
       if (res.ok) {
         // Has its own trigger (no polling) → go straight to the music screen
         console.log("Simulated payment success!")

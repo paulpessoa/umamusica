@@ -4,7 +4,6 @@ import {
   Route,
   useNavigate,
   useParams,
-  useSearchParams,
   useLocation
 } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
@@ -187,14 +186,13 @@ function SuccessRoute() {
   const { user } = useAuth()
   if (!id) return null
 
-  if (!user) {
-    navigate("/login")
-    return null
-  }
-
   return (
     <MobileFrame>
-      <SuccessSection orderId={id} onRestart={() => navigate("/")} />
+      <SuccessSection
+        orderId={id}
+        isSharedView={!user}
+        onRestart={() => navigate("/")}
+      />
     </MobileFrame>
   )
 }

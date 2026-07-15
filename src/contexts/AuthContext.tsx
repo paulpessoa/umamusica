@@ -90,11 +90,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updateUser(data.user)
           }
         })
-        .catch(err => {
-          console.error("Auth refresh failed:", err)
-          setUser(null)
-          localStorage.removeItem("umamusica_user")
-        })
+      .catch(err => {
+        // Don't destroy the session on a transient refresh failure
+        // (network blip, dev mock token, etc.). The persisted token in
+        // localStorage remains the source of truth for API calls, so the
+        // session survives navigation and re-renders.
+        console.warn("Auth refresh skipped:", err)
+      })
     }
   }, [])
 

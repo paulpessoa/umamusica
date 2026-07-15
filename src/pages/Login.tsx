@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Mail, ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
+import { Mail, ArrowLeft, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -26,7 +26,7 @@ export default function Login() {
       setCode(magicToken);
       verifyOtp(magicToken, magicEmail);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Countdown timer for OTP validity

@@ -1,14 +1,9 @@
 import React, { useState, useEffect, useRef } from "react"
 import {
   Send,
-  Sparkles,
   Mic,
   MicOff,
   Loader2,
-  PenTool,
-  RefreshCw,
-  ChevronLeft,
-  Gift,
   ChevronRight
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"

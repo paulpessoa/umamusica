@@ -20,6 +20,8 @@ interface PlayerContextType {
   isPlaying: boolean
   currentTime: number
   duration: number
+  volume: number
+  setVolume: (v: number) => void
   setTrack: (t: PlayerTrack) => void
   playTrack: (t: PlayerTrack) => void
   togglePlay: () => void
@@ -38,10 +40,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [volume, setVolumeState] = useState(0.8)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   if (typeof Audio !== "undefined" && !audioRef.current) {
     audioRef.current = new Audio()
+    audioRef.current.volume = volume
+  }
+
+  const setVolume = (v: number) => {
+    setVolumeState(v)
+    if (audioRef.current) audioRef.current.volume = v
   }
 
   const applySrc = (a: HTMLAudioElement, src: string) => {
@@ -136,6 +145,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         isPlaying,
         currentTime,
         duration,
+        volume,
+        setVolume,
         setTrack,
         playTrack,
         togglePlay,
