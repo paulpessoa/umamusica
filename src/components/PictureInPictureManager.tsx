@@ -25,6 +25,22 @@ export default function PictureInPictureManager() {
     const startPiP = async () => {
       try {
         if (document.pictureInPictureElement) return
+        if (video.readyState < 1) {
+          await new Promise((resolve, reject) => {
+            const onMeta = () => {
+              video.removeEventListener("loadedmetadata", onMeta)
+              resolve(true)
+            }
+            video.addEventListener("loadedmetadata", onMeta)
+            video.src =
+              "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
+            video.load()
+            setTimeout(() => {
+              video.removeEventListener("loadedmetadata", onMeta)
+              resolve(true)
+            }, 1500)
+          })
+        }
         await video.requestPictureInPicture()
       } catch (e) {
         console.error("[PiP] Failed to open:", e)

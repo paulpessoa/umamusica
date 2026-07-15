@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 interface User {
   id: string;
@@ -41,6 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return null;
   });
+  const location = useLocation()
 
   const login = (userData: User) => {
     setUser(userData);
@@ -75,6 +77,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    if (!user || !user.email || !user.session_token) return
+
+    const publicPaths = ["/login", "/", "/faq", "/termos", "/privacidade"]
+    const isPublicPath = publicPaths.some((p) => {
+      if (p === "/") return location.pathname === "/"
+      if (p.includes(":")) {
+        const base = p.split("/:")[0]
+        return location.pathname.startsWith(base + "/")
+      }
+      return location.pathname === p || location.pathname.startsWith(p + "/")
+    })
+    if (isPublicPath) return
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+
+    fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`, {
+      headers: {
+        "Authorization": `Bearer ${user.session_token}`
+      },
+      signal: controller.signal
+    })
+      .then(res => {
+        clearTimeout(timer)
+        if (!res.ok) throw new Error("Invalid session")
+        return res.json()
+      })
+      .then(data => {
+        if (data.user) {
+          updateUser(data.user)
+        }
+      })
+      .catch(err => {
+        clearTimeout(timer)
+        if (err.name === "AbortError") return
+        console.warn("Auth guard:", err)
+        logout()
+      })
+
+    return () => clearTimeout(timer)
+  }, [location.pathname])
+
+  useEffect(() => {
     if (user && user.email && user.session_token) {
       fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`, {
         headers: {
@@ -90,13 +135,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updateUser(data.user)
           }
         })
-      .catch(err => {
-        // Don't destroy the session on a transient refresh failure
-        // (network blip, dev mock token, etc.). The persisted token in
-        // localStorage remains the source of truth for API calls, so the
-        // session survives navigation and re-renders.
-        console.warn("Auth refresh skipped:", err)
-      })
+        .catch(err => {
+          console.warn("Auth refresh skipped:", err)
+          if (err.message === "Invalid session") {
+            logout()
+          }
+        })
     }
   }, [])
 
