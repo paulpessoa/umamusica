@@ -29,9 +29,8 @@ interface PlayerContextType {
   stop: () => void
   dismiss: () => void
   skip: (delta: number) => void
-  isPiP: boolean
-  togglePiP: () => void
-  exitPiP: () => void
+  isFloating: boolean
+  toggleFloating: () => void
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined)
@@ -44,7 +43,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolumeState] = useState(0.8)
-  const [isPiP, setIsPiP] = useState(false)
+  const [isFloating, setIsFloating] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   if (typeof Audio !== "undefined" && !audioRef.current) {
@@ -123,25 +122,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setCurrentTime(newTime)
   }
 
-  const togglePiP = () => {
-    const a = audioRef.current
-    if (!a) return
-    if (document.pictureInPictureElement) {
-      document.exitPictureInPicture().catch(() => {})
-      setIsPiP(false)
-    } else {
-      ;(a as any)
-        .requestPictureInPicture()
-        .then(() => setIsPiP(true))
-        .catch(() => {})
-    }
-  }
-
-  const exitPiP = () => {
-    if (document.pictureInPictureElement) {
-      document.exitPictureInPicture().catch(() => {})
-    }
-    setIsPiP(false)
+  const toggleFloating = () => {
+    setIsFloating((v) => !v)
   }
 
   useEffect(() => {
@@ -179,9 +161,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         stop,
         dismiss,
         skip,
-        isPiP,
-        togglePiP,
-        exitPiP
+        isFloating,
+        toggleFloating
       }}
     >
       {children}

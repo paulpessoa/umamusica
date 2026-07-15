@@ -30,7 +30,6 @@ import AdminCosts from "./pages/AdminCosts"
 import Friends from "./pages/Friends"
 import MiniPlayer from "./components/MiniPlayer"
 import RouteLoader from "./components/RouteLoader"
-import PictureInPictureManager from "./components/PictureInPictureManager"
 import { PlayerProvider } from "./contexts/PlayerContext"
 
 function ChatRoute() {
@@ -209,7 +208,6 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         <MiniPlayer />
-        <PictureInPictureManager />
         <CookieBanner />
         <RouteLoader />
       </PlayerProvider>
