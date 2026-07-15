@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
-import { ChevronRight, Play, Pause, Lock, FileText, Mail } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ChevronRight, Play, Pause } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import MobileFrame from "../components/MobileFrame";
 import { useAuth } from "../contexts/AuthContext";
+import { usePlayer } from "../contexts/PlayerContext";
 
 const IllustrationChat = () => (
   <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-7 h-7">
@@ -92,24 +93,10 @@ const exampleSongs = [
 ];
 
 export default function Home() {
-  const [playingExampleId, setPlayingExampleId] = useState<number | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
-
-  useEffect(() => {
-    if (!exampleAudioRef.current) return;
-    if (playingExampleId === null) {
-      exampleAudioRef.current.pause();
-    } else {
-      const selected = exampleSongs.find(s => s.id === playingExampleId);
-      if (selected) {
-        exampleAudioRef.current.src = selected.audioUrl;
-        exampleAudioRef.current.play().catch(e => console.log("Failed to play example:", e));
-      }
-    }
-  }, [playingExampleId]);
+  const player = usePlayer();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -197,12 +184,26 @@ export default function Home() {
               {exampleSongs.map((song) => (
                 <div key={song.id} className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex items-center gap-3">
                   <button
-                    onClick={() => setPlayingExampleId(playingExampleId === song.id ? null : song.id)}
+                    onClick={() => {
+                      const isCurrent = player.currentTrack?.orderId === String(song.id)
+                      if (isCurrent) {
+                        player.togglePlay()
+                      } else {
+                        player.playTrack({
+                          orderId: String(song.id),
+                          title: song.title,
+                          artistName: song.author,
+                          src: song.audioUrl
+                        })
+                      }
+                    }}
                     className="w-10 h-10 rounded-full bg-[#FF5A5F] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
                   >
-                    {playingExampleId === song.id
-                      ? <Pause className="w-3.5 h-3.5 fill-white" />
-                      : <Play className="w-3.5 h-3.5 fill-white ml-0.5" />}
+                    {player.currentTrack?.orderId === String(song.id) && player.isPlaying ? (
+                      <Pause className="w-3.5 h-3.5 fill-white" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                    )}
                   </button>
                   <div className="flex-1 min-w-0 text-left">
                     <p className="text-sm font-bold text-gray-900 truncate">{song.title}</p>
@@ -249,11 +250,6 @@ export default function Home() {
           </div>
         </div>
       </motion.div>
-      <audio
-        ref={exampleAudioRef}
-        onEnded={() => setPlayingExampleId(null)}
-        style={{ display: "none" }}
-      />
     </MobileFrame>
   );
 }
