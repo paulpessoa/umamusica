@@ -13,12 +13,14 @@ create table if not exists public.cost_logs (
   api_cost numeric default 0,
   model text,
   notes text,
+  entry_mode text,
   created_at timestamptz default now()
 );
 
 create index if not exists cost_logs_created_at_idx on public.cost_logs (created_at desc);
 create index if not exists cost_logs_order_id_idx on public.cost_logs (order_id);
 create index if not exists cost_logs_stage_idx on public.cost_logs (stage);
+create index if not exists cost_logs_entry_mode_idx on public.cost_logs (entry_mode);
 
 -- Row Level Security: service role only (server uses SUPABASE_SERVICE_ROLE_KEY).
 alter table public.cost_logs enable row level security;

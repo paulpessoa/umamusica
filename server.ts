@@ -321,6 +321,7 @@ async function logCost(params: {
   apiCost?: number | null
   model?: string | null
   notes?: string | null
+  entryMode?: string | null
 }) {
   try {
     await supabase.from("cost_logs").insert({
@@ -333,6 +334,7 @@ async function logCost(params: {
       api_cost: params.apiCost ?? null,
       model: params.model || null,
       notes: params.notes || null,
+      entry_mode: params.entryMode || null,
       created_at: new Date().toISOString()
     })
   } catch (e: any) {
@@ -1341,7 +1343,8 @@ Instruções:
       provider: response.provider || "groq",
       inputTokens: response.usage?.inputTokens ?? null,
       outputTokens: response.usage?.outputTokens ?? null,
-      model: "gemini-3.5-flash"
+      model: "gemini-3.5-flash",
+      entryMode: "chat"
     })
 
     res.json({

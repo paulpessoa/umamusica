@@ -21,6 +21,7 @@ interface CostRow {
   output_tokens: number | null
   api_cost: number | null
   model: string | null
+  entry_mode: string | null
   created_at: string
 }
 
@@ -215,19 +216,24 @@ export default function AdminCosts() {
                       {new Date(r.created_at).toLocaleString("pt-BR")}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between mt-1 text-gray-500">
-                    <span>{r.provider || "—"}</span>
-                    <span className="font-mono">
-                      {r.api_cost
-                        ? fmtBRL(r.api_cost)
-                        : `${fmtNum(r.input_tokens || 0)}/${r.output_tokens || 0} tok`}
-                    </span>
-                  </div>
-                  {r.email && (
-                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                      {r.email}
-                    </p>
-                  )}
+                   <div className="flex items-center justify-between mt-1 text-gray-500">
+                     <span>{r.provider || "—"}</span>
+                     <span className="font-mono">
+                       {r.api_cost
+                         ? fmtBRL(r.api_cost)
+                         : `${fmtNum(r.input_tokens || 0)}/${r.output_tokens || 0} tok`}
+                     </span>
+                   </div>
+                   {r.entry_mode && (
+                     <p className="text-[10px] text-gray-400 mt-0.5">
+                       Modo: {r.entry_mode}
+                     </p>
+                   )}
+                   {r.email && (
+                     <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                       {r.email}
+                     </p>
+                   )}
                 </div>
               ))
             )}
