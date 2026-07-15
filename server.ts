@@ -1149,7 +1149,7 @@ app.get("/api/users/me", async (req, res) => {
       .eq("email", email.toLowerCase().trim())
       .single()
 
-    if (error || !user) {
+    if (userError || !user) {
       return res.status(404).json({ error: "Usuário não encontrado" })
     }
 
@@ -1680,7 +1680,7 @@ app.get("/api/orders/:id", async (req, res) => {
       .eq("id", req.params.id)
       .single()
 
-    if (error || !data) {
+    if (error || !order) {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
 
