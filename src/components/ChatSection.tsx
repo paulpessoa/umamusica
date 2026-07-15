@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { ChatMessage } from "../types"
+import { useAuth } from "../contexts/AuthContext"
 
 interface ChatSectionProps {
   email: string
