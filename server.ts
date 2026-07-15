@@ -550,7 +550,7 @@ async function generateContentWithFallback(params: {
       p === "groq"
         ? await callGroq(params)
         : await callGemini(params)
-    return { ...base, provider: p as const }
+    return { ...base, provider: p }
   }
 
   let primaryError: any = null
@@ -1155,9 +1155,8 @@ app.get("/api/users/me", async (req, res) => {
       return res.status(404).json({ error: "Usuário não encontrado" })
     }
 
-    // Fetch user's past generated songs — prefer user_id, fallback to email for legacy rows
     const userId = user.id
-    const baseOrderQuery = supabase
+    const { data: orders } = await supabase
       .from("orders")
       .select(
         "id, song_metadata, audio_storage_path, payment_id, chat_transcript, status, created_at, user_id"
@@ -1169,11 +1168,8 @@ app.get("/api/users/me", async (req, res) => {
         "processing",
         "failed_safety"
       ])
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
-
-    const { data: orders } = userId
-      ? await baseOrderQuery.eq("user_id", userId)
-      : await baseOrderQuery.eq("email", email.toLowerCase().trim())
 
     // Fetch referred contacts (masked for privacy)
     const { data: referredUsers } = await supabase
@@ -1466,12 +1462,8 @@ app.post("/api/speech-to-text", rateLimit(20, 10 * 60 * 1000), async (req, res) 
     const audioBuffer = Buffer.from(audio, "base64")
 
     // Build multipart form data for Groq Whisper
-    const FormData = (await import("form-data")).default
     const form = new FormData()
-    form.append("file", audioBuffer, {
-      filename: "audio.webm",
-      contentType: mimeType || "audio/webm"
-    })
+    form.append("file", new Blob([audioBuffer], { type: mimeType || "audio/webm" }), "audio.webm")
     form.append("model", "whisper-large-v3")
     form.append("language", "pt")
     form.append("response_format", "json")
@@ -1479,8 +1471,7 @@ app.post("/api/speech-to-text", rateLimit(20, 10 * 60 * 1000), async (req, res) 
     const whisperRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${groqApiKey}`,
-        ...form.getHeaders()
+        Authorization: `Bearer ${groqApiKey}`
       },
       body: form
     })
@@ -3035,6 +3026,22 @@ interface AgentSession {
 const agentSessions = new Map<string, AgentSession>()
 
 async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer } = await import("vite")
+    const vite = await createServer({
+      server: { middlewareMode: true },
+      appType: "spa"
+    })
+    app.use(vite.middlewares)
+  } else {
+    const distPath = path.join(process.cwd(), "dist")
+    app.use("/assets", express.static(path.join(process.cwd(), "assets")))
+    app.use(express.static(distPath))
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"))
+    })
+  }
+
   const server = http.createServer(app)
 
   const wss = new WebSocketServer({ server, path: "/api/voice/ws" })
