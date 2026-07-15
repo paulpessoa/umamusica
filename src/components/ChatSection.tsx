@@ -65,6 +65,10 @@ export default function ChatSection({
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessingAudio, setIsProcessingAudio] = useState(false)
+  const [ttsEnabled, setTtsEnabled] = useState(() => {
+    const saved = localStorage.getItem("umamusica_tts_enabled")
+    return saved === "true"
+  })
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -143,6 +147,9 @@ export default function ChatSection({
             })
           }
         ])
+        if (cleanText) {
+          speakText(cleanText)
+        }
       } else {
         // Show specific rate limit or server error message directly in chat
         setMessages((prev: ChatMessage[]) => [
@@ -225,58 +232,28 @@ export default function ChatSection({
 
         try {
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL || ""}/api/chat-voice`,
+            `${import.meta.env.VITE_API_URL || ""}/api/speech-to-text`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 audio: base64data,
-                mimeType: "audio/webm",
-                messages,
-                email,
-                name
+                mimeType: "audio/webm"
               })
             }
           )
 
           const data = await response.json().catch(() => ({}))
+          const transcript = data.transcript || ""
 
-          if (response.ok) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                sender: "user",
-                text: `🎙️ ${data.userTranscript || "Mensagem de voz"}`,
-                timestamp: new Date().toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })
-              },
-              {
-                sender: "ai",
-                text: data.aiResponse || "Muito legal! Me conta mais?",
-                timestamp: new Date().toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })
-              }
-            ])
+          if (transcript) {
+            await handleSendMessage(transcript)
           } else {
             setMessages((prev) => [
               ...prev,
               {
-                sender: "user",
-                text: "🎙️ [Mensagem de voz enviada]",
-                timestamp: new Date().toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })
-              },
-              {
                 sender: "ai",
-                text:
-                  data.error ||
-                  "Tive um problema para processar seu áudio. Digite sua resposta ou tente gravar novamente.",
+                text: "Não consegui entender o áudio. Pode digitar ou tentar gravar novamente?",
                 timestamp: new Date().toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit"
@@ -287,14 +264,6 @@ export default function ChatSection({
         } catch {
           setMessages((prev) => [
             ...prev,
-            {
-              sender: "user",
-              text: "🎙️ [Mensagem de voz enviada]",
-              timestamp: new Date().toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit"
-              })
-            },
             {
               sender: "ai",
               text: "Não consegui contato com o servidor para enviar o áudio. Verifique sua conexão de rede.",
@@ -312,6 +281,32 @@ export default function ChatSection({
     } catch {
       setIsProcessingAudio(false)
       setIsTyping(false)
+    }
+  }
+
+  const speakText = async (text: string) => {
+    if (!ttsEnabled || !text) return
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/tts`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (data.audio && data.mimeType === "audio/mp3") {
+        const audio = new Audio(`data:${data.mimeType};base64,${data.audio}`)
+        await audio.play()
+      } else if (data.provider === "browser" || !data.audio) {
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = "pt-BR"
+        utterance.rate = 1
+        speechSynthesis.speak(utterance)
+      }
+    } catch {
+      // silent fallback
     }
   }
 
@@ -435,10 +430,8 @@ export default function ChatSection({
                 </motion.button>
               )}
 
-              {/* Input Row: Mic + Text + Send */}
+              {/* Input Row: Mic + Text + Send + TTS */}
               <div className="flex items-center gap-2">
-                {/* Mic button (WhatsApp style) - Temporarily removed to improve user experience */}
-                {/*
                 <button
                   onMouseDown={startRecording}
                   onMouseUp={stopRecording}
@@ -462,7 +455,6 @@ export default function ChatSection({
                     <Mic className="w-5 h-5" />
                   )}
                 </button>
-                */}
 
                 <input
                   type="text"
@@ -486,6 +478,21 @@ export default function ChatSection({
                   className="bg-[#FF5A5F] hover:bg-[#e04f53] disabled:bg-gray-100 disabled:text-gray-400 text-white p-3.5 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer shrink-0"
                 >
                   <Send className="w-5 h-5" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    const next = !ttsEnabled
+                    setTtsEnabled(next)
+                    localStorage.setItem("umamusica_tts_enabled", String(next))
+                  }}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer shrink-0 ${ttsEnabled
+                    ? "bg-[#FF5A5F]/10 border-[#FF5A5F]/30 text-[#FF5A5F]"
+                    : "bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-600"
+                    }`}
+                  title={ttsEnabled ? "Desativar áudio da IA" : "Ouvir respostas da IA"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
                 </button>
               </div>
 

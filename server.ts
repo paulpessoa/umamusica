@@ -1447,6 +1447,105 @@ Retorne JSON com: userTranscript, aiResponse, triggerCompose (true se tiver tudo
   }
 })
 
+// ─── Speech-to-Text (Groq Whisper) ───────────────────────────
+app.post("/api/speech-to-text", rateLimit(20, 10 * 60 * 1000), async (req, res) => {
+  try {
+    const { audio, mimeType } = req.body
+    if (!audio) {
+      return res.status(400).json({ error: "Áudio é obrigatório" })
+    }
+
+    const groqApiKey = process.env.GROQ_API_KEY
+    if (!groqApiKey) {
+      return res.status(500).json({ error: "GROQ_API_KEY não configurada" })
+    }
+
+    // Convert base64 to Buffer
+    const audioBuffer = Buffer.from(audio, "base64")
+
+    // Build multipart form data for Groq Whisper
+    const FormData = (await import("form-data")).default
+    const form = new FormData()
+    form.append("file", audioBuffer, {
+      filename: "audio.webm",
+      contentType: mimeType || "audio/webm"
+    })
+    form.append("model", "whisper-large-v3")
+    form.append("language", "pt")
+    form.append("response_format", "json")
+
+    const whisperRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${groqApiKey}`,
+        ...form.getHeaders()
+      },
+      body: form
+    })
+
+    if (!whisperRes.ok) {
+      const errText = await whisperRes.text()
+      console.error("[Whisper] Error:", whisperRes.status, errText)
+      return res.status(500).json({ error: "Erro na transcrição de áudio" })
+    }
+
+    const whisperData = await whisperRes.json()
+    const transcript = whisperData.text?.trim() || ""
+
+    res.json({ transcript })
+  } catch (error: any) {
+    console.error("[Speech-to-Text] Error:", error?.message || error)
+    res.status(500).json({ error: "Erro ao processar áudio" })
+  }
+})
+
+// ─── Text-to-Speech (OpenAI TTS with SpeechSynthesis fallback) ──
+app.post("/api/tts", async (req, res) => {
+  try {
+    const { text, voice } = req.body
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Texto é obrigatório" })
+    }
+
+    const openaiKey = process.env.OPENAI_API_KEY
+    const provider = (process.env.TTS_PROVIDER || "openai").toLowerCase()
+
+    // If OpenAI key is configured, use OpenAI TTS API
+    if (openaiKey && provider === "openai") {
+      const ttsRes = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          input: text.trim(),
+          voice: voice || "alloy",
+          response_format: "mp3"
+        })
+      })
+
+      if (!ttsRes.ok) {
+        const errText = await ttsRes.text()
+        console.error("[TTS] OpenAI error:", ttsRes.status, errText)
+        return res.status(500).json({ error: "Erro ao gerar áudio TTS" })
+      }
+
+      const audioBuffer = await ttsRes.arrayBuffer()
+      const base64Audio = Buffer.from(audioBuffer).toString("base64")
+      res.json({ audio: base64Audio, mimeType: "audio/mp3", provider: "openai" })
+      return
+    }
+
+    // Fallback: return text for browser SpeechSynthesis
+    res.json({ text: text.trim(), provider: "browser" })
+  } catch (error: any) {
+    console.error("[TTS] Error:", error?.message || error)
+    res.status(500).json({ error: "Erro ao gerar áudio" })
+  }
+})
+
 // ─── Checkout (MercadoPago Pix) ────────────────────────────
 app.post("/api/checkout", async (req, res) => {
   try {
