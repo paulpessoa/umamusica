@@ -228,7 +228,7 @@ export default function Home() {
             onClick={handleStart}
             className="w-full max-w-xs bg-[#FF5A5F] hover:bg-[#e04f53] text-white font-bold py-4 px-4 rounded-2xl shadow-lg shadow-[#FF5A5F]/15 flex items-center justify-center gap-2 text-sm tracking-wide transition-all cursor-pointer"
           >
-            {user ? "Continuar Criação" : "Entrar / Criar Conta"}
+            {user ? "Continuar Criação" : "Criar música"}
             <ChevronRight className="w-5 h-5" />
           </button>
 
