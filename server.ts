@@ -1019,10 +1019,10 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; text-align: center;">
           <h2 style="color: #FF5A5F; margin-bottom: 8px;">1Música</h2>
           <p style="color: #555; font-size: 14px;">Seu código de verificação é:</p>
-          <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0;">
-            <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace;">${code}</span>
+          <div style="background: #FFF0F0; border: 2px solid #FF5A5F; border-radius: 12px; padding: 20px; margin: 20px 0; user-select: all; -webkit-user-select: all;">
+            <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace; user-select: all; -webkit-user-select: all;">${code}</span>
           </div>
-          <a href="${magicLink}" style="display: inline-block; background: #FF5A5F; color: #fff; text-decoration: none; font-weight: bold; padding: 14px 28px; border-radius: 12px; font-size: 14px; margin: 8px 0 20px;">Entrar com 1 clique</a>
+          <a href="${magicLink}" style="display: inline-block; background: #FF5A5F; color: #fff; text-decoration: none; font-weight: bold; padding: 14px 28px; border-radius: 12px; font-size: 14px; margin: 8px 0 20px;">Acessar Conta Automaticamente ⚡</a>
           <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
           ${getEmailFooterHtml()}
         </div>

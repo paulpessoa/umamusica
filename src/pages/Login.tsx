@@ -8,6 +8,8 @@ import MobileFrame from "../components/MobileFrame";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [codeArray, setCodeArray] = useState<string[]>(Array(6).fill(""));
+  const inputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
   const [step, setStep] = useState<"email" | "code">("email");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -44,6 +46,88 @@ export default function Login() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Keep codeArray in sync with code when set externally (e.g. magic link)
+  useEffect(() => {
+    if (code.length === 6) {
+      const arr = code.split("");
+      if (arr.some((char, idx) => codeArray[idx] !== char)) {
+        setCodeArray(arr);
+      }
+    } else if (code.length === 0) {
+      setCodeArray(Array(6).fill(""));
+    }
+  }, [code]);
+
+  // Focus the first input when entering the code step
+  useEffect(() => {
+    if (step === "code") {
+      setTimeout(() => {
+        inputRefs.current[0]?.focus();
+      }, 100);
+    }
+  }, [step]);
+
+  const handleInputChange = (value: string, index: number) => {
+    const cleanValue = value.replace(/\D/g, "").slice(0, 1);
+    const newCodeArray = [...codeArray];
+    newCodeArray[index] = cleanValue;
+    setCodeArray(newCodeArray);
+    
+    const combinedCode = newCodeArray.join("");
+    setCode(combinedCode);
+
+    // Auto-focus next input if value is filled
+    if (cleanValue && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+
+    // Auto-verify if all 6 digits are filled
+    if (combinedCode.length === 6) {
+      verifyOtp(combinedCode);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (e.key === "Backspace") {
+      if (!codeArray[index] && index > 0) {
+        // Clear previous input and focus it
+        const newCodeArray = [...codeArray];
+        newCodeArray[index - 1] = "";
+        setCodeArray(newCodeArray);
+        setCode(newCodeArray.join(""));
+        inputRefs.current[index - 1]?.focus();
+      } else if (codeArray[index]) {
+        // Just clear current input
+        const newCodeArray = [...codeArray];
+        newCodeArray[index] = "";
+        setCodeArray(newCodeArray);
+        setCode(newCodeArray.join(""));
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pastedData) {
+      const newCodeArray = Array(6).fill("");
+      for (let i = 0; i < pastedData.length; i++) {
+        newCodeArray[i] = pastedData[i];
+      }
+      setCodeArray(newCodeArray);
+      const combinedCode = newCodeArray.join("");
+      setCode(combinedCode);
+
+      // Focus the appropriate input
+      const nextFocusIndex = Math.min(pastedData.length, 5);
+      inputRefs.current[nextFocusIndex]?.focus();
+
+      if (combinedCode.length === 6) {
+        verifyOtp(combinedCode);
+      }
+    }
   };
 
   const sendOtp = async () => {
@@ -173,20 +257,25 @@ export default function Login() {
 
               <div className="space-y-6">
                 <div className="space-y-4">
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      setCode(val);
-                      if (val.length === 6) {
-                        verifyOtp(val);
-                      }
-                    }}
-                    placeholder="000000"
-                    disabled={loading || timeLeft <= 0}
-                    className="w-full px-4 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF5A5F] focus:border-transparent outline-none transition-all text-center text-2xl tracking-[0.5em] font-medium disabled:opacity-50"
-                  />
+                  <div className="flex justify-between gap-2" onPaste={handlePaste}>
+                    {codeArray.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => {
+                          inputRefs.current[index] = el;
+                        }}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleInputChange(e.target.value, index)}
+                        onKeyDown={(e) => handleKeyDown(e, index)}
+                        disabled={loading || timeLeft <= 0}
+                        className="w-12 h-14 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FF5A5F] focus:border-transparent outline-none transition-all text-center text-xl font-bold text-gray-900 disabled:opacity-50"
+                      />
+                    ))}
+                  </div>
                   
                   {timeLeft <= 0 && (
                     <div className="text-center">
