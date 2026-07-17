@@ -69,6 +69,15 @@ jobs:
             --set-env-vars=APP_URL=${{ vars.APP_URL }}
             --set-env-vars=API_URL=${{ vars.API_URL }}
             --set-env-vars=FRONTEND_URL=${{ vars.FRONTEND_URL }}
+            --set-env-vars=ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
+            --set-env-vars=RATE_LIMIT_ENABLED=${{ secrets.RATE_LIMIT_ENABLED }}
+            --set-env-vars=DAILY_AI_COST_LIMIT_BRL=${{ secrets.DAILY_AI_COST_LIMIT_BRL }}
+            --set-env-vars=USD_TO_BRL=${{ secrets.USD_TO_BRL }}
+            --set-env-vars=WHISPER_COST_PER_CALL_BRL=${{ secrets.WHISPER_COST_PER_CALL_BRL }}
+            --set-env-vars=GROQ_INPUT_COST_USD=${{ secrets.GROQ_INPUT_COST_USD }}
+            --set-env-vars=GROQ_OUTPUT_COST_USD=${{ secrets.GROQ_OUTPUT_COST_USD }}
+            --set-env-vars=GEMINI_INPUT_COST_USD=${{ secrets.GEMINI_INPUT_COST_USD }}
+            --set-env-vars=GEMINI_OUTPUT_COST_USD=${{ secrets.GEMINI_OUTPUT_COST_USD }}
 
       - name: Show Output
         run: |

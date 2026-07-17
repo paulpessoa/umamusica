@@ -346,6 +346,160 @@ async function logCost(params: {
   }
 }
 
+// ============================================================
+// AI DAILY COST RATE LIMIT (por usuário / dia — reset meia-noite Brasília)
+// ============================================================
+
+// Master switch + teto diário (controláveis por env var)
+const RATE_LIMIT_ENABLED =
+  (process.env.RATE_LIMIT_ENABLED || "true").toLowerCase() === "true"
+const DAILY_AI_COST_LIMIT_BRL = parseFloat(
+  process.env.DAILY_AI_COST_LIMIT_BRL || "0.05"
+)
+const USD_TO_BRL = parseFloat(process.env.USD_TO_BRL || "5.5")
+const WHISPER_COST_PER_CALL_BRL = parseFloat(
+  process.env.WHISPER_COST_PER_CALL_BRL || "0.001"
+)
+
+// Preços por 1.000.000 de tokens (USD)
+const TOKEN_PRICES_USD = {
+  groq: {
+    input: parseFloat(process.env.GROQ_INPUT_COST_USD || "0.05"),
+    output: parseFloat(process.env.GROQ_OUTPUT_COST_USD || "0.08")
+  },
+  gemini: {
+    input: parseFloat(process.env.GEMINI_INPUT_COST_USD || "0.075"),
+    output: parseFloat(process.env.GEMINI_OUTPUT_COST_USD || "0.30")
+  }
+}
+
+// Converte tokens de uma chamada LLM em custo estimado em R$.
+function tokensToBRL(
+  provider: string | null | undefined,
+  inputTokens: number | null | undefined,
+  outputTokens: number | null | undefined
+): number {
+  const p = (provider || "groq").toLowerCase()
+  const prices =
+    (TOKEN_PRICES_USD as any)[p] || TOKEN_PRICES_USD.groq
+  const inTok = Number(inputTokens || 0)
+  const outTok = Number(outputTokens || 0)
+  const costUSD =
+    (inTok / 1_000_000) * prices.input + (outTok / 1_000_000) * prices.output
+  return costUSD * USD_TO_BRL
+}
+
+// Lê o custo de IA já acumulado hoje (R$) para um e-mail. 0 se não houver.
+async function getTodayAICostBRL(email: string): Promise<number> {
+  try {
+    // usage_date é calculado no timezone America/Sao_Paulo pelo Postgres.
+    // Aqui derivamos a mesma data no servidor para o filtro.
+    const spDate = new Date().toLocaleDateString("en-CA", {
+      timeZone: "America/Sao_Paulo"
+    }) // formato YYYY-MM-DD
+    const { data, error } = await supabase
+      .from("ai_usage_daily")
+      .select("cost_brl")
+      .eq("email", email.toLowerCase().trim())
+      .eq("usage_date", spDate)
+      .maybeSingle()
+    if (error) {
+      console.error("[RateLimit] getTodayAICostBRL error:", error.message)
+      return 0
+    }
+    return Number(data?.cost_brl || 0)
+  } catch (e: any) {
+    console.error("[RateLimit] getTodayAICostBRL failed:", e?.message || e)
+    return 0
+  }
+}
+
+// Soma custo de IA ao acumulado diário (atômico via RPC). Non-fatal.
+async function addAICost(
+  email: string | null | undefined,
+  costBRL: number
+): Promise<void> {
+  if (!email || !(costBRL > 0)) return
+  try {
+    const { error } = await supabase.rpc("increment_ai_usage", {
+      p_email: email.toLowerCase().trim(),
+      p_cost: costBRL
+    })
+    if (error) {
+      console.error("[RateLimit] addAICost RPC error:", error.message)
+    }
+  } catch (e: any) {
+    console.error("[RateLimit] addAICost failed:", e?.message || e)
+  }
+}
+
+// Registra o evento de bloqueio no banco e, se for o 1º do dia p/ este
+// usuário, notifica o admin por e-mail (evita spam de alertas).
+async function handleRateLimitHit(params: {
+  email: string
+  endpoint: string
+  currentCostBRL: number
+  limitBRL: number
+}): Promise<void> {
+  const { email, endpoint, currentCostBRL, limitBRL } = params
+  let isFirstToday = false
+  try {
+    const { data, error } = await supabase.rpc("record_rate_limit_event", {
+      p_email: email.toLowerCase().trim(),
+      p_endpoint: endpoint,
+      p_cost: currentCostBRL,
+      p_limit: limitBRL
+    })
+    if (error) {
+      console.error("[RateLimit] record event RPC error:", error.message)
+    } else {
+      isFirstToday = data === true
+    }
+  } catch (e: any) {
+    console.error("[RateLimit] record event failed:", e?.message || e)
+  }
+
+  console.warn(
+    `[RateLimit] Limite diário atingido | email=${email} | endpoint=${endpoint} | gasto=R$${currentCostBRL.toFixed(4)} | teto=R$${limitBRL.toFixed(4)} | primeiroHoje=${isFirstToday}`
+  )
+
+  // Só envia e-mail ao admin no primeiro bloqueio do dia deste usuário.
+  if (!isFirstToday) return
+
+  const adminEmails = (process.env.ADMIN_EMAILS || "paulmspessoa@gmail.com")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const htmlContent = `
+    <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #FF5A5F; text-align: center; margin-bottom: 20px;">1Música - Alerta de Limite Diário</h2>
+      <div style="background: #ff9800; color: white; padding: 16px; border-radius: 8px; font-weight: bold; margin-bottom: 20px;">
+        ⚠️ Um usuário atingiu o teto diário de custo de IA
+      </div>
+      <p><strong>Usuário:</strong> ${email}</p>
+      <p><strong>Endpoint:</strong> <code>${endpoint}</code></p>
+      <p><strong>Gasto hoje:</strong> R$ ${currentCostBRL.toFixed(4)}</p>
+      <p><strong>Teto configurado:</strong> R$ ${limitBRL.toFixed(4)}</p>
+      <p style="color: #555; font-size: 13px;">O usuário foi bloqueado com uma mensagem amigável e orientado a finalizar a composição. Este alerta é enviado apenas uma vez por dia por usuário.</p>
+      <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 24px 0;" />
+      <p style="font-size: 11px; color: #999; text-align: center;">E-mail automático da Central de Limites do 1Música.</p>
+    </div>
+  `
+
+  for (const adminEmail of adminEmails) {
+    await sendEmailViaBrevo({
+      to: adminEmail,
+      subject: "[1Música] Usuário atingiu o limite diário de IA",
+      htmlContent
+    })
+  }
+}
+
+// Mensagem amigável exibida ao usuário quando o teto é atingido.
+const RATE_LIMIT_USER_MESSAGE =
+  'Você já usou bastante o compositor hoje! 🎵 Para manter o serviço rápido e gratuito para todos, o assistente descansa por hoje. Você pode voltar amanhã, ou já finalizar sua música com o que conversamos até aqui clicando em "Finalizar e Compor".'
+
 app.use(express.json({ limit: "25mb" }))
 
 // Disable caching for all API responses
@@ -418,6 +572,46 @@ async function verifySession(
     })
   }
   return verified
+}
+
+// Middleware: exige login E aplica o teto diário de custo de IA.
+// Usado nas rotas pré-pagamento (chat, voz). Anexa req.userEmail
+// (e-mail verificado do token) para as rotas usarem com confiança.
+async function enforceAICostLimit(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): Promise<void> {
+  // Sempre exige sessão válida (o chat deixou de ser anônimo).
+  const verified = await verifySession(req, res)
+  if (!verified) return // verifySession já respondeu 401
+
+  ;(req as any).userEmail = verified.email
+  ;(req as any).userId = verified.userId
+
+  // Bypass total quando desligado por env (modo teste).
+  if (!RATE_LIMIT_ENABLED) return next()
+
+  const spent = await getTodayAICostBRL(verified.email)
+  if (spent >= DAILY_AI_COST_LIMIT_BRL) {
+    // Registra evento + notifica admin (1x/dia) sem bloquear a resposta.
+    handleRateLimitHit({
+      email: verified.email,
+      endpoint: `${req.method} ${req.path}`,
+      currentCostBRL: spent,
+      limitBRL: DAILY_AI_COST_LIMIT_BRL
+    }).catch((e) =>
+      console.error("[RateLimit] handleRateLimitHit failed:", e?.message || e)
+    )
+
+    res.status(429).json({
+      error: RATE_LIMIT_USER_MESSAGE,
+      errorType: "RATE_LIMIT_DAILY"
+    })
+    return
+  }
+
+  return next()
 }
 
 // ============================================================
@@ -1246,9 +1440,11 @@ app.get("/api/users/me", async (req, res) => {
 })
 
 // ─── Chat Interview (Text) ────────────────────────────────
-app.post("/api/chat", rateLimit(40, 10 * 60 * 1000), async (req, res) => {
+app.post("/api/chat", enforceAICostLimit, async (req, res) => {
   try {
-    const { messages, email, name } = req.body
+    const { messages, name } = req.body
+    // E-mail confiável vem do token verificado (não do corpo).
+    const email = (req as any).userEmail as string
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: "Mensagens inválidas" })
     }
@@ -1336,6 +1532,13 @@ Instruções:
 
     let aiText = response.text || "Desculpe, pode repetir?"
 
+    // Custo em R$ desta conversa (soma chamada principal + follow-up).
+    let turnCostBRL = tokensToBRL(
+      response.provider,
+      response.usage?.inputTokens,
+      response.usage?.outputTokens
+    )
+
     // ─── Handle save_user_name tool call ─────────────────────
     let nameSaved: string | null = null
     const toolCalls: any[] =
@@ -1381,6 +1584,11 @@ Instruções:
               config: { systemInstruction, temperature: 0.8 }
             })
             if (r2.text) aiText = r2.text
+            turnCostBRL += tokensToBRL(
+              r2.provider,
+              r2.usage?.inputTokens,
+              r2.usage?.outputTokens
+            )
           } catch (e: any) {
             console.error("[Chat] Falha ao salvar nome:", e?.message || e)
           }
@@ -1398,6 +1606,9 @@ Instruções:
       model: "gemini-3.5-flash",
       entryMode: "chat"
     })
+
+    // Acumula o custo real desta conversa no teto diário (por e-mail).
+    await addAICost(email, turnCostBRL)
 
     res.json({
       text: aiText,
@@ -1420,7 +1631,7 @@ Instruções:
 // ─── Speech-to-Text (Groq Whisper) ───────────────────────────
 app.post(
   "/api/speech-to-text",
-  rateLimit(20, 10 * 60 * 1000),
+  enforceAICostLimit,
   async (req, res) => {
     try {
       const { audio, mimeType } = req.body
@@ -1471,9 +1682,13 @@ app.post(
         stage: "transcription",
         provider: "groq",
         model: "whisper-large-v3",
-        apiCost: null,
-        notes: "groq-whisper-large-v3"
+        apiCost: WHISPER_COST_PER_CALL_BRL,
+        notes: "groq-whisper-large-v3",
+        email: (req as any).userEmail || null
       })
+
+      // Whisper não expõe tokens; usa custo fixo estimado no teto diário.
+      await addAICost((req as any).userEmail, WHISPER_COST_PER_CALL_BRL)
 
       res.json({ transcript })
     } catch (error: any) {
@@ -2129,6 +2344,15 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
       outputTokens: modelResponse.usage.outputTokens ?? null,
       model: "gemini-3.5-flash"
     })
+    // Contabiliza no acumulado diário (não bloqueia: usuário já pagou).
+    await addAICost(
+      order.email,
+      tokensToBRL(
+        modelResponse.provider,
+        modelResponse.usage.inputTokens,
+        modelResponse.usage.outputTokens
+      )
+    )
   }
 
   const base = parseSongMetadata(modelResponse.text || "")
@@ -2665,6 +2889,28 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
     const songMetadata = parseSongMetadata(modelResponse.text || "")
     if (!songMetadata || !songMetadata.lyrics) {
       throw new Error("Falha ao reestruturar a letra revisada.")
+    }
+
+    // Contabiliza o custo do LLM de revisão no acumulado diário.
+    // Não bloqueia: o usuário já pagou por este pedido.
+    if (modelResponse.usage) {
+      await logCost({
+        orderId: order.id,
+        email: order.email,
+        stage: "revise",
+        provider: modelResponse.provider || "groq",
+        inputTokens: modelResponse.usage.inputTokens ?? null,
+        outputTokens: modelResponse.usage.outputTokens ?? null,
+        model: "gemini-3.5-flash"
+      })
+      await addAICost(
+        order.email,
+        tokensToBRL(
+          modelResponse.provider,
+          modelResponse.usage.inputTokens,
+          modelResponse.usage.outputTokens
+        )
+      )
     }
 
     const audioStoragePath = await generateLyriaForOrder(order, songMetadata)

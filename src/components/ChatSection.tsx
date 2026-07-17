@@ -3,16 +3,17 @@ import { Send, Mic, MicOff, Loader2 } from "lucide-react"
 import { motion } from "motion/react"
 import { ChatMessage } from "../types"
 import { useAuth } from "../contexts/AuthContext"
+import { apiFetch } from "../lib/api"
 
 interface ChatSectionProps {
-  email: string
+  // email é mantido para compatibilidade; o backend agora usa o e-mail do token.
+  email?: string
   name?: string
   onFinishChat: (transcript: ChatMessage[]) => void
   initialMessages?: ChatMessage[]
 }
 
 export default function ChatSection({
-  email,
   name,
   onFinishChat,
   initialMessages
@@ -48,6 +49,8 @@ export default function ChatSection({
   )
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  // Quando o usuário atinge o teto diário de IA, bloqueamos os inputs.
+  const [rateLimited, setRateLimited] = useState(false)
 
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false)
@@ -111,14 +114,10 @@ export default function ChatSection({
     setIsTyping(true)
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/chat`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: updatedMessages, email, name })
-        }
-      )
+      const response = await apiFetch(`/api/chat`, {
+        method: "POST",
+        body: JSON.stringify({ messages: updatedMessages, name })
+      })
 
       const data = await response.json().catch(() => ({}))
 
@@ -140,6 +139,10 @@ export default function ChatSection({
           }
         ])
       } else {
+        // Limite diário atingido: bloqueia os inputs e mostra aviso amigável.
+        if (data.errorType === "RATE_LIMIT_DAILY") {
+          setRateLimited(true)
+        }
         // Show specific rate limit or server error message directly in chat
         setMessages((prev: ChatMessage[]) => [
           ...prev,
@@ -228,22 +231,31 @@ export default function ChatSection({
         const base64data = (reader.result as string).split(",")[1]
 
         try {
-          const response = await fetch(
-            `${import.meta.env.VITE_API_URL || ""}/api/speech-to-text`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                audio: base64data,
-                mimeType: "audio/webm"
-              })
-            }
-          )
+          const response = await apiFetch(`/api/speech-to-text`, {
+            method: "POST",
+            body: JSON.stringify({
+              audio: base64data,
+              mimeType: "audio/webm"
+            })
+          })
 
           const data = await response.json().catch(() => ({}))
           const transcript = data.transcript || ""
 
-          if (transcript) {
+          if (!response.ok && data.errorType === "RATE_LIMIT_DAILY") {
+            setRateLimited(true)
+            setMessages((prev) => [
+              ...prev,
+              {
+                sender: "ai",
+                text: data.error,
+                timestamp: new Date().toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit"
+                })
+              }
+            ])
+          } else if (transcript) {
             await handleSendMessage(transcript)
           } else {
             setMessages((prev) => [
@@ -389,11 +401,13 @@ export default function ChatSection({
                     e.key === "Enter" && handleSendMessage(inputValue)
                   }
                   placeholder={
-                    isRecording
-                      ? "🔴 Gravando áudio..."
-                      : "Digite sua mensagem..."
+                    rateLimited
+                      ? "Limite diário atingido — volte amanhã 🌙"
+                      : isRecording
+                        ? "🔴 Gravando áudio..."
+                        : "Digite sua mensagem..."
                   }
-                  disabled={isTyping || isRecording}
+                  disabled={isTyping || isRecording || rateLimited}
                   className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF5A5F]/15 disabled:opacity-55"
                 />
 
@@ -405,7 +419,7 @@ export default function ChatSection({
                         ? handleSendMessage(inputValue)
                         : toggleRecord()
                   }
-                  disabled={isTyping || isProcessingAudio}
+                  disabled={isTyping || isProcessingAudio || rateLimited}
                   className={`p-3 rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer shrink-0 ${
                     isRecording
                       ? "bg-red-500 text-white animate-pulse scale-110"
