@@ -13,9 +13,40 @@ import { ChatMessage, Order, MusicStatus, SongMetadata } from "./src/types.js"
 // Load environment variables
 dotenv.config()
 
+// Prevent local system shell GOOGLE_API_KEY from overriding project GEMINI_API_KEY
+if (process.env.GEMINI_API_KEY) {
+  delete process.env.GOOGLE_API_KEY
+}
+
 const app = express()
-app.use(cors())
 const PORT = parseInt(process.env.PORT || "3000", 10)
+
+// ─── CORS ─────────────────────────────────────────────────────
+// Explicitly allow the Vercel frontend and localhost dev origins.
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "https://umamusica.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:5173",
+]
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true)
+      if (allowedOrigins.includes(origin)) return callback(null, true)
+      callback(new Error(`CORS blocked: ${origin}`))
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+)
+// Respond to all OPTIONS preflight requests immediately
+app.options("*", cors())
+
+// ─── Body Parsers ─────────────────────────────────────────────
+app.use(express.json({ limit: "10mb" }))
+app.use(express.urlencoded({ extended: true }))
 
 // ─── Brevo API Email Helper (No IP restrictions) ──────────────
 async function sendEmailViaBrevo(params: {
