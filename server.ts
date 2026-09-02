@@ -665,7 +665,7 @@ async function enforceAICostLimit(
 const PREFER_GROQ = true
 
 // ─── Google Gemini model (single, good cost-benefit) ─────────
-const GEMINI_CHAT_MODEL = "gemini-3.5-flash"
+const GEMINI_CHAT_MODEL = "gemini-1.5-flash"
 
 // Legacy/deprecated Gemini names → map to the single current model
 const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
@@ -674,7 +674,7 @@ const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
   "gemini-2.0-flash": GEMINI_CHAT_MODEL,
   "gemini-2.0-flash-lite": GEMINI_CHAT_MODEL,
   "gemini-flash-latest": GEMINI_CHAT_MODEL,
-  "gemini-3.5-flash-latest": GEMINI_CHAT_MODEL,
+  "gemini-1.5-flash-latest": GEMINI_CHAT_MODEL,
   "gemini-3.1-flash-lite": GEMINI_CHAT_MODEL
 }
 
@@ -1565,7 +1565,7 @@ Instruções:
     }))
 
     const response = await generateContentWithFallback({
-      model: "gemini-3.5-flash",
+      model: "gemini-1.5-flash",
       contents: chatContents,
       config: { systemInstruction, temperature: 0.8 },
       tools: PREFER_GROQ ? openaiTools : geminiTools
@@ -1620,7 +1620,7 @@ Instruções:
               }
             ]
             const r2 = await generateContentWithFallback({
-              model: "gemini-3.5-flash",
+              model: "gemini-1.5-flash",
               contents: followContents,
               config: { systemInstruction, temperature: 0.8 }
             })
@@ -1644,7 +1644,7 @@ Instruções:
       provider: response.provider || "groq",
       inputTokens: response.usage?.inputTokens ?? null,
       outputTokens: response.usage?.outputTokens ?? null,
-      model: "gemini-3.5-flash",
+      model: "gemini-1.5-flash",
       entryMode: "chat"
     })
 
@@ -2340,7 +2340,7 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
 `
 
   const modelResponse = await generateContentWithFallback({
-    model: "gemini-3.5-flash",
+    model: "gemini-1.5-flash",
     contents: [analysisPrompt],
     config: {
       responseMimeType: "application/json",
@@ -2383,7 +2383,7 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
       provider: modelResponse.provider || "groq",
       inputTokens: modelResponse.usage.inputTokens ?? null,
       outputTokens: modelResponse.usage.outputTokens ?? null,
-      model: "gemini-3.5-flash"
+      model: "gemini-1.5-flash"
     })
     // Contabiliza no acumulado diário (não bloqueia: usuário já pagou).
     await addAICost(
