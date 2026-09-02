@@ -3322,6 +3322,14 @@ performHardDeleteCleanup()
 setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000)
 
 // ============================================================
+// HEALTH CHECK (usado pelo Railway e outros load balancers)
+// ============================================================
+
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ status: "ok", uptime: process.uptime() })
+})
+
+// ============================================================
 // VITE DEV / PRODUCTION SERVING
 // ============================================================
 

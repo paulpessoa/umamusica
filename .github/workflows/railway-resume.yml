@@ -1,0 +1,21 @@
+name: Railway - Retomar de manha (08:00 BRT)
+
+on:
+  schedule:
+    # 08:00 BRT = 11:00 UTC
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retomar servico no Railway (numReplicas=1)
+        run: |
+          echo "Retomando servico Railway..."
+          curl -s -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId: \\\"${{ secrets.RAILWAY_SERVICE_ID }}\\\", environmentId: \\\"${{ secrets.RAILWAY_ENVIRONMENT_ID }}\\\", input: { numReplicas: 1 }) }\"}" \
+            | tee response.json
+          echo "Retomado em $(date)"

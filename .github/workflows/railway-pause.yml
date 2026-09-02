@@ -1,0 +1,21 @@
+name: Railway - Pausar de madrugada (02:00 BRT)
+
+on:
+  schedule:
+    # 02:00 BRT = 05:00 UTC
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  pause:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pausar servico no Railway (numReplicas=0)
+        run: |
+          echo "Pausando servico Railway..."
+          curl -s -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId: \\\"${{ secrets.RAILWAY_SERVICE_ID }}\\\", environmentId: \\\"${{ secrets.RAILWAY_ENVIRONMENT_ID }}\\\", input: { numReplicas: 0 }) }\"}" \
+            | tee response.json
+          echo "Pausado em $(date)"
