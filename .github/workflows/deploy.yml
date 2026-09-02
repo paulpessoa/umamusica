@@ -17,9 +17,10 @@ jobs:
 
       - name: Deploy to Railway
         env:
+          # RAILWAY_TOKEN deve ser um Project Token gerado em:
+          # railway.app → project → Settings → Tokens → New Token
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project add1fc8c-f6e9-4a21-a12d-7bceb5ee4f3a --service 9f430e99-14e4-4b59-bb10-be3d52978849 --environment 69b37815-3a07-4615-88d1-69cf03171ba5
           railway up --service umamusica --detach
           echo "## 🚀 Deployed to Railway!" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** https://umamusica-production.up.railway.app" >> $GITHUB_STEP_SUMMARY
