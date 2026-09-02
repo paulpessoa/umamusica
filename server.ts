@@ -627,8 +627,8 @@ async function enforceAICostLimit(
   const verified = await verifySession(req, res)
   if (!verified) return // verifySession já respondeu 401
 
-  ;(req as any).userEmail = verified.email
-  ;(req as any).userId = verified.userId
+    ; (req as any).userEmail = verified.email
+    ; (req as any).userId = verified.userId
 
   // Bypass total quando desligado por env (modo teste).
   if (!RATE_LIMIT_ENABLED) return next()
@@ -665,7 +665,7 @@ async function enforceAICostLimit(
 const PREFER_GROQ = true
 
 // ─── Google Gemini model (single, good cost-benefit) ─────────
-const GEMINI_CHAT_MODEL = "gemini-1.5-flash"
+const GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"
 
 // Legacy/deprecated Gemini names → map to the single current model
 const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
@@ -673,8 +673,7 @@ const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
   "gemini-1.5-pro": GEMINI_CHAT_MODEL,
   "gemini-2.0-flash": GEMINI_CHAT_MODEL,
   "gemini-2.0-flash-lite": GEMINI_CHAT_MODEL,
-  "gemini-flash-latest": GEMINI_CHAT_MODEL,
-  "gemini-1.5-flash-latest": GEMINI_CHAT_MODEL,
+  "gemini-3.5-flash-lite": GEMINI_CHAT_MODEL,
   "gemini-3.1-flash-lite": GEMINI_CHAT_MODEL
 }
 
@@ -832,10 +831,10 @@ async function generateContentWithFallback(params: {
     const agg = new Error(
       `All AI providers failed. Groq: ${groqErr?.message || groqErr}. Gemini: ${geminiErr?.status || "n/a"} ${geminiErr?.message || geminiErr}.`
     )
-    ;(agg as any).providerErrors = {
-      groq: { message: groqErr?.message || String(groqErr) },
-      gemini: { status: geminiErr?.status, message: geminiErr?.message }
-    }
+      ; (agg as any).providerErrors = {
+        groq: { message: groqErr?.message || String(groqErr) },
+        gemini: { status: geminiErr?.status, message: geminiErr?.message }
+      }
     throw agg
   }
 }
@@ -1215,20 +1214,20 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
       .eq("email", cleanEmail)
       .lt("expires_at", new Date().toISOString())
 
-    // Best-effort global cleanup of expired OTPs (non-blocking)
-    ;(async () => {
-      try {
-        await supabase
-          .from("otp_codes")
-          .delete()
-          .lt("expires_at", new Date().toISOString())
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[OTP] Global expired cleanup completed")
+      // Best-effort global cleanup of expired OTPs (non-blocking)
+      ; (async () => {
+        try {
+          await supabase
+            .from("otp_codes")
+            .delete()
+            .lt("expires_at", new Date().toISOString())
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[OTP] Global expired cleanup completed")
+          }
+        } catch (e) {
+          console.warn("[OTP] Global cleanup failed:", e)
         }
-      } catch (e) {
-        console.warn("[OTP] Global cleanup failed:", e)
-      }
-    })()
+      })()
 
     // Store OTP in Supabase
     await supabase.from("otp_codes").insert({
@@ -1565,7 +1564,7 @@ Instruções:
     }))
 
     const response = await generateContentWithFallback({
-      model: "gemini-1.5-flash",
+      model: "gemini-3.5-flash-lite",
       contents: chatContents,
       config: { systemInstruction, temperature: 0.8 },
       tools: PREFER_GROQ ? openaiTools : geminiTools
@@ -1620,7 +1619,7 @@ Instruções:
               }
             ]
             const r2 = await generateContentWithFallback({
-              model: "gemini-1.5-flash",
+              model: "gemini-3.5-flash-lite",
               contents: followContents,
               config: { systemInstruction, temperature: 0.8 }
             })
@@ -1644,7 +1643,7 @@ Instruções:
       provider: response.provider || "groq",
       inputTokens: response.usage?.inputTokens ?? null,
       outputTokens: response.usage?.outputTokens ?? null,
-      model: "gemini-1.5-flash",
+      model: "gemini-3.5-flash-lite",
       entryMode: "chat"
     })
 
@@ -2340,7 +2339,7 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
 `
 
   const modelResponse = await generateContentWithFallback({
-    model: "gemini-1.5-flash",
+    model: "gemini-3.5-flash-lite",
     contents: [analysisPrompt],
     config: {
       responseMimeType: "application/json",
@@ -2383,7 +2382,7 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
       provider: modelResponse.provider || "groq",
       inputTokens: modelResponse.usage.inputTokens ?? null,
       outputTokens: modelResponse.usage.outputTokens ?? null,
-      model: "gemini-1.5-flash"
+      model: "gemini-3.5-flash-lite"
     })
     // Contabiliza no acumulado diário (não bloqueia: usuário já pagou).
     await addAICost(
