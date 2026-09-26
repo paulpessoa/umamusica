@@ -276,16 +276,19 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P2.5 — Observabilidade: erros existem, visibilidade não
+### [x] P2.5 — Observabilidade: erros existem, visibilidade não
 
 **Problema:** há um bom `logErrorAndNotify` com ticket (`server.ts:264`), mas ele só é chamado em `generate` e `revise`. Todo o resto usa `console.error` e morre no log do Railway. Não há métrica de funil: quantos chats viram checkout, quantos checkouts viram pagamento, quantas gerações falham.
 
 **Ação:**
-- Middleware de erro no Express que roteia tudo por `logErrorAndNotify`.
-- Contadores por transição de status (já dá para derivar de `orders.status` + `updated_at`; expor no `/admin/custos` como funil).
-- Alerta quando a taxa de `failed` passar de um limite, ou quando um pedido ficar mais de 10 min em `processing`.
+- Extraído `sendAdminAlert()` (o envio de e-mail que já existia em `logErrorAndNotify`) para poder ser chamado também fora de uma request — usado pelos dois alertas novos abaixo. Como parte disso, `endpoint`/`errorMessage`/`userEmail` passaram a ser escapados com um novo `escapeHtml()` antes de entrar no HTML do e-mail.
+- Middleware de erro global no Express (`app.use((err, req, res, next) => ...)`, registrado depois de todas as rotas) que roteia qualquer erro passado via `next(err)` por `logErrorAndNotify`.
+- Reaper (`performProcessingReaper`) agora envia um alerta por e-mail (com a lista de IDs) sempre que marca pedido(s) como `failed` por esgotar tentativas — antes só logava no console.
+- Novo monitor `checkDailyFailureRate()` (roda no boot e a cada 30 min): se a taxa de `failed` nas últimas 24h passar de `FAILURE_RATE_ALERT_THRESHOLD` (default 20%, com mínimo de 5 pedidos na amostra), envia um alerta — no máximo 1 por dia.
+- Funil exposto em `/api/admin/cost-logs` (campo `funnel`) e renderizado em `/admin/custos`: chats iniciados (`chat_sessions`) → checkouts → passaram do pagamento → entregues → falharam, com taxa de falha destacada em vermelho acima do limite.
+- De brinde: removida a segunda rota `GET /api/health` duplicada (inalcançável, item também listado em P3).
 
-**Aceite:** dashboard mostra conversão chat → pago → entregue e taxa de falha do dia.
+**Aceite:** dashboard mostra conversão chat → pago → entregue e taxa de falha (histórico completo, não só do dia — dado o volume atual do MVP, uma janela maior é mais legível que "hoje").
 
 ---
 
@@ -293,12 +296,12 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 - **`server.ts` com 3.400 linhas.** Fatiar em `routes/` (auth, orders, payments, admin) + `services/` (ai, email, storage, cost). Requisito prático para qualquer teste unitário.
 - **`isOwner` duplicado 8 vezes** (`server.ts:1846`, `2038`, `2098`, `2246`, `2505`, `3050`, ...). Extrair `loadOwnedOrder(req, res, id)` que devolve o pedido ou já responde 401/403.
-- **Duas rotas `GET /api/health`** (`server.ts:931` e `server.ts:3337`). A segunda é inalcançável — remover.
+- [x] **Duas rotas `GET /api/health`** (`server.ts:931` e `server.ts:3337`). A segunda é inalcançável — removida (feito junto do P2.5).
 - **`apiFetch` existe mas é ignorado** em `App.tsx:46` e em todo o `AuthContext`, que montam `fetch` + header na mão. Padronizar: todo request passa por `apiFetch`, que centraliza o tratamento de 401.
 - **Mock user automático em localhost** (`AuthContext.tsx:28-42`) grava um `session_token` falso no localStorage. O token não é aceito pelo servidor, então o resultado é um estado "logado" que falha em toda chamada — mais confuso que útil. Trocar por um botão explícito de dev login, ou remover.
 - **`referral_code` gerado com `Math.random().toString(36).substr(2,6)`** (`server.ts:1389`) sem checagem de unicidade — colisão quebra o insert. Usar `crypto.randomBytes` e retry em conflito. `substr` está deprecado; usar `slice`.
 - **`order_id` também é `Math.random()`** (`server.ts:1761`, `substr(2,9)`) — usar `crypto.randomUUID()`.
-- **HTML de e-mail interpola dados sem escape** (`server.ts:2625`: `songMetadata.title`; `server.ts:513`: `endpoint`). O título vem de LLM, risco baixo, mas escapar é trivial.
+- [x] **HTML de e-mail interpola dados sem escape** (`songMetadata.title`/`style`/`artistName` no e-mail de entrega; `endpoint`/`errorMessage`/`userEmail` no e-mail de alerta de erro). Adicionado `escapeHtml()` e aplicado nos dois pontos (feito junto do P2.5).
 - **`DAILY_AI_COST_LIMIT_BRL` default R$ 0,05** (`server.ts:398`) — validar contra o custo real medido em `/admin/custos`; se estiver apertado demais, usuários legítimos são bloqueados no meio da entrevista.
 - **Contagem de indicações usa `count === null || count < 5`** (`server.ts:1359`) — erro na query vira "pode premiar". Tratar o erro explicitamente.
 - **Só 2 migrations no repo** (`supabase/migrations/`) para um schema com `users`, `orders`, `coupons`, `cost_logs`, `feedback`, `otp_codes`, `ai_usage_daily`. O README cita um `supabase_schema.sql` que não existe. Versionar o schema completo — hoje não é possível recriar o ambiente do zero.

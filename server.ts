@@ -141,6 +141,18 @@ function isRealMercadoPagoPayment(paymentId?: string) {
   return !!paymentId && /^\d+$/.test(paymentId)
 }
 
+// Escape untrusted text before interpolating it into an HTML e-mail body
+// (song titles come from the LLM, endpoints/messages can contain user
+// input via query/body echoed back in error logs).
+function escapeHtml(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 // ─── Nightly Railway pause window (P2.4) ──────────────────────
 // The service is scaled to 0 replicas 02:00–08:00 BRT (see
 // .github/workflows/railway-pause.yml / railway-resume.yml). A Pix
@@ -281,6 +293,32 @@ function parseSongMetadata(rawText: string): SongMetadata | null {
   } as SongMetadata
 }
 
+// ─── Admin alert e-mail (P2.5 observability) ──────────────────
+// Small, generic wrapper around sendEmailViaBrevo shared by
+// logErrorAndNotify (per-request errors, below) and the operational
+// alerts fired from background jobs (reaper, failure-rate monitor) that
+// have no `req` to log against.
+async function sendAdminAlert(params: {
+  subject: string
+  alertHeader: string
+  alertColor?: string
+  bodyHtml: string
+}): Promise<void> {
+  const adminEmail = "paulmspessoa@gmail.com"
+  const htmlContent = `
+    <div style="font-family: 'Segoe UI', sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #FF5A5F; text-align: center; margin-bottom: 20px;">1Música - Central de Alertas</h2>
+      <div style="background: ${params.alertColor || "#dd4b39"}; color: white; padding: 16px; border-radius: 8px; font-weight: bold; margin-bottom: 20px;">
+        ⚠️ ${params.alertHeader}
+      </div>
+      ${params.bodyHtml}
+      <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 24px 0;" />
+      <p style="font-size: 11px; color: #999; text-align: center;">Este é um e-mail automático enviado pela Central de Logs do 1Música.</p>
+    </div>
+  `
+  await sendEmailViaBrevo({ to: adminEmail, subject: params.subject, htmlContent })
+}
+
 // Global logger and Brevo notifier
 async function logErrorAndNotify(
   error: any,
@@ -327,7 +365,6 @@ async function logErrorAndNotify(
   }
 
   // 2. Notify Admin via Brevo
-  const adminEmail = "paulmspessoa@gmail.com"
   let subject = `[Ticket ${ticketId.substring(0, 8)}] Erro Crítico no Sistema`
   let alertHeader = "Erro Desconhecido"
   let alertColor = "#dd4b39"
@@ -337,7 +374,7 @@ async function logErrorAndNotify(
     subject = `[Ticket ${ticketId.substring(0, 8)}] URGENTE: Bloqueio de Filtro de Segurança (Lyria)`
     alertHeader = "Filtro de Segurança da Google (Lyria) Bloqueou a Geração"
     alertColor = "#ff9800"
-    actionText = `O usuário <strong>${userEmail || "desconhecido"}</strong> teve sua letra barrada pela política do Google. O sistema já liberou para que ele edite a letra sem custo adicional.`
+    actionText = `O usuário <strong>${escapeHtml(userEmail || "desconhecido")}</strong> teve sua letra barrada pela política do Google. O sistema já liberou para que ele edite a letra sem custo adicional.`
   } else if (errorType === "QUOTA_EXCEEDED") {
     subject = `[Ticket ${ticketId.substring(0, 8)}] URGENTE: Cotas de IA Excedidas! Recarregue a Conta!`
     alertHeader = "Cota de Créditos ou Limite do Google/Gemini Atingido"
@@ -346,26 +383,17 @@ async function logErrorAndNotify(
       "<strong>Atenção:</strong> Os limites da API do Google/Gemini foram atingidos. Recarregue a conta do Google Cloud Console o mais rápido possível para reprocessar os pedidos na fila."
   }
 
-  const htmlContent = `
-    <div style="font-family: 'Segoe UI', sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px; background: #ffffff;">
-      <h2 style="color: #FF5A5F; text-align: center; margin-bottom: 20px;">1Música - Central de Alertas</h2>
-      <div style="background: ${alertColor}; color: white; padding: 16px; border-radius: 8px; font-weight: bold; margin-bottom: 20px;">
-        ⚠️ ${alertHeader}
-      </div>
-      <p><strong>ID do Ticket:</strong> <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${ticketId}</code></p>
-      <p><strong>Endpoint:</strong> <code>${endpoint}</code></p>
-      <p><strong>Usuário Afetado:</strong> ${userEmail || "Não especificado"}</p>
-      <p><strong>Mensagem do Erro:</strong> <pre style="background: #f9f9f9; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; border: 1px solid #e1e1e1; overflow-x: auto; white-space: pre-wrap;">${errorMessage}</pre></p>
-      <p>${actionText}</p>
-      <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 24px 0;" />
-      <p style="font-size: 11px; color: #999; text-align: center;">Este é um e-mail automático enviado pela Central de Logs do 1Música.</p>
-    </div>
-  `
-
-  await sendEmailViaBrevo({
-    to: adminEmail,
+  await sendAdminAlert({
     subject,
-    htmlContent
+    alertHeader,
+    alertColor,
+    bodyHtml: `
+      <p><strong>ID do Ticket:</strong> <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${ticketId}</code></p>
+      <p><strong>Endpoint:</strong> <code>${escapeHtml(endpoint)}</code></p>
+      <p><strong>Usuário Afetado:</strong> ${escapeHtml(userEmail || "Não especificado")}</p>
+      <p><strong>Mensagem do Erro:</strong> <pre style="background: #f9f9f9; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; border: 1px solid #e1e1e1; overflow-x: auto; white-space: pre-wrap;">${escapeHtml(errorMessage)}</pre></p>
+      <p>${actionText}</p>
+    `
   })
 
   return ticketId
@@ -1240,6 +1268,24 @@ app.get("/api/admin/cost-logs", async (req, res) => {
 
     const revenue = paidOrders * 1.0
 
+    // Funil (P2.5): quantos chats viram checkout, quantos checkouts viram
+    // pagamento, quantos pagamentos viram música entregue, e a taxa de
+    // falha — derivado direto de orders.status + chat_sessions, sem
+    // precisar de uma tabela de eventos nova.
+    const [{ count: chatSessionsCount }, { data: allOrders, error: allOrdersErr }] =
+      await Promise.all([
+        supabase.from("chat_sessions").select("id", { count: "exact", head: true }),
+        supabase.from("orders").select("status")
+      ])
+
+    const byStatus: Record<string, number> = {}
+    for (const o of allOrders || []) {
+      byStatus[o.status] = (byStatus[o.status] || 0) + 1
+    }
+    const totalOrders = (allOrders || []).length
+    const pastCheckout = totalOrders - (byStatus["pending_payment"] || 0)
+    const failedCount = byStatus["failed"] || 0
+
     res.json({
       summary: {
         totalCost: Number(totalCost.toFixed(4)),
@@ -1257,6 +1303,17 @@ app.get("/api/admin/cost-logs", async (req, res) => {
         targetCostPerSong: LYRIA_API_COST,
         byStage
       },
+      funnel: allOrdersErr
+        ? null
+        : {
+            chatSessions: chatSessionsCount || 0,
+            checkouts: totalOrders,
+            pastCheckout,
+            completed: byStatus["completed"] || 0,
+            failed: failedCount,
+            failureRate: totalOrders > 0 ? Number((failedCount / totalOrders).toFixed(4)) : 0,
+            byStatus
+          },
       rows: rows || []
     })
   } catch (error: any) {
@@ -2933,10 +2990,10 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
           <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
           <p>Olá!</p>
-          <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
+          <p>Sua música personalizada <strong>"${escapeHtml(songMetadata.title)}"</strong> ficou pronta!</p>
           <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
-            <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
-            <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
+            <h3 style="margin: 0; color: #333;">${escapeHtml(songMetadata.title)}</h3>
+            <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${escapeHtml(songMetadata.style)} • Por: ${escapeHtml(songMetadata.artistName)}</p>
           </div>
           <div style="text-align: center; margin: 30px 0;">
             <a href="${frontendUrl}/musica/${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
@@ -3634,6 +3691,8 @@ async function performProcessingReaper() {
 
     if (!stuckOrders || stuckOrders.length === 0) return;
 
+    const failedOrderIds: string[] = []
+
     for (const order of stuckOrders) {
       const attempts = order.attempts || 0;
       if (attempts >= 3) {
@@ -3642,6 +3701,7 @@ async function performProcessingReaper() {
           .from("orders")
           .update({ status: "failed", updated_at: new Date().toISOString() })
           .eq("id", order.id);
+        failedOrderIds.push(order.id)
 
         if (order.payment_id?.startsWith("bonus_balance_") && order.user_id) {
           await supabase.rpc("increment_free_songs", { p_user_id: order.user_id })
@@ -3664,6 +3724,22 @@ async function performProcessingReaper() {
           .eq("id", order.id);
       }
     }
+
+    // P2.5: um pedido travado em `processing` por >10min é sempre anômalo
+    // (timeout, deploy, ou pause noturno pegando o request no meio) —
+    // avisar o admin em vez de só deixar no console do Railway.
+    if (failedOrderIds.length > 0) {
+      await sendAdminAlert({
+        subject: `[Reaper] ${failedOrderIds.length} pedido(s) travado(s) marcado(s) como failed`,
+        alertHeader: "Pedidos presos em 'processing' esgotaram as tentativas",
+        alertColor: "#dd4b39",
+        bodyHtml: `
+          <p>Os pedidos abaixo ficaram presos em <code>processing</code> por mais de 10 minutos, 3 vezes seguidas, e foram marcados como <code>failed</code> (crédito/cupom já devolvido quando aplicável):</p>
+          <ul>${failedOrderIds.map((id) => `<li><code>${escapeHtml(id)}</code></li>`).join("")}</ul>
+          <p>Verifique os logs do Railway em torno desses horários — normalmente indica timeout na Lyria, deploy no meio da geração, ou a pausa noturna pegando um request em andamento.</p>
+        `
+      }).catch((e) => console.error("[Reaper] Alert email failed:", e?.message || e))
+    }
   } catch (err) {
     console.error("[Reaper] Error:", err)
   }
@@ -3673,6 +3749,56 @@ async function performProcessingReaper() {
 performProcessingReaper()
 setInterval(performProcessingReaper, 5 * 60 * 1000)
 
+// ============================================================
+// FAILURE RATE MONITOR (P2.5 observability)
+// ============================================================
+// Watches the last 24h of orders and alerts (once per day) if the share
+// that ended up `failed` crosses a threshold — a signal that something
+// systemic broke (Lyria quota, MercadoPago, a bad deploy), not just the
+// occasional stuck order the reaper above already handles.
+const FAILURE_RATE_ALERT_THRESHOLD = Number(
+  process.env.FAILURE_RATE_ALERT_THRESHOLD || "0.2"
+)
+const FAILURE_RATE_MIN_SAMPLE = 5
+let lastFailureRateAlertDay = ""
+
+async function checkDailyFailureRate() {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { data: recentOrders, error } = await supabase
+      .from("orders")
+      .select("status")
+      .gte("created_at", since)
+
+    if (error || !recentOrders || recentOrders.length < FAILURE_RATE_MIN_SAMPLE) {
+      return
+    }
+
+    const failedCount = recentOrders.filter((o) => o.status === "failed").length
+    const rate = failedCount / recentOrders.length
+    if (rate < FAILURE_RATE_ALERT_THRESHOLD) return
+
+    const today = new Date().toISOString().slice(0, 10)
+    if (lastFailureRateAlertDay === today) return // no máximo 1 alerta/dia
+    lastFailureRateAlertDay = today
+
+    await sendAdminAlert({
+      subject: `[Alerta] Taxa de falha de ${(rate * 100).toFixed(0)}% nas últimas 24h`,
+      alertHeader: "Taxa de pedidos falhados acima do normal",
+      alertColor: "#e91e63",
+      bodyHtml: `
+        <p><strong>${failedCount}</strong> de <strong>${recentOrders.length}</strong> pedidos das últimas 24h terminaram como <code>failed</code> (${(rate * 100).toFixed(1)}%, limite configurado: ${(FAILURE_RATE_ALERT_THRESHOLD * 100).toFixed(0)}%).</p>
+        <p>Confira o funil em <code>/admin/custos</code> e os logs do Railway — pode ser cota da Lyria/Gemini esgotada, MercadoPago fora do ar, ou uma regressão no último deploy.</p>
+      `
+    })
+  } catch (err: any) {
+    console.error("[FailureRateMonitor] Error:", err?.message || err)
+  }
+}
+
+checkDailyFailureRate()
+setInterval(checkDailyFailureRate, 30 * 60 * 1000)
+
 // Reconcile pending payments on boot too — covers a manual restart or a
 // resume that happens before the railway-resume workflow's own call lands.
 reconcilePendingPayments().catch((e) =>
@@ -3680,11 +3806,19 @@ reconcilePendingPayments().catch((e) =>
 )
 
 // ============================================================
-// HEALTH CHECK (usado pelo Railway e outros load balancers)
+// GLOBAL ERROR HANDLER (P2.5 observability)
 // ============================================================
-
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({ status: "ok", uptime: process.uptime() })
+// Catches anything a route forwards via next(err) instead of handling
+// itself, so it still gets a ticket + admin e-mail via logErrorAndNotify
+// instead of just a console.error swallowed by the Railway logs.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logErrorAndNotify(err, req, "UNKNOWN", (req as any).userEmail || null).catch(
+    (e) => console.error("[GlobalErrorHandler] logErrorAndNotify failed:", e)
+  )
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Erro interno no servidor." })
+  }
 })
 
 // ============================================================
