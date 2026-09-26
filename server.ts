@@ -141,6 +141,64 @@ function isRealMercadoPagoPayment(paymentId?: string) {
   return !!paymentId && /^\d+$/.test(paymentId)
 }
 
+// Generate a referral code that doesn't collide with an existing one.
+// crypto.randomBytes is used instead of Math.random (higher entropy per
+// char), and we still check + retry since a 6-char code has a real
+// birthday-paradox collision chance once there are a few thousand users.
+async function generateUniqueReferralCode(): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = crypto.randomBytes(6).toString("hex").toUpperCase().slice(0, 6)
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("referral_code", code)
+      .maybeSingle()
+    if (!existing) return code
+  }
+  // Extremely unlikely fallback: a UUID slice is unique for all practical
+  // purposes, at the cost of not being as easy to type/share.
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()
+}
+
+// Fetch an order and verify the caller owns it (by user_id, preferred, or
+// legacy e-mail match), replacing the isOwner block copy-pasted across 8
+// order routes. On any failure this already writes the response (404/403)
+// and returns null — callers just check for that and `return`.
+// Not used by the two routes that expose completed orders publicly before
+// requiring auth (GET /api/orders/:id, GET /api/orders/:id/download) —
+// those need the order fetched before deciding whether auth is required
+// at all, which doesn't fit this shape.
+async function loadOwnedOrder(
+  res: express.Response,
+  verified: { userId?: string | null; email: string },
+  orderId: string,
+  select: string = "*"
+): Promise<any | null> {
+  const { data: order, error } = await supabase
+    .from("orders")
+    .select(select)
+    .eq("id", orderId)
+    .single()
+
+  if (error || !order) {
+    res.status(404).json({ error: "Pedido não encontrado" })
+    return null
+  }
+
+  const isOwner =
+    ((order as any).user_id &&
+      verified.userId &&
+      (order as any).user_id === verified.userId) ||
+    (order as any).email === verified.email.toLowerCase().trim()
+
+  if (!isOwner) {
+    res.status(403).json({ error: "Acesso proibido" })
+    return null
+  }
+
+  return order
+}
+
 // Escape untrusted text before interpolating it into an HTML e-mail body
 // (song titles come from the LLM, endpoints/messages can contain user
 // input via query/body echoed back in error logs).
@@ -1500,13 +1558,18 @@ app.post("/api/verify-otp", async (req, res) => {
           startOfMonth.setDate(1)
           startOfMonth.setHours(0, 0, 0, 0)
 
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from("users")
             .select("id", { count: "exact" })
             .eq("referred_by", referredBy)
             .gte("created_at", startOfMonth.toISOString())
 
-          if (count === null || count < 5) {
+          if (countError) {
+            console.error(
+              "[Referral] Failed to check monthly referral count, skipping bonus:",
+              countError.message
+            )
+          } else if (count !== null && count < 5) {
             // Referrer gets 1 free song
             await supabase.rpc("increment_free_songs", { p_user_id: referredBy })
 
@@ -1530,10 +1593,7 @@ app.post("/api/verify-otp", async (req, res) => {
         }
       }
 
-      const newReferralCode = Math.random()
-        .toString(36)
-        .substr(2, 6)
-        .toUpperCase()
+      const newReferralCode = await generateUniqueReferralCode()
 
       const { data: newUser, error: createError } = await supabase
         .from("users")
@@ -1972,7 +2032,7 @@ app.post("/api/checkout", async (req, res) => {
     // Build optimized structured prompt
     const optimizedPrompt = buildStructuredPrompt(chatTranscript)
 
-    const orderId = "order_" + Math.random().toString(36).substr(2, 9)
+    const orderId = crypto.randomUUID()
     let paymentId = "pay_" + Math.random().toString(36).substr(2, 15)
     let paymentQr = ""
     let paymentCopiaCola = ""
@@ -2044,24 +2104,8 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
     if (!verified) return
 
     const { id } = req.params
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", id)
-      .single()
-
-    if (error || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    // Verify ownership by user_id (preferred) or email (legacy fallback)
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id)
+    if (!order) return
 
     if (order.status !== "pending_payment") {
       return res
@@ -2247,27 +2291,12 @@ app.post("/api/orders/:id/simulate-payment", async (req, res) => {
     if (!verified) return
 
     const { id } = req.params
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("id, email, user_id")
-      .eq("id", id)
-      .single()
-
-    if (error || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id, "id, email, user_id")
+    if (!order) return
 
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ 
+      .update({
         status: "paid", 
         updated_at: new Date().toISOString(),
         payment_id: "simulated_" + Date.now()
@@ -2315,27 +2344,15 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     }
 
     // Fetch current order to verify ownership and see if it has a Mercado Pago payment to cancel
-    const { data: orderData, error: orderError } = await supabase
-      .from("orders")
-      .select("id, email, user_id, payment_id")
-      .eq("id", id)
-      .single()
+    const orderData = await loadOwnedOrder(
+      res,
+      verified,
+      id,
+      "id, email, user_id, payment_id"
+    )
+    if (!orderData) return
 
-    if (orderError || !orderData) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (orderData.user_id &&
-        verified.userId &&
-        orderData.user_id === verified.userId) ||
-      orderData.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
-
-    if (orderData && orderData.payment_id) {
+    if (orderData.payment_id) {
       const isMPPayment = isRealMercadoPagoPayment(orderData.payment_id)
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (isMPPayment && mpToken) {
@@ -2793,23 +2810,13 @@ app.post("/api/orders/:id/compose-lyrics", async (req, res) => {
     const verified = await verifySession(req, res)
     if (!verified) return
 
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("id, email, user_id, status")
-      .eq("id", req.params.id)
-      .single()
-
-    if (error || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(
+      res,
+      verified,
+      req.params.id,
+      "id, email, user_id, status"
+    )
+    if (!order) return
 
     if (order.status !== "paid") {
       return res
@@ -2839,24 +2846,9 @@ app.post("/api/orders/:id/generate", async (req, res) => {
 
     const { lyrics: customLyrics } = req.body
 
-    const { data: order, error: fetchError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", req.params.id)
-      .single()
-
-    if (fetchError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
+    const order = await loadOwnedOrder(res, verified, req.params.id)
+    if (!order) return
     fetchedOrder = order
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
 
     // Check current status before starting generation
     if (order.status === "completed") {
@@ -3168,24 +3160,9 @@ app.post("/api/orders/:id/revise", async (req, res) => {
     const verified = await verifySession(req, res)
     if (!verified) return
 
-    const { data: order, error: fetchError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", req.params.id)
-      .single()
-
-    if (fetchError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
+    const order = await loadOwnedOrder(res, verified, req.params.id)
+    if (!order) return
     fetchedOrder = order
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
 
     if (!["paid", "completed", "failed_safety"].includes(order.status)) {
       return res
@@ -3520,24 +3497,8 @@ app.delete("/api/orders/:id", async (req, res) => {
     const { reasonCategory, reasonDetails } = req.body
 
     // Get order to verify ownership
-    const { data: order, error: queryError } = await supabase
-      .from("orders")
-      .select("id, email, user_id")
-      .eq("id", id)
-      .single()
-
-    if (queryError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    // Verify user owns this order by user_id (preferred) or email (legacy)
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id, "id, email, user_id")
+    if (!order) return
 
     // Save feedback (required for deletion)
     await supabase.from("feedback").insert({
@@ -3578,23 +3539,8 @@ app.delete("/api/orders/:id/chat", async (req, res) => {
     const { id } = req.params
     const { reasonCategory, reasonDetails } = req.body
 
-    const { data: order, error: queryError } = await supabase
-      .from("orders")
-      .select("id, email, user_id")
-      .eq("id", id)
-      .single()
-
-    if (queryError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id, "id, email, user_id")
+    if (!order) return
 
     await supabase.from("feedback").insert({
       user_email: verified.email.toLowerCase().trim(),
