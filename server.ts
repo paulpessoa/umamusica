@@ -1060,13 +1060,56 @@ app.post("/api/feedback", async (req, res) => {
   }
 })
 
+// ─── Admin auth helper ────────────────────────────────────────
+// Accepts EITHER:
+// - `x-admin-key` matching ADMIN_DASHBOARD_KEY (constant-time compare —
+//   never the Supabase service role key, which grants full DB access and
+//   should never leave the server or be typed into a browser dashboard).
+// - a `session_token` (Bearer) belonging to a user in ADMIN_EMAILS.
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  // Compare against a fixed-length buffer first so the early return doesn't
+  // leak length information through timing, then do the real constant-time
+  // comparison only when lengths already match.
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
+}
+
+async function isAuthorizedAdmin(req: express.Request): Promise<boolean> {
+  const adminKey = req.headers["x-admin-key"]
+  const validKey = process.env.ADMIN_DASHBOARD_KEY || ""
+  if (typeof adminKey === "string" && validKey && timingSafeEqualStr(adminKey, validKey)) {
+    return true
+  }
+
+  const authHeader = req.headers["authorization"] || req.headers["Authorization"]
+  const bearer =
+    typeof authHeader === "string"
+      ? authHeader.replace(/^Bearer\s+/i, "").trim()
+      : ""
+  if (!bearer) return false
+
+  const adminEmails = (process.env.ADMIN_EMAILS || "paulmspessoa@gmail.com")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+
+  const { data: adminUser } = await supabase
+    .from("users")
+    .select("email")
+    .eq("session_token", bearer)
+    .single()
+
+  return !!(
+    adminUser && adminEmails.includes((adminUser.email || "").toLowerCase())
+  )
+}
+
 // ─── Admin: Migrate Orders to User ID ────────────────────────────────
 app.post("/api/admin/migrate-orders-userid", async (req, res) => {
   try {
-    const adminKey = req.headers["x-admin-key"]
-
-    // Simple protection: check for admin key
-    if (adminKey !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(await isAuthorizedAdmin(req))) {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 
@@ -1117,40 +1160,7 @@ app.post("/api/admin/migrate-orders-userid", async (req, res) => {
 // ─── Admin: Cost Logs (revenue vs spend monitor) ───────────
 app.get("/api/admin/cost-logs", async (req, res) => {
   try {
-    const adminKey = req.headers["x-admin-key"]
-    const authHeader =
-      req.headers["authorization"] || req.headers["Authorization"]
-    const bearer =
-      typeof authHeader === "string"
-        ? authHeader.replace(/^Bearer\s+/i, "").trim()
-        : ""
-
-    const validKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.ADMIN_DASHBOARD_KEY ||
-      ""
-    const adminEmails = (process.env.ADMIN_EMAILS || "paulmspessoa@gmail.com")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-
-    let authorized = !!adminKey && adminKey === validKey
-
-    if (!authorized && bearer) {
-      const { data: adminUser } = await supabase
-        .from("users")
-        .select("email")
-        .eq("session_token", bearer)
-        .single()
-      if (
-        adminUser &&
-        adminEmails.includes((adminUser.email || "").toLowerCase())
-      ) {
-        authorized = true
-      }
-    }
-
-    if (!authorized) {
+    if (!(await isAuthorizedAdmin(req))) {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 

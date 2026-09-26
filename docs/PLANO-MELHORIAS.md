@@ -250,13 +250,13 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P2.3 — Chave de admin é a service role key do Supabase
+### [x] P2.3 — Chave de admin é a service role key do Supabase
 
 **Problema:** `x-admin-key` é comparado com `process.env.SUPABASE_SERVICE_ROLE_KEY` (`server.ts:1022` e `server.ts:1086`). Isso obriga a circular a chave de acesso total ao banco para operar o dashboard, e qualquer log/print acidental do header vaza acesso irrestrito. A comparação também é `!==` simples, não constant-time.
 
-**Ação:** exigir `ADMIN_DASHBOARD_KEY` (já existe como segunda opção em `server.ts:1085`) e **remover** a service role key como valor aceito. Usar `crypto.timingSafeEqual`. Preferir o caminho de `session_token` de usuário admin, já implementado, e tratar a chave como quebra-galho de emergência.
+**Ação:** extraído um helper único `isAuthorizedAdmin(req)` usado pelas duas rotas `/api/admin/*`. Ele aceita **apenas** `x-admin-key === ADMIN_DASHBOARD_KEY`, comparado com `crypto.timingSafeEqual` (nunca mais a service role key), OU um `session_token` (Bearer) de um usuário cujo e-mail está em `ADMIN_EMAILS` — esse segundo caminho já existia em `cost-logs` e agora também vale para `migrate-orders-userid`. `ADMIN_DASHBOARD_KEY` documentada em `.env.example`.
 
-**Aceite:** requisição com a service role key no `x-admin-key` retorna 403.
+**Aceite:** requisição com a service role key no `x-admin-key` retorna 403 (o valor não é mais aceito em nenhuma rota admin).
 
 ---
 
