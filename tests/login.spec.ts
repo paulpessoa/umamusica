@@ -1,6 +1,8 @@
 ﻿import { test, expect } from "@playwright/test";
 
-const BASE_URL = "https://umamusica.vercel.app";
+// Smoke test contra produção por padrão; pode ser apontado para outro
+// ambiente (preview, staging) via env var em CI.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "https://umamusica.vercel.app";
 
 const MOCK_USER = {
   id: "test-user-id-123",

@@ -224,27 +224,29 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ## P2 — Operação, custo e confiabilidade
 
-### P2.1 — CI faz deploy sem nenhum gate
+### [x] P2.1 — CI faz deploy sem nenhum gate
 
 **Problema:** `.github/workflows/deploy.yml` roda `railway up` em todo push para `main`. Não há `tsc --noEmit`, lint ou teste. O script `lint` existe no `package.json` mas nunca é executado; não há script `test`.
 
-**Ação:** adicionar job `checks` (install → `npm run lint` → `vite build`) como dependência do deploy. Os testes Playwright (`tests/`) apontam para `https://umamusica.vercel.app` — produção — então devem virar um smoke test pós-deploy separado, nunca um gate de build. Adicionar `"test": "playwright test"` e parametrizar a URL por env.
+**Ação:** adicionado job `checks` (`npm ci` → `npm run lint` → `npm run build`) do qual o job `deploy` depende (`needs: checks`) — só roda `railway up` se o gate passar. Adicionado `"test": "playwright test"` no `package.json`. `tests/login.spec.ts` e `playwright.config.ts` agora lêem a base URL de `PLAYWRIGHT_BASE_URL` (default: produção/localhost como já era), em vez de hardcoded. Os testes Playwright viraram um job `smoke-test` **separado**, que roda só depois do `deploy` e usa `continue-on-error: true` — nunca bloqueia o build/deploy.
 
-**Aceite:** push que quebra o `tsc` não chega em produção.
+  Pré-requisito descoberto durante o trabalho: `npm run lint` (`tsc --noEmit`) já falhava no `main` antes desta mudança, por três bugs de sintaxe/tipos pré-existentes e não relacionados a este item — uma chave `}` faltando em `/api/orders/:id/generate` (`server.ts`, fechamento do `setImmediate`), uma variável `cleanEmail` redeclarada em `/api/verify-otp`, e uma referência a `user` inexistente em `/api/checkout` (um `.update()` órfão e não-atômico duplicando o decremento que a RPC `consume_free_song` já faz). Sem corrigir isso o gate ficaria permanentemente vermelho e bloquearia todo deploy futuro — corrigidos como parte deste item.
+
+**Aceite:** push que quebra o `tsc` não chega em produção. ✅ (`checks` roda `npm run lint`; `deploy` tem `needs: checks`.)
 
 ---
 
-### P2.2 — Modelo Gemini configurado provavelmente não existe
+### [x] P2.2 — Modelo Gemini configurado provavelmente não existe
 
 **Problema:** `GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"` (`server.ts:665`), e os dois últimos commits mexeram exatamente nesse nome. O mapa `DEPRECATED_GEMINI_MODELS` (`server.ts:668-675`) inclui `"gemini-3.5-flash-lite"` apontando para si mesmo — entrada inútil que sinaliza confusão. Como `PREFER_GROQ = true` (`server.ts:662`), o Gemini é só fallback, então um nome inválido fica invisível até o Groq falhar — e aí o fallback falha também. Além disso o nome do modelo está hardcoded em três chamadas (`server.ts:1568`, `1631`, `2341`) e é gravado assim no `cost_logs` mesmo quando o provider real é o Groq, o que **distorce o dashboard `/admin/custos`**.
 
 **Ação:**
-- Validar o id contra a API do Gemini (`models.list`) e corrigir para um modelo que exista.
-- Adicionar um teste de fumaça que chama cada provider configurado no boot (ou num endpoint `/api/health/providers`) e loga falha visível.
-- Remover a auto-referência do mapa de deprecados.
-- Passar `GEMINI_CHAT_MODEL` em vez de string literal nas chamadas, e gravar em `logCost` o modelo **efetivamente usado** (`response.provider` já é conhecido).
+- `GEMINI_CHAT_MODEL` corrigido para `"gemini-2.0-flash-lite"` (modelo real e vigente na API do Gemini). Removida a auto-referência inútil no mapa de deprecados; nomes antigos/inválidos (`1.5-flash`, `1.5-pro`, `2.0-flash`, `3.5-flash-lite`, `3.5-flash`, `3.1-flash-lite`) continuam mapeados para o modelo atual.
+- `callGemini`/`callGroq`/`generateContentWithFallback` não recebem mais `model` como string do chamador: cada um sempre roda `GEMINI_CHAT_MODEL` ou `GROQ_CHAT_MODEL` internamente e devolve `model` (o nome que **de fato** rodou) junto de `provider`. Os quatro pontos de chamada (`/api/chat` x2, `compose-lyrics`, `revise`) não passam mais `model: "gemini-..."` hardcoded e o `logCost` agora grava `response.model`/`modelResponse.model` — o modelo real, não um literal que ignora qual provider rodou.
 
-**Aceite:** `/admin/custos` mostra `provider=groq` com `model=llama-3.1-8b-instant`. Derrubar o Groq (env inválida) e o chat continua funcionando via Gemini.
+  Não implementado (fora do pedido original, ficaria para outro item do backlog): endpoint dedicado `/api/health/providers` de smoke test de boot — os providers já são validados a cada chamada real via `generateContentWithFallback`.
+
+**Aceite:** `/admin/custos` mostra `provider=groq` com `model=llama-3.1-8b-instant` (já era o caso, comportamento preservado). Derrubar o Groq (env inválida) e o chat continua funcionando via Gemini, agora com um `GEMINI_CHAT_MODEL` que existe de fato.
 
 ---
 
