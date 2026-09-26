@@ -554,14 +554,24 @@ app.use("/api", (req, res, next) => {
 })
 
 // Simple in-memory rate limiting to prevent email spam & API abuse
-const ipLimits: Record<string, { count: number; resetAt: number }> = {}
+const requestLimits: Record<string, { count: number; resetAt: number }> = {}
 function rateLimit(limit: number, windowMs: number) {
-  return (
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction
-  ) => {
-    // Temporarily disabled for testing/feedback phase
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.connection?.remoteAddress || "unknown"
+    const email = req.body?.email?.toLowerCase().trim() || "no-email"
+    const key = `${ip}-${email}`
+    const now = Date.now()
+
+    if (!requestLimits[key] || now > requestLimits[key].resetAt) {
+      requestLimits[key] = { count: 1, resetAt: now + windowMs }
+      return next()
+    }
+
+    requestLimits[key].count++
+    if (requestLimits[key].count > limit) {
+      return res.status(429).json({ error: "Muitas tentativas. Tente novamente mais tarde." })
+    }
+
     return next()
   }
 }
@@ -1226,8 +1236,8 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
       return res.status(400).json({ error: "Email inválido" })
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString()
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 min
+    const code = crypto.randomInt(100000, 1000000).toString()
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 min
     const cleanEmail = email.toLowerCase().trim()
 
     if (process.env.NODE_ENV !== "production") {
@@ -1283,7 +1293,7 @@ app.post("/api/send-otp", rateLimit(5, 10 * 60 * 1000), async (req, res) => {
             <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #FF5A5F; font-family: monospace; user-select: all; -webkit-user-select: all;">${code}</span>
           </div>
           <a href="${magicLink}" style="display: inline-block; background: #FF5A5F; color: #fff; text-decoration: none; font-weight: bold; padding: 14px 28px; border-radius: 12px; font-size: 14px; margin: 8px 0 20px;">Acessar Conta Automaticamente ⚡</a>
-          <p style="color: #888; font-size: 12px;">Este código expira em 10 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
+          <p style="color: #888; font-size: 12px;">Este código expira em 5 minutos.<br/>Se você não solicitou este código, ignore este e-mail.</p>
           ${getEmailFooterHtml()}
         </div>
       `
@@ -1303,24 +1313,42 @@ app.post("/api/verify-otp", async (req, res) => {
       return res.status(400).json({ error: "Email e código são obrigatórios" })
     }
 
-    const { data, error } = await supabase
+    const cleanEmail = email.toLowerCase().trim()
+
+    // 1. Fetch valid OTP for email (any code, to check attempts)
+    const { data: otpList, error: fetchError } = await supabase
       .from("otp_codes")
       .select("*")
-      .eq("email", email.toLowerCase().trim())
-      .eq("code", code)
+      .eq("email", cleanEmail)
       .gte("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
       .limit(1)
 
-    if (error || !data || data.length === 0) {
+    if (fetchError || !otpList || otpList.length === 0) {
       return res.status(400).json({ error: "Código inválido ou expirado" })
     }
 
-    // Delete OTP after successful verification to prevent reuse
-    await supabase
-      .from("otp_codes")
-      .delete()
-      .eq("id", data[0].id)
+    const otpRecord = otpList[0]
+
+    // 2. Check if attempts >= 5
+    if (otpRecord.attempts >= 5) {
+      await supabase.from("otp_codes").delete().eq("id", otpRecord.id)
+      return res.status(400).json({ error: "Muitas tentativas. Solicite um novo código." })
+    }
+
+    // 3. Verify code
+    if (otpRecord.code !== code) {
+      // increment attempts
+      await supabase
+        .from("otp_codes")
+        .update({ attempts: (otpRecord.attempts || 0) + 1 })
+        .eq("id", otpRecord.id)
+
+      return res.status(400).json({ error: "Código inválido" })
+    }
+
+    // code is correct! delete and proceed
+    await supabase.from("otp_codes").delete().eq("id", otpRecord.id)
 
     const sessionToken = crypto.randomUUID()
 
@@ -2193,43 +2221,78 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
 app.post("/api/webhook/mercadopago", async (req, res) => {
   try {
     const { action, data: webhookData } = req.body
-    console.log("[Webhook MP] Received:", action)
+    const paymentId = webhookData?.id
 
-    if (action === "payment.updated" || action === "payment.created") {
-      const paymentId = webhookData?.id
-      if (!paymentId) return res.json({ received: true })
+    if (!paymentId || (action !== "payment.updated" && action !== "payment.created")) {
+      return res.json({ received: true })
+    }
 
-      // Fetch payment details from MercadoPago
-      const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
-      if (mpToken) {
+    // Validação de assinatura
+    const signatureHeader = req.headers["x-signature"] as string
+    const requestId = req.headers["x-request-id"]
+    const secret = process.env.MP_WEBHOOK_SECRET || process.env.ML_WEBHOOK_SECRET
+
+    if (secret && signatureHeader && requestId) {
+      const parts = signatureHeader.split(",")
+      let ts = "", v1 = ""
+      parts.forEach(p => {
+        const [k, v] = p.split("=")
+        if (k === "ts") ts = v
+        if (k === "v1") v1 = v
+      })
+      
+      const manifest = `id:${paymentId};request-id:${requestId};ts:${ts};`
+      const hmac = crypto.createHmac("sha256", secret)
+      const digest = hmac.update(manifest).digest("hex")
+
+      if (digest !== v1) {
+        console.warn("[Webhook MP] Invalid signature")
+        return res.status(401).json({ error: "Invalid signature" })
+      }
+    }
+
+    res.json({ received: true }) // Fast ack
+
+    setImmediate(async () => {
+      try {
+        const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+        if (!mpToken) return
+
         const paymentRes = await fetch(
           `https://api.mercadopago.com/v1/payments/${paymentId}`,
-          {
-            headers: { Authorization: `Bearer ${mpToken}` }
-          }
+          { headers: { Authorization: `Bearer ${mpToken}` } }
         )
-        if (paymentRes.ok) {
-          const payment: any = await paymentRes.json()
-          if (payment.status === "approved") {
-            const externalRef = payment.external_reference
-            if (externalRef) {
-              await supabase
-                .from("orders")
-                .update({
-                  status: "paid",
-                  updated_at: new Date().toISOString()
-                })
-                .eq("id", externalRef)
-              console.log(`[Webhook MP] Order ${externalRef} paid!`)
+
+        if (!paymentRes.ok) return
+        const payment: any = await paymentRes.json()
+
+        if (payment.status === "approved" && payment.transaction_amount >= 1.0) {
+          const externalRef = payment.external_reference
+          if (externalRef) {
+            // Update idempotente
+            const { data: updatedRows, error } = await supabase
+              .from("orders")
+              .update({
+                status: "paid",
+                updated_at: new Date().toISOString()
+              })
+              .eq("id", externalRef)
+              .eq("status", "pending_payment")
+              .select("id")
+
+            if (updatedRows && updatedRows.length > 0) {
+              console.log(`[Webhook MP] Order ${externalRef} paid! Starting composition...`)
+              await processComposeLyrics(externalRef).catch(e => console.error("Auto-compose error:", e))
             }
           }
         }
+      } catch (err) {
+        console.error("Webhook Async Process Error:", err)
       }
-    }
-    res.json({ received: true })
+    })
   } catch (error) {
     console.error("Webhook Error:", error)
-    res.status(500).json({ error: "Webhook failed" })
+    if (!res.headersSent) res.status(500).json({ error: "Webhook failed" })
   }
 })
 
@@ -2439,26 +2502,64 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
   }
 }
 
+async function processComposeLyrics(orderId: string) {
+  let order: any = null
+  try {
+    const { data, error } = await supabase.from("orders").select("*").eq("id", orderId).single()
+    if (error || !data) return null
+    order = data
+
+    if (order.status !== "paid") return null
+
+    // Atomic: paid -> lyrics_review
+    const { data: locked, error: lockErr } = await supabase
+      .from("orders")
+      .update({ status: "lyrics_review", updated_at: new Date().toISOString() })
+      .eq("id", order.id)
+      .eq("status", "paid")
+      .select()
+
+    if (lockErr || !locked || locked.length === 0) return null
+
+    const metadata = await generateDraftMetadata(order)
+    if (!metadata) throw new Error("Falha ao compor a letra da música.")
+
+    await supabase
+      .from("orders")
+      .update({ song_metadata: metadata })
+      .eq("id", order.id)
+
+    return metadata
+  } catch (error: any) {
+    console.error("[Compose Lyrics] Auto-compose error:", error?.message || error)
+    if (order) {
+      await supabase
+        .from("orders")
+        .update({ status: "paid", updated_at: new Date().toISOString() })
+        .eq("id", order.id)
+    }
+    throw error
+  }
+}
+
 // ─── Compose lyrics only (post-payment draft) ──────────────
 // After a successful Pix payment we do NOT generate audio immediately. We
 // compose the lyrics draft, persist it and move the order to `lyrics_review`
 // so the user can review/edit before we ever call Lyria.
 app.post("/api/orders/:id/compose-lyrics", async (req, res) => {
-  let order: any = null
   try {
     const verified = await verifySession(req, res)
     if (!verified) return
 
-    const { data, error } = await supabase
+    const { data: order, error } = await supabase
       .from("orders")
-      .select("*")
+      .select("id, email, user_id, status")
       .eq("id", req.params.id)
       .single()
 
-    if (error || !data) {
+    if (error || !order) {
       return res.status(404).json({ error: "Pedido não encontrado" })
     }
-    order = data
 
     const isOwner =
       (order.user_id && verified.userId && order.user_id === verified.userId) ||
@@ -2474,37 +2575,14 @@ app.post("/api/orders/:id/compose-lyrics", async (req, res) => {
         .json({ error: "Pedido não está pronto para composição." })
     }
 
-    // Atomic: paid -> lyrics_review
-    const { data: locked, error: lockErr } = await supabase
-      .from("orders")
-      .update({ status: "lyrics_review", updated_at: new Date().toISOString() })
-      .eq("id", order.id)
-      .eq("status", "paid")
-      .select()
-    if (lockErr || !locked || locked.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "A composição já foi iniciada por outra requisição." })
+    const metadata = await processComposeLyrics(order.id)
+    if (!metadata) {
+       return res.status(400).json({ error: "A composição já foi iniciada por outra requisição." })
     }
-
-    const metadata = await generateDraftMetadata(order)
-    if (!metadata) throw new Error("Falha ao compor a letra da música.")
-
-    await supabase
-      .from("orders")
-      .update({ song_metadata: metadata })
-      .eq("id", order.id)
 
     res.json({ status: "lyrics_review", song_metadata: metadata })
   } catch (error: any) {
     console.error("[Compose Lyrics] Error:", error?.message || error)
-    // Revert to paid so the user can retry the composition.
-    if (order) {
-      await supabase
-        .from("orders")
-        .update({ status: "paid", updated_at: new Date().toISOString() })
-        .eq("id", order.id)
-    }
     res.status(500).json({ error: "Erro ao compor a letra. Tente novamente." })
   }
 })

@@ -72,7 +72,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P0.3 — OTP de 6 dígitos sem limite de tentativas
+### [x] P0.3 — OTP de 6 dígitos sem limite de tentativas
 
 **Problema:** `rateLimit()` é um no-op (`server.ts:554`), e `/api/verify-otp` (`server.ts:1273`) não conta tentativas erradas. Com o código válido por 10 minutos e 1.000.000 de combinações, é possível fazer brute force do login de qualquer e-mail que tenha pedido um código — e o `session_token` retornado dá acesso total à conta. O `/api/send-otp` também está sem freio, o que permite usar a conta Brevo como canal de spam.
 
@@ -105,7 +105,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P0.5 — Webhook do MercadoPago sem validação de assinatura, idempotência e valor
+### [x] P0.5 — Webhook do MercadoPago sem validação de assinatura, idempotência e valor
 
 **Problema:** `/api/webhook/mercadopago` (`server.ts:2162`) aceita qualquer POST. Ele re-consulta o pagamento na API do MP (o que impede forjar aprovação), mas:
 - não valida o header `x-signature` (HMAC), então é um endpoint aberto para flood;
