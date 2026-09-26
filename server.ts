@@ -679,15 +679,19 @@ async function enforceAICostLimit(
 const PREFER_GROQ = true
 
 // ─── Google Gemini model (single, good cost-benefit) ─────────
-const GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"
+// "gemini-3.5-flash-lite" never existed on the Gemini API — every Gemini
+// call was silently failing and falling through to Groq, and logCost kept
+// recording that invalid name regardless of which provider actually ran.
+// "gemini-2.0-flash-lite" is a real, current, low-cost model id.
+const GEMINI_CHAT_MODEL = "gemini-2.0-flash-lite"
 
 // Legacy/deprecated Gemini names → map to the single current model
 const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
   "gemini-1.5-flash": GEMINI_CHAT_MODEL,
   "gemini-1.5-pro": GEMINI_CHAT_MODEL,
   "gemini-2.0-flash": GEMINI_CHAT_MODEL,
-  "gemini-2.0-flash-lite": GEMINI_CHAT_MODEL,
   "gemini-3.5-flash-lite": GEMINI_CHAT_MODEL,
+  "gemini-3.5-flash": GEMINI_CHAT_MODEL,
   "gemini-3.1-flash-lite": GEMINI_CHAT_MODEL
 }
 
@@ -709,6 +713,7 @@ async function callGroq(params: {
   text: string
   usage: { inputTokens: number | null; outputTokens: number | null }
   toolCalls?: any
+  model: string
 }> {
   const groqApiKey = process.env.GROQ_API_KEY
   if (!groqApiKey) throw new Error("GROQ_API_KEY not configured")
@@ -768,18 +773,20 @@ async function callGroq(params: {
     usage: {
       inputTokens: data.usage?.prompt_tokens ?? null,
       outputTokens: data.usage?.completion_tokens ?? null
-    }
+    },
+    model
   }
 }
 
 // ─── Single Gemini attempt ───────────────────────────────────
+// No model name is accepted from the caller: there is a single supported
+// Gemini model (GEMINI_CHAT_MODEL), so nothing can go hardcoded/stale here.
 async function callGemini(params: {
-  model: string
   contents: any[]
   config?: any
   tools?: any
 }) {
-  const modelName = normalizeGeminiModel(params.model)
+  const modelName = normalizeGeminiModel(GEMINI_CHAT_MODEL)
   console.log(`[AI] Trying Gemini model: ${modelName}...`)
   const result = await ai.models.generateContent({
     model: modelName,
@@ -792,15 +799,18 @@ async function callGemini(params: {
     usage: {
       inputTokens: result.usageMetadata?.promptTokenCount ?? null,
       outputTokens: result.usageMetadata?.candidatesTokenCount ?? null
-    }
+    },
+    model: modelName
   }
 }
 
 // ─── Main AI dispatcher ───────────────────────────────────────
 // Provisional order: Groq first (Gemini credits depleted), Gemini as fallback.
 // Flip PREFER_GROQ to false to restore Gemini-first when billing returns.
+// Callers no longer pass a `model` — this always runs GROQ_CHAT_MODEL or
+// GEMINI_CHAT_MODEL and reports back which one actually ran (`provider` +
+// `model`), so logCost records the truth instead of a hardcoded guess.
 async function generateContentWithFallback(params: {
-  model: string
   contents: any[]
   config?: any
   tools?: any
@@ -1353,7 +1363,6 @@ app.post("/api/verify-otp", async (req, res) => {
     const sessionToken = crypto.randomUUID()
 
     // Check if user exists
-    const cleanEmail = email.toLowerCase().trim()
     let user: any = null
     const { data: userData, error: userError } = await supabase
       .from("users")
@@ -1647,7 +1656,6 @@ Instruções:
     }))
 
     const response = await generateContentWithFallback({
-      model: "gemini-3.5-flash-lite",
       contents: chatContents,
       config: { systemInstruction, temperature: 0.8 },
       tools: PREFER_GROQ ? openaiTools : geminiTools
@@ -1702,7 +1710,6 @@ Instruções:
               }
             ]
             const r2 = await generateContentWithFallback({
-              model: "gemini-3.5-flash-lite",
               contents: followContents,
               config: { systemInstruction, temperature: 0.8 }
             })
@@ -1726,7 +1733,7 @@ Instruções:
       provider: response.provider || "groq",
       inputTokens: response.usage?.inputTokens ?? null,
       outputTokens: response.usage?.outputTokens ?? null,
-      model: "gemini-3.5-flash-lite",
+      model: response.model || GROQ_CHAT_MODEL,
       entryMode: "chat"
     })
 
@@ -1901,10 +1908,9 @@ app.post("/api/checkout", async (req, res) => {
       console.log(
         `[Checkout] User ${cleanEmail} has balance. Using 1 free song.`
       )
-      await supabase
-        .from("users")
-        .update({ free_songs_balance: user.free_songs_balance - 1 })
-        .eq("id", user.id)
+      // consume_free_song() above already decremented free_songs_balance
+      // atomically — a second, non-atomic update here (against an undefined
+      // `user` variable) would double-decrement and never compiled.
 
       paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9)
       status = "paid"
@@ -2508,7 +2514,6 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
 `
 
   const modelResponse = await generateContentWithFallback({
-    model: "gemini-3.5-flash-lite",
     contents: [analysisPrompt],
     config: {
       responseMimeType: "application/json",
@@ -2551,7 +2556,7 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
       provider: modelResponse.provider || "groq",
       inputTokens: modelResponse.usage.inputTokens ?? null,
       outputTokens: modelResponse.usage.outputTokens ?? null,
-      model: "gemini-3.5-flash-lite"
+      model: modelResponse.model || GROQ_CHAT_MODEL
     })
     // Contabiliza no acumulado diário (não bloqueia: usuário já pagou).
     await addAICost(
@@ -2988,6 +2993,7 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         htmlContent: emailHtml
       })
     }
+    }
   }) // End of setImmediate
   } catch (error: any) {
     console.error("[Generate] Initial setup error:", error)
@@ -3078,7 +3084,6 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
 `
 
     const modelResponse = await generateContentWithFallback({
-      model: "gemini-3.5-flash",
       contents: [revisePrompt],
       config: {
         responseMimeType: "application/json",
@@ -3123,7 +3128,7 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
         provider: modelResponse.provider || "groq",
         inputTokens: modelResponse.usage.inputTokens ?? null,
         outputTokens: modelResponse.usage.outputTokens ?? null,
-        model: "gemini-3.5-flash"
+        model: modelResponse.model || GROQ_CHAT_MODEL
       })
       await addAICost(
         order.email,
