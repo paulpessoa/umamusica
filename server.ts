@@ -137,6 +137,10 @@ function removeEmojis(text: string): string {
     .trim()
 }
 
+function isRealMercadoPagoPayment(paymentId?: string) {
+  return !!paymentId && /^\d+$/.test(paymentId)
+}
+
 // Build optimized structured prompt from chat transcript
 function buildStructuredPrompt(chatTranscript: ChatMessage[]): any {
   if (!chatTranscript || chatTranscript.length === 0) {
@@ -1383,12 +1387,7 @@ app.post("/api/verify-otp", async (req, res) => {
 
           if (count === null || count < 5) {
             // Referrer gets 1 free song
-            await supabase
-              .from("users")
-              .update({
-                free_songs_balance: (refUser.free_songs_balance || 0) + 1
-              })
-              .eq("id", referredBy)
+            await supabase.rpc("increment_free_songs", { p_user_id: referredBy })
 
             // Send notification email to referrer via Brevo API
             await sendEmailViaBrevo({
@@ -1789,13 +1788,12 @@ app.post("/api/checkout", async (req, res) => {
     const cleanEmail = email.toLowerCase().trim()
 
     // Check if user has free balance
-    const { data: user } = await supabase
-      .from("users")
-      .select("id, free_songs_balance")
-      .eq("email", cleanEmail)
-      .single()
+    const { data: balanceData, error: balanceError } = await supabase.rpc(
+      "consume_free_song",
+      { p_user_id: verified.userId }
+    )
 
-    const hasBalance = user && user.free_songs_balance > 0
+    const hasBalance = !balanceError && balanceData !== null && balanceData >= 0
 
     if (hasBalance) {
       console.log(
@@ -2134,7 +2132,7 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     }
 
     if (orderData && orderData.payment_id) {
-      const isMPPayment = /^\d+$/.test(orderData.payment_id) // Mercado Pago payment IDs are purely numeric
+      const isMPPayment = isRealMercadoPagoPayment(orderData.payment_id)
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (isMPPayment && mpToken) {
         try {
@@ -2173,10 +2171,13 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
       .eq("id", id)
 
     // Increment usage
-    await supabase
-      .from("coupons")
-      .update({ current_uses: couponData.current_uses + 1 })
-      .eq("code", cleanCoupon)
+    const { error: incrementError } = await supabase.rpc("increment_coupon_uses", {
+      p_code: cleanCoupon
+    })
+
+    if (incrementError) {
+      return res.status(400).json({ error: "Erro ao aplicar limite do cupom." })
+    }
 
     res.json({
       success: true,
@@ -2237,10 +2238,7 @@ async function generateLyriaForOrder(
   order: any,
   metadata: SongMetadata
 ): Promise<string> {
-  const isMockPayment =
-    !order.payment_id ||
-    order.payment_id.startsWith("mock") ||
-    order.payment_id.startsWith("simulated")
+  const isMockPayment = !isRealMercadoPagoPayment(order.payment_id)
   let audioStoragePath: string | null = null
 
   if (isMockPayment) {
@@ -2758,8 +2756,17 @@ app.post("/api/orders/:id/generate", async (req, res) => {
       // A real Mercado Pago payment id is purely numeric. Everything else
       // (pay_, mock, simulated, coupon_, bonus_balance_, pending_mp_) is internal
       // and must NOT be sent to the refund API.
-      const isRealPayment =
-        !!fetchedOrder.payment_id && /^\d+$/.test(fetchedOrder.payment_id)
+      const isRealPayment = isRealMercadoPagoPayment(fetchedOrder.payment_id)
+
+      // Devolve crédito grátis ou cupom em caso de falha
+      if (fetchedOrder.payment_id?.startsWith("bonus_balance_") && fetchedOrder.user_id) {
+        await supabase.rpc("increment_free_songs", { p_user_id: fetchedOrder.user_id })
+      } else if (fetchedOrder.payment_id?.startsWith("coupon_")) {
+        const couponMatch = fetchedOrder.payment_id.match(/^coupon_([^_]+)_/)
+        if (couponMatch) {
+          await supabase.rpc("decrement_coupon_uses", { p_code: couponMatch[1] })
+        }
+      }
 
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
 
