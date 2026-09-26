@@ -6,7 +6,31 @@ on:
       - main
 
 jobs:
+  # Gate: instala dependências e valida a build antes de deixar qualquer
+  # coisa chegar em produção. O job `deploy` só roda se este passar.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (tsc --noEmit)
+        run: npm run lint
+
+      - name: Build (vite + server bundle)
+        run: npm run build
+
   deploy:
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,3 +48,31 @@ jobs:
           railway up --service umamusica --detach
           echo "## 🚀 Deployed to Railway!" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** https://umamusica-production.up.railway.app" >> $GITHUB_STEP_SUMMARY
+
+  # Smoke test pós-deploy: roda contra produção, mas nunca bloqueia o
+  # deploy em si (já aconteceu no job anterior). Falhas aqui só avisam.
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run production smoke tests
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: "https://umamusica.vercel.app"
+        run: npx playwright test tests/login.spec.ts
