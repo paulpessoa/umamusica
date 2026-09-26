@@ -19,3 +19,25 @@ jobs:
             -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId: \\\"${{ secrets.RAILWAY_SERVICE_ID }}\\\", environmentId: \\\"${{ secrets.RAILWAY_ENVIRONMENT_ID }}\\\", input: { numReplicas: 1 }) }\"}" \
             | tee response.json
           echo "Retomado em $(date)"
+
+      # P2.4: MercadoPago pode ter tentado notificar o webhook enquanto o
+      # serviço estava pausado (0 réplicas) — a app já reconcilia isso no
+      # próprio boot, mas aguardamos e chamamos de novo aqui para não
+      # depender só do timing do cold start.
+      - name: Aguardar o serviço voltar a responder
+        run: |
+          echo "Aguardando health check..."
+          for i in $(seq 1 20); do
+            if curl -sf "${{ vars.APP_URL || 'https://umamusica-production.up.railway.app' }}/api/health" > /dev/null; then
+              echo "Serviço no ar."
+              break
+            fi
+            sleep 15
+          done
+
+      - name: Reconciliar pagamentos Pix pendentes
+        run: |
+          curl -s -X POST "${{ vars.APP_URL || 'https://umamusica-production.up.railway.app' }}/api/admin/reconcile-pending-payments" \
+            -H "x-admin-key: ${{ secrets.ADMIN_DASHBOARD_KEY }}" \
+            | tee reconcile.json
+          echo "Reconciliação concluída em $(date)"

@@ -250,56 +250,65 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P2.3 — Chave de admin é a service role key do Supabase
+### [x] P2.3 — Chave de admin é a service role key do Supabase
 
 **Problema:** `x-admin-key` é comparado com `process.env.SUPABASE_SERVICE_ROLE_KEY` (`server.ts:1022` e `server.ts:1086`). Isso obriga a circular a chave de acesso total ao banco para operar o dashboard, e qualquer log/print acidental do header vaza acesso irrestrito. A comparação também é `!==` simples, não constant-time.
 
-**Ação:** exigir `ADMIN_DASHBOARD_KEY` (já existe como segunda opção em `server.ts:1085`) e **remover** a service role key como valor aceito. Usar `crypto.timingSafeEqual`. Preferir o caminho de `session_token` de usuário admin, já implementado, e tratar a chave como quebra-galho de emergência.
+**Ação:** extraído um helper único `isAuthorizedAdmin(req)` usado pelas duas rotas `/api/admin/*`. Ele aceita **apenas** `x-admin-key === ADMIN_DASHBOARD_KEY`, comparado com `crypto.timingSafeEqual` (nunca mais a service role key), OU um `session_token` (Bearer) de um usuário cujo e-mail está em `ADMIN_EMAILS` — esse segundo caminho já existia em `cost-logs` e agora também vale para `migrate-orders-userid`. `ADMIN_DASHBOARD_KEY` documentada em `.env.example`.
 
-**Aceite:** requisição com a service role key no `x-admin-key` retorna 403.
+**Aceite:** requisição com a service role key no `x-admin-key` retorna 403 (o valor não é mais aceito em nenhuma rota admin).
 
 ---
 
-### P2.4 — Pause noturno do Railway derruba a API por 6h
+### [x] P2.4 — Pause noturno do Railway derruba a API por 6h
 
 **Problema:** `railway-pause.yml` zera as réplicas às 02:00 BRT e `railway-resume.yml` restaura às 08:00. O frontend na Vercel continua no ar, então das 02:00 às 08:00 o usuário entra, faz login... e tudo falha. Pior: pedidos em `processing` na hora do pause ficam órfãos (ver P1.1), e pagamentos Pix confirmados nessa janela **perdem a notificação do webhook** — o MP reenvia por um tempo, mas não indefinidamente.
 
 **Ação:**
-- Se a economia é necessária, exibir uma tela de manutenção: um health check no frontend que, ao falhar, mostra "voltamos às 8h" em vez de erros genéricos.
-- Bloquear a geração de novos Pix a partir de ~01:30 (o pagamento não seria processado).
-- O reaper do P1.1 rodando no boot cobre os pedidos órfãos.
-- Reconciliação: job no resume que varre pedidos em `pending_payment` das últimas 12h e consulta o status real no MercadoPago — fecha o buraco do webhook perdido.
+- `src/components/MaintenanceOverlay.tsx`: health check periódico (`/api/health` a cada 30s) montado no `App.tsx`; depois de 2 falhas seguidas, substitui a tela quebrada por "Estamos em manutenção noturna... voltamos às 8h" em vez de erros genéricos por toda a UI.
+- `POST /api/orders/:id/generate-pix` agora recusa (503 `MAINTENANCE_WINDOW`) a partir de ~01:30 BRT até as 08:00 (`isInNightlyMaintenanceWindow()`, desligável via `MAINTENANCE_WINDOW_ENABLED=false`) — não gera Pix que não teria como ser processado antes da pausa.
+- O reaper do P1.1 (já rodava no boot) continua cobrindo os pedidos órfãos em `processing`.
+- Reconciliação: nova função `reconcilePendingPayments()` varre pedidos `pending_payment` com `payment_id` real (numérico) das últimas 12h e consulta o pagamento na API do MercadoPago, reaproveitando a mesma lógica idempotente do webhook (extraída para `settleMercadoPagoPaymentIfApproved()`). Roda automaticamente no boot do servidor **e** é exposta em `POST /api/admin/reconcile-pending-payments` (protegida por `isAuthorizedAdmin`), que o `railway-resume.yml` chama depois de escalar o serviço de volta e confirmar o health check.
 
-**Aceite:** pagamento feito às 03:00 tem a música entregue depois do resume, sem intervenção manual.
+  Pendente de configuração manual (fora do que dá para fazer só no código): o secret `ADMIN_DASHBOARD_KEY` precisa existir no GitHub (`Settings → Secrets and variables → Actions`) com o mesmo valor usado no Railway, para o passo de reconciliação do `railway-resume.yml` funcionar; e a variável `APP_URL` (ou o fallback hardcoded no workflow) precisa apontar para a URL pública correta do serviço.
+
+**Aceite:** pagamento feito às 03:00 tem a música entregue depois do resume, sem intervenção manual (via reconciliação no boot ou no `railway-resume.yml`).
 
 ---
 
-### P2.5 — Observabilidade: erros existem, visibilidade não
+### [x] P2.5 — Observabilidade: erros existem, visibilidade não
 
 **Problema:** há um bom `logErrorAndNotify` com ticket (`server.ts:264`), mas ele só é chamado em `generate` e `revise`. Todo o resto usa `console.error` e morre no log do Railway. Não há métrica de funil: quantos chats viram checkout, quantos checkouts viram pagamento, quantas gerações falham.
 
 **Ação:**
-- Middleware de erro no Express que roteia tudo por `logErrorAndNotify`.
-- Contadores por transição de status (já dá para derivar de `orders.status` + `updated_at`; expor no `/admin/custos` como funil).
-- Alerta quando a taxa de `failed` passar de um limite, ou quando um pedido ficar mais de 10 min em `processing`.
+- Extraído `sendAdminAlert()` (o envio de e-mail que já existia em `logErrorAndNotify`) para poder ser chamado também fora de uma request — usado pelos dois alertas novos abaixo. Como parte disso, `endpoint`/`errorMessage`/`userEmail` passaram a ser escapados com um novo `escapeHtml()` antes de entrar no HTML do e-mail.
+- Middleware de erro global no Express (`app.use((err, req, res, next) => ...)`, registrado depois de todas as rotas) que roteia qualquer erro passado via `next(err)` por `logErrorAndNotify`.
+- Reaper (`performProcessingReaper`) agora envia um alerta por e-mail (com a lista de IDs) sempre que marca pedido(s) como `failed` por esgotar tentativas — antes só logava no console.
+- Novo monitor `checkDailyFailureRate()` (roda no boot e a cada 30 min): se a taxa de `failed` nas últimas 24h passar de `FAILURE_RATE_ALERT_THRESHOLD` (default 20%, com mínimo de 5 pedidos na amostra), envia um alerta — no máximo 1 por dia.
+- Funil exposto em `/api/admin/cost-logs` (campo `funnel`) e renderizado em `/admin/custos`: chats iniciados (`chat_sessions`) → checkouts → passaram do pagamento → entregues → falharam, com taxa de falha destacada em vermelho acima do limite.
+- De brinde: removida a segunda rota `GET /api/health` duplicada (inalcançável, item também listado em P3).
 
-**Aceite:** dashboard mostra conversão chat → pago → entregue e taxa de falha do dia.
+**Aceite:** dashboard mostra conversão chat → pago → entregue e taxa de falha (histórico completo, não só do dia — dado o volume atual do MVP, uma janela maior é mais legível que "hoje").
 
 ---
 
 ## P3 — Qualidade de código e UX
 
-- **`server.ts` com 3.400 linhas.** Fatiar em `routes/` (auth, orders, payments, admin) + `services/` (ai, email, storage, cost). Requisito prático para qualquer teste unitário.
-- **`isOwner` duplicado 8 vezes** (`server.ts:1846`, `2038`, `2098`, `2246`, `2505`, `3050`, ...). Extrair `loadOwnedOrder(req, res, id)` que devolve o pedido ou já responde 401/403.
-- **Duas rotas `GET /api/health`** (`server.ts:931` e `server.ts:3337`). A segunda é inalcançável — remover.
-- **`apiFetch` existe mas é ignorado** em `App.tsx:46` e em todo o `AuthContext`, que montam `fetch` + header na mão. Padronizar: todo request passa por `apiFetch`, que centraliza o tratamento de 401.
-- **Mock user automático em localhost** (`AuthContext.tsx:28-42`) grava um `session_token` falso no localStorage. O token não é aceito pelo servidor, então o resultado é um estado "logado" que falha em toda chamada — mais confuso que útil. Trocar por um botão explícito de dev login, ou remover.
-- **`referral_code` gerado com `Math.random().toString(36).substr(2,6)`** (`server.ts:1389`) sem checagem de unicidade — colisão quebra o insert. Usar `crypto.randomBytes` e retry em conflito. `substr` está deprecado; usar `slice`.
-- **`order_id` também é `Math.random()`** (`server.ts:1761`, `substr(2,9)`) — usar `crypto.randomUUID()`.
-- **HTML de e-mail interpola dados sem escape** (`server.ts:2625`: `songMetadata.title`; `server.ts:513`: `endpoint`). O título vem de LLM, risco baixo, mas escapar é trivial.
-- **`DAILY_AI_COST_LIMIT_BRL` default R$ 0,05** (`server.ts:398`) — validar contra o custo real medido em `/admin/custos`; se estiver apertado demais, usuários legítimos são bloqueados no meio da entrevista.
-- **Contagem de indicações usa `count === null || count < 5`** (`server.ts:1359`) — erro na query vira "pode premiar". Tratar o erro explicitamente.
-- **Só 2 migrations no repo** (`supabase/migrations/`) para um schema com `users`, `orders`, `coupons`, `cost_logs`, `feedback`, `otp_codes`, `ai_usage_daily`. O README cita um `supabase_schema.sql` que não existe. Versionar o schema completo — hoje não é possível recriar o ambiente do zero.
+- [ ] **`server.ts` com 3.400+ linhas.** Fatiar em `routes/` (auth, orders, payments, admin) + `services/` (ai, email, storage, cost). Requisito prático para qualquer teste unitário.
+  **Não executado nesta rodada** — é um refactor estrutural grande (mover ~30 rotas e várias closures que compartilham estado de módulo) sem uma suíte de testes automatizados no repo para validar que nada quebrou; o risco de regressão silenciosa em produção é maior que o benefício de fazer isso sem supervisão. Recomendo tratar como uma tarefa própria, feita incrementalmente (uma fatia por vez, com deploy e verificação manual entre cada uma) em vez de num único PR grande.
+- [x] **`isOwner` duplicado 8 vezes** (`server.ts:1846`, `2038`, `2098`, `2246`, `2505`, `3050`, ...). Extraído `loadOwnedOrder(res, verified, orderId, select?)`, que busca o pedido, confere a posse (`user_id` ou e-mail legado) e já responde 404/403 sozinho — usado nos 8 pontos (`generate-pix`, `simulate-payment`, `apply-coupon`, `compose-lyrics`, `generate`, `revise`, `DELETE /api/orders/:id`, `DELETE /api/orders/:id/chat`). As duas rotas que expõem pedidos `completed` publicamente antes de exigir login (`GET /api/orders/:id` e o download) têm formato diferente (buscam o pedido antes de decidir se autenticação é necessária) e foram deixadas como estão.
+- [x] **Duas rotas `GET /api/health`** (`server.ts:931` e `server.ts:3337`). A segunda é inalcançável — removida (feito junto do P2.5).
+- [ ] **`apiFetch` existe mas é ignorado** em `App.tsx:46` e em todo o `AuthContext`, que montam `fetch` + header na mão. Padronizar: todo request passa por `apiFetch`, que centraliza o tratamento de 401.
+  **Não executado nesta rodada** — toca praticamente todo componente que fala com a API (~15 arquivos); dado o volume, prefiro fazer como um passo isolado e revisável em vez de misturado aos outros itens deste PR.
+- [x] **Mock user automático em localhost** (`AuthContext.tsx:28-42`) gravava um `session_token` falso no localStorage. O token não era aceito pelo servidor, então o resultado era um estado "logado" que falhava em toda chamada — mais confuso que útil. Removido; dev local agora usa o mesmo fluxo de OTP que produção.
+- [x] **`referral_code` gerado com `Math.random().toString(36).substr(2,6)`** (`server.ts:1389`) sem checagem de unicidade — colisão quebra o insert. Nova `generateUniqueReferralCode()` usa `crypto.randomBytes`, confere colisão contra a tabela `users` e tenta de novo (até 5x, com fallback em UUID). `substr` trocado por `slice`.
+- [x] **`order_id` também é `Math.random()`** (`server.ts:1761`, `substr(2,9)`) — trocado por `crypto.randomUUID()`.
+- [x] **HTML de e-mail interpola dados sem escape** (`songMetadata.title`/`style`/`artistName` no e-mail de entrega; `endpoint`/`errorMessage`/`userEmail` no e-mail de alerta de erro). Adicionado `escapeHtml()` e aplicado nos dois pontos (feito junto do P2.5).
+- [ ] **`DAILY_AI_COST_LIMIT_BRL` default R$ 0,05** (`server.ts:398`) — validar contra o custo real medido em `/admin/custos`; se estiver apertado demais, usuários legítimos são bloqueados no meio da entrevista.
+  **Não executado** — é uma decisão de produto/negócio (qual teto é seguro dado o custo real por música, não algo que dê para inferir só lendo o código); melhor decidida olhando os números reais no dashboard depois de mais uso.
+- [x] **Contagem de indicações usa `count === null || count < 5`** (`server.ts:1359`) — erro na query virava "pode premiar". Agora trata `error` explicitamente (loga e **não** premia em caso de falha na consulta) em vez de tratar `null` como "sem limite".
+- [ ] **Só 2 migrations no repo** (`supabase/migrations/`) para um schema com `users`, `orders`, `coupons`, `cost_logs`, `feedback`, `otp_codes`, `ai_usage_daily`. O README cita um `supabase_schema.sql` que não existe. Versionar o schema completo — hoje não é possível recriar o ambiente do zero.
+  **Não executado** — eu não tenho acesso ao Supabase deste projeto para extrair o schema real (`pg_dump`/introspecção); escrever as migrations de memória, sem conferir contra o banco de verdade, arriscaria documentar um schema errado, que é pior que não ter nenhum. Alguém com acesso ao painel do Supabase precisa rodar o dump e eu (ou qualquer assistente) posso formatar isso em migrations a partir daí.
 
 ---
 

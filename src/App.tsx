@@ -31,6 +31,7 @@ import AdminCosts from "./pages/AdminCosts"
 import Friends from "./pages/Friends"
 import MiniPlayer from "./components/MiniPlayer"
 import RouteLoader from "./components/RouteLoader"
+import MaintenanceOverlay from "./components/MaintenanceOverlay"
 import { PlayerProvider } from "./contexts/PlayerContext"
 
 function ChatRoute() {
@@ -168,6 +169,7 @@ export default function App() {
         <MiniPlayer />
         <CookieBanner />
         <RouteLoader />
+        <MaintenanceOverlay />
       </PlayerProvider>
     </AuthProvider>
   )
