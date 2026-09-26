@@ -15,6 +15,12 @@ O projeto usa um sistema de auth customizado, **não** o `auth.users` do Supabas
 - **Logout**: `/api/logout` anula o `session_token` (`update({ session_token: null })`).
 - **Por que não `auth.users`**: login por magic-link/OTP sem dependência de Supabase Auth; controle total sobre `session_token` e dados do usuário no schema custom.
 
+## Plano de melhorias
+Backlog técnico revisado e priorizado em [`docs/PLANO-MELHORIAS.md`](docs/PLANO-MELHORIAS.md)
+(P0 = crítico, P3 = polimento). Consulte antes de mexer no fluxo de pagamento,
+auth ou geração de áudio — o item correspondente já traz diagnóstico, arquivo/linha
+e critério de aceite. Ao concluir um item, marque-o no arquivo.
+
 ## Custo por música
 - Alvo: Lyria ~R$ 0,20/música. Preço de venda MVP: R$ 1,00.
 - Instrumentação: `logCost` em `/api/chat`, `/api/speech-to-text`, `/api/orders/:id/compose-lyrics`, `/api/orders/:id/generate`, `/api/orders/:id/revise`.
