@@ -288,8 +288,7 @@ export default function CheckoutSection({
       </div>
 
       {/* TESTING PANEL (EXHIBITED ONLY ON LOCALHOST) */}
-      {(window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1") && (
+      {import.meta.env.DEV && (
         <div className="bg-[#FFFDF9] border border-amber-100 p-4.5 rounded-2xl space-y-3 shadow-sm">
           <p className="text-[11px] text-gray-600 leading-relaxed">
             Para testar e simular o recebimento do Pix sem precisar fazer um

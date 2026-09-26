@@ -984,19 +984,41 @@ app.get("/api/invite/:code", async (req, res) => {
 // ─── Feedback Endpoint ────────────────────────────────────────
 app.post("/api/feedback", async (req, res) => {
   try {
-    const { email, category, relatedOrderId, reasonCategory, reasonDetails } =
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
+    const email = verified.email
+    const { category, relatedOrderId, reasonCategory, reasonDetails } =
       req.body
 
-    if (!email || !category) {
+    if (!category) {
       return res
         .status(400)
-        .json({ error: "Email e categoria são obrigatórios" })
+        .json({ error: "Categoria é obrigatória" })
+    }
+
+    // Apenas mantém relatedOrderId se o pedido for do usuário
+    let validOrderId = null
+    if (relatedOrderId) {
+      const { data: order } = await supabase
+        .from("orders")
+        .select("id, user_id, email")
+        .eq("id", relatedOrderId)
+        .single()
+
+      if (
+        order &&
+        ((order.user_id && order.user_id === verified.userId) ||
+          order.email === email.toLowerCase().trim())
+      ) {
+        validOrderId = relatedOrderId
+      }
     }
 
     const { error } = await supabase.from("feedback").insert({
       user_email: email.toLowerCase().trim(),
       category,
-      related_order_id: relatedOrderId || null,
+      related_order_id: validOrderId,
       reason_category: reasonCategory || null,
       reason_details: reasonDetails || null
     })
@@ -2014,6 +2036,10 @@ app.get("/api/orders/:id", async (req, res) => {
 
 // ─── Simulate Payment (Testing) ────────────────────────────
 app.post("/api/orders/:id/simulate-payment", async (req, res) => {
+  if (process.env.ALLOW_SIMULATED_PAYMENT !== "true") {
+    return res.status(404).end()
+  }
+
   try {
     const verified = await verifySession(req, res)
     if (!verified) return
@@ -2039,7 +2065,11 @@ app.post("/api/orders/:id/simulate-payment", async (req, res) => {
 
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ status: "paid", updated_at: new Date().toISOString() })
+      .update({ 
+        status: "paid", 
+        updated_at: new Date().toISOString(),
+        payment_id: "simulated_" + Date.now()
+      })
       .eq("id", id)
 
     if (updateError) {
@@ -3107,18 +3137,17 @@ app.get("/api/orders/:id/download", async (req, res) => {
 // ─── Delete Current User (Soft Delete to Trash Bin) ──────────
 app.post("/api/users/me/delete", async (req, res) => {
   try {
-    const { email } = req.body
-    if (!email) {
-      return res.status(400).json({ error: "Email obrigatório" })
-    }
+    const verified = await verifySession(req, res)
+    if (!verified) return
 
     const { error } = await supabase
       .from("users")
       .update({
         status: "trash",
-        deleted_at: new Date().toISOString()
+        deleted_at: new Date().toISOString(),
+        session_token: null
       })
-      .eq("email", email.toLowerCase().trim())
+      .eq("email", verified.email.toLowerCase().trim())
 
     if (error) {
       return res
