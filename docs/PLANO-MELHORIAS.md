@@ -208,7 +208,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P1.6 — Chat: transcript e custo controlados pelo cliente
+### [x] P1.6 — Chat: transcript e custo controlados pelo cliente
 
 **Problema:** `/api/chat` (`server.ts:1483`) recebe o array `messages` completo a cada turno e o reenvia ao modelo, sem limite de quantidade nem de tamanho — dentro de um body de até 10 MB (`server.ts:58`). O `/api/checkout` (`server.ts:1749`) também aceita o `chatTranscript` cru do cliente, que é o que alimenta a composição da letra. O único freio é o teto diário de custo (`DAILY_AI_COST_LIMIT_BRL`, default R$ 0,05), aplicado **depois** do gasto: uma única chamada gigante estoura o teto e só é bloqueada na seguinte.
 

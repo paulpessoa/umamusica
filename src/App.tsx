@@ -43,7 +43,7 @@ function ChatRoute() {
     return null
   }
 
-  const handleFinishChat = async (chatTranscript: any) => {
+  const handleFinishChat = async (chatTranscript: any, sessionId: string | null) => {
     try {
       const response = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/api/checkout`,
@@ -55,8 +55,7 @@ function ChatRoute() {
           },
           body: JSON.stringify({
             email: user.email,
-            chatTranscript,
-            structuredPrompt: JSON.stringify(chatTranscript)
+            sessionId
           })
         }
       )

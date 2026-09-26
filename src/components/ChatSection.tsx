@@ -9,7 +9,7 @@ interface ChatSectionProps {
   // email é mantido para compatibilidade; o backend agora usa o e-mail do token.
   email?: string
   name?: string
-  onFinishChat: (transcript: ChatMessage[]) => void
+  onFinishChat: (transcript: ChatMessage[], sessionId: string | null) => void
   initialMessages?: ChatMessage[]
 }
 
@@ -51,6 +51,7 @@ export default function ChatSection({
   const [isTyping, setIsTyping] = useState(false)
   // Quando o usuário atinge o teto diário de IA, bloqueamos os inputs.
   const [rateLimited, setRateLimited] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false)
@@ -116,12 +117,13 @@ export default function ChatSection({
     try {
       const response = await apiFetch(`/api/chat`, {
         method: "POST",
-        body: JSON.stringify({ messages: updatedMessages, name })
+        body: JSON.stringify({ messages: updatedMessages, name, sessionId })
       })
 
       const data = await response.json().catch(() => ({}))
 
       if (response.ok) {
+        if (data.sessionId) setSessionId(data.sessionId)
         const { cleanText, options } = parseAiResponse(data.text)
         if (data.nameSaved && data.name) {
           updateUser({ name: data.name })
@@ -295,7 +297,10 @@ export default function ChatSection({
 
   // ─── Compose Trigger ────────────────────────────────────
   const triggerCompose = () => {
-    onFinishChat(messages)
+    if (!sessionId) {
+       console.warn("Aviso: Tentando finalizar compor sem sessionId salvo.")
+    }
+    onFinishChat(messages, sessionId)
   }
 
   const lastMsg = messages[messages.length - 1]?.text || ""

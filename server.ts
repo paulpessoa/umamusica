@@ -55,7 +55,7 @@ app.use(
 app.options("*", cors())
 
 // ─── Body Parsers ─────────────────────────────────────────────
-app.use(express.json({ limit: "10mb" }))
+app.use(express.json({ limit: "1mb" }))
 app.use(express.urlencoded({ extended: true }))
 
 // ─── Brevo API Email Helper (No IP restrictions) ──────────────
@@ -545,7 +545,7 @@ async function handleRateLimitHit(params: {
 const RATE_LIMIT_USER_MESSAGE =
   'Você já usou bastante o compositor hoje! 🎵 Para manter o serviço rápido e gratuito para todos, o assistente descansa por hoje. Você pode voltar amanhã, ou já finalizar sua música com o que conversamos até aqui clicando em "Finalizar e Compor".'
 
-app.use(express.json({ limit: "25mb" }))
+// Removed duplicate 25mb express.json parser here
 
 // Disable caching for all API responses
 app.use("/api", (req, res, next) => {
@@ -1531,11 +1531,45 @@ app.get("/api/users/me", async (req, res) => {
 // ─── Chat Interview (Text) ────────────────────────────────
 app.post("/api/chat", enforceAICostLimit, async (req, res) => {
   try {
-    const { messages, name } = req.body
+    const { messages, name, sessionId } = req.body
     // E-mail confiável vem do token verificado (não do corpo).
     const email = (req as any).userEmail as string
+    const verified = await authenticate(req)
+    if (!verified || !verified.userId) {
+      return res.status(401).json({ error: "Usuário não autenticado" })
+    }
+
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: "Mensagens inválidas" })
+    }
+
+    // Enforce limits to avoid massive payloads
+    const limitedMessages = messages.slice(-40).map((m: any) => ({
+      ...m,
+      text: m.text?.toString().slice(0, 2000) || ""
+    }))
+
+    // Estimar custo antes da chamada (tokens de entrada vs limite diario)
+    const estimatedChars = limitedMessages.reduce((sum, m) => sum + m.text.length, 0)
+    const estimatedTokens = estimatedChars / 4
+    const estimatedCostBRL = (estimatedTokens / 1_000_000) * 0.40 // Estimativa grosseira
+    
+    const todayStr = new Date().toISOString().split("T")[0]
+    const key = `user_cost_${email}_${todayStr}`
+    const { data: cacheRow } = await supabase
+      .from("cache_kv")
+      .select("value")
+      .eq("key", key)
+      .single()
+    const currentCost = cacheRow && cacheRow.value ? parseFloat(cacheRow.value) : 0
+    const limitBRL = parseFloat(process.env.DAILY_AI_COST_LIMIT_BRL || "0.05")
+
+    if (currentCost + estimatedCostBRL > limitBRL) {
+      console.warn(`[Chat] Custo estimado (R$ ${estimatedCostBRL.toFixed(4)}) estouraria o teto de R$ ${limitBRL}. Bloqueando.`)
+      return res.status(429).json({ 
+        error: "O tamanho da conversa excedeu o limite gratuito diário. Finalize a música com o que conversamos até aqui.",
+        errorType: "RATE_LIMIT_DAILY"
+      })
     }
 
     // Optional personalized name (used by the agent when relevant)
@@ -1607,7 +1641,7 @@ Instruções:
       }
     ]
 
-    const chatContents = messages.map((m: any) => ({
+    const chatContents = limitedMessages.map((m: any) => ({
       role: m.sender === "user" ? "user" : "model",
       parts: [{ text: m.text }]
     }))
@@ -1699,10 +1733,37 @@ Instruções:
     // Acumula o custo real desta conversa no teto diário (por e-mail).
     await addAICost(email, turnCostBRL)
 
+    // Save to chat_sessions
+    let finalSessionId = sessionId
+    const fullTranscript = [
+      ...limitedMessages, 
+      { 
+        sender: "ai", 
+        text: aiText, 
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) 
+      }
+    ]
+
+    if (!finalSessionId) {
+      const { data } = await supabase
+        .from("chat_sessions")
+        .insert({ user_id: verified.userId, transcript: fullTranscript })
+        .select("id")
+        .single()
+      if (data) finalSessionId = data.id
+    } else {
+      await supabase
+        .from("chat_sessions")
+        .update({ transcript: fullTranscript, updated_at: new Date().toISOString() })
+        .eq("id", finalSessionId)
+        .eq("user_id", verified.userId)
+    }
+
     res.json({
       text: aiText,
       nameSaved: nameSaved ? true : false,
-      name: nameSaved || undefined
+      name: nameSaved || undefined,
+      sessionId: finalSessionId
     })
   } catch (error: any) {
     const { type, userMessage, technical } = classifyAIError(error)
@@ -1795,7 +1856,7 @@ app.post("/api/checkout", async (req, res) => {
     const verified = await verifySession(req, res)
     if (!verified) return
 
-    const { email, chatTranscript, structuredPrompt } = req.body
+    const { email, sessionId } = req.body
     if (!email) {
       return res.status(400).json({ error: "Email é obrigatório" })
     }
@@ -1804,8 +1865,21 @@ app.post("/api/checkout", async (req, res) => {
       return res.status(403).json({ error: "Acesso proibido." })
     }
 
+    let chatTranscript: any[] = []
+    if (sessionId) {
+      const { data: sessionData } = await supabase
+        .from("chat_sessions")
+        .select("transcript")
+        .eq("id", sessionId)
+        .eq("user_id", verified.userId)
+        .single()
+      if (sessionData && sessionData.transcript) {
+        chatTranscript = sessionData.transcript as any[]
+      }
+    }
+
     // Build optimized structured prompt
-    const optimizedPrompt = buildStructuredPrompt(chatTranscript || [])
+    const optimizedPrompt = buildStructuredPrompt(chatTranscript)
 
     const orderId = "order_" + Math.random().toString(36).substr(2, 9)
     let paymentId = "pay_" + Math.random().toString(36).substr(2, 15)
