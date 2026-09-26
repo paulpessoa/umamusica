@@ -1497,7 +1497,7 @@ app.get("/api/users/me", async (req, res) => {
     const { data: orders } = await supabase
       .from("orders")
       .select(
-        "id, song_metadata, audio_storage_path, payment_id, chat_transcript, status, created_at, user_id"
+        "id, song_metadata, audio_storage_path, status, created_at, user_id"
       )
       .in("status", [
         "completed",

@@ -185,7 +185,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P1.4 — Guardas de rota chamam `navigate()` durante o render
+### [x] P1.4 — Guardas de rota chamam `navigate()` durante o render
 
 **Problema:** `ChatRoute`, `MySongsRoute`, `ChatHistoryRoute`, `PurchaseHistoryRoute` e `FriendsRoute` (`src/App.tsx:34-160`) fazem `if (!user) { navigate("/login"); return null }` **no corpo do componente**. Efeito colateral em render: warning do React 19, navegação podendo rodar duas vezes em StrictMode e flash de tela branca.
 
@@ -195,7 +195,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P1.5 — `AuthContext` dispara `/api/users/me` duas vezes e derruba a sessão no timeout
+### [x] P1.5 — `AuthContext` dispara `/api/users/me` duas vezes e derruba a sessão no timeout
 
 **Problema:** dois `useEffect` (`AuthContext.tsx:85-120` e `AuthContext.tsx:122-145`) fazem a **mesma** chamada — um no mount, outro a cada mudança de rota — então todo carregamento faz duas requisições idênticas. Pior: o primeiro tem `AbortController` de 5s e chama `logout()` em qualquer erro que não seja abort. Uma resposta lenta (o `/api/users/me` devolve **todos** os pedidos com `chat_transcript` e `payment_id` inteiros, `server.ts:1447`) ou um 500 transitório desloga o usuário no meio do fluxo — inclusive depois de pagar.
 

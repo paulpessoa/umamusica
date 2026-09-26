@@ -4,7 +4,8 @@ import {
   Route,
   useNavigate,
   useParams,
-  useLocation
+  useLocation,
+  Navigate
 } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import { ChatMessage } from "./types"
@@ -37,9 +38,8 @@ function ChatRoute() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Protect route
+  // Protect route (RequireAuth handles redirect, this is just for TS)
   if (!user) {
-    navigate("/login")
     return null
   }
 
@@ -117,53 +117,12 @@ function CheckoutRoute() {
   )
 }
 
-function MySongsRoute() {
+function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
-  const navigate = useNavigate()
-
-  // Protect route
   if (!user) {
-    navigate("/login")
-    return null
+    return <Navigate to="/login" replace />
   }
-
-  return <MySongs />
-}
-
-function ChatHistoryRoute() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-
-  if (!user) {
-    navigate("/login")
-    return null
-  }
-
-  return <ChatHistory />
-}
-
-function PurchaseHistoryRoute() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-
-  if (!user) {
-    navigate("/login")
-    return null
-  }
-
-  return <PurchaseHistory />
-}
-
-function FriendsRoute() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-
-  if (!user) {
-    navigate("/login")
-    return null
-  }
-
-  return <Friends />
+  return <>{children}</>
 }
 
 function SuccessRoute() {
@@ -191,15 +150,15 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/menu" element={<Menu />} />
-          <Route path="/minhas-musicas" element={<MySongsRoute />} />
-          <Route path="/historico-chats" element={<ChatHistoryRoute />} />
-          <Route path="/chats" element={<ChatHistoryRoute />} />
-          <Route path="/historico-compras" element={<PurchaseHistoryRoute />} />
-          <Route path="/amigos" element={<FriendsRoute />} />
-          <Route path="/indicacoes" element={<FriendsRoute />} />
+          <Route path="/minhas-musicas" element={<RequireAuth><MySongs /></RequireAuth>} />
+          <Route path="/historico-chats" element={<RequireAuth><ChatHistory /></RequireAuth>} />
+          <Route path="/chats" element={<RequireAuth><ChatHistory /></RequireAuth>} />
+          <Route path="/historico-compras" element={<RequireAuth><PurchaseHistory /></RequireAuth>} />
+          <Route path="/amigos" element={<RequireAuth><Friends /></RequireAuth>} />
+          <Route path="/indicacoes" element={<RequireAuth><Friends /></RequireAuth>} />
           <Route path="/admin/custos" element={<AdminCosts />} />
           <Route path="/faq" element={<FAQ />} />
-          <Route path="/chat" element={<ChatRoute />} />
+          <Route path="/chat" element={<RequireAuth><ChatRoute /></RequireAuth>} />
           <Route path="/checkout/:id" element={<CheckoutRoute />} />
           <Route path="/musica/:id" element={<SuccessRoute />} />
           <Route path="/convite/:code" element={<Invite />} />

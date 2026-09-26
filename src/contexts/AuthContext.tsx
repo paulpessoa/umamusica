@@ -91,58 +91,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isPublicPath) return
 
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 5000)
-
-    fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`, {
-      headers: {
-        "Authorization": `Bearer ${user.session_token}`
-      },
-      signal: controller.signal
-    })
-      .then(res => {
-        clearTimeout(timer)
-        if (!res.ok) throw new Error("Invalid session")
-        return res.json()
-      })
-      .then(data => {
-        if (data.user) {
-          updateUser(data.user)
-        }
-      })
-      .catch(err => {
-        clearTimeout(timer)
-        if (err.name === "AbortError") return
-        console.warn("Auth guard:", err)
-        logout()
-      })
-
-    return () => clearTimeout(timer)
-  }, [location.pathname])
-
-  useEffect(() => {
-    if (user && user.email && user.session_token) {
-      fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email)}`, {
+    const timer = setTimeout(() => {
+      fetch(`${import.meta.env.VITE_API_URL || ""}/api/users/me?email=${encodeURIComponent(user.email!)}`, {
         headers: {
           "Authorization": `Bearer ${user.session_token}`
-        }
+        },
+        signal: controller.signal
       })
         .then(res => {
-          if (!res.ok) throw new Error("Invalid session")
+          if (res.status === 401 || res.status === 403) {
+            throw new Error("Invalid session")
+          }
+          if (!res.ok) {
+            console.warn(`Auth sync non-critical error: ${res.status}`)
+            return null
+          }
           return res.json()
         })
         .then(data => {
-          if (data.user) {
+          if (data?.user) {
             updateUser(data.user)
           }
         })
         .catch(err => {
-          console.warn("Auth refresh skipped:", err)
+          if (err.name === "AbortError") return
           if (err.message === "Invalid session") {
+            console.warn("Auth guard: Invalid session, logging out.")
             logout()
+          } else {
+            console.warn("Auth guard non-critical network error:", err)
           }
         })
+    }, 100) // 100ms debounce
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
     }
-  }, [])
+  }, [location.pathname])
 
   return (
     <AuthContext.Provider value={{ user, login, logout, updateUser }}>
