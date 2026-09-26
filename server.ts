@@ -141,6 +141,23 @@ function isRealMercadoPagoPayment(paymentId?: string) {
   return !!paymentId && /^\d+$/.test(paymentId)
 }
 
+// ─── Nightly Railway pause window (P2.4) ──────────────────────
+// The service is scaled to 0 replicas 02:00–08:00 BRT (see
+// .github/workflows/railway-pause.yml / railway-resume.yml). A Pix
+// generated right before the pause would never be reconciled until the
+// service comes back — so new Pix codes are blocked a bit earlier, from
+// ~01:30 BRT, until resume. Disable with MAINTENANCE_WINDOW_ENABLED=false
+// if the nightly pause itself is ever turned off.
+function isInNightlyMaintenanceWindow(): boolean {
+  if (process.env.MAINTENANCE_WINDOW_ENABLED === "false") return false
+  // BRT = UTC-3 year-round (Brazil no longer observes DST).
+  const utcHour = new Date().getUTCHours()
+  const utcMinutes = new Date().getUTCMinutes()
+  const minutesSinceMidnightUTC = utcHour * 60 + utcMinutes
+  // 01:30 BRT = 04:30 UTC (270min) ── 08:00 BRT = 11:00 UTC (660min)
+  return minutesSinceMidnightUTC >= 270 && minutesSinceMidnightUTC < 660
+}
+
 // Build optimized structured prompt from chat transcript
 function buildStructuredPrompt(chatTranscript: ChatMessage[]): any {
   if (!chatTranscript || chatTranscript.length === 0) {
@@ -1995,6 +2012,14 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
         .json({ error: "Este pedido não está pendente de pagamento." })
     }
 
+    if (isInNightlyMaintenanceWindow()) {
+      return res.status(503).json({
+        error:
+          "Estamos em manutenção noturna (madrugada). Novos pagamentos Pix voltam a partir das 8h.",
+        errorType: "MAINTENANCE_WINDOW"
+      })
+    }
+
     // If order already has a valid payment QR code, just return it
     if (
       order.payment_qr &&
@@ -2347,46 +2372,113 @@ app.post("/api/webhook/mercadopago", async (req, res) => {
 
     res.json({ received: true }) // Fast ack
 
-    setImmediate(async () => {
-      try {
-        const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
-        if (!mpToken) return
-
-        const paymentRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/${paymentId}`,
-          { headers: { Authorization: `Bearer ${mpToken}` } }
-        )
-
-        if (!paymentRes.ok) return
-        const payment: any = await paymentRes.json()
-
-        if (payment.status === "approved" && payment.transaction_amount >= 1.0) {
-          const externalRef = payment.external_reference
-          if (externalRef) {
-            // Update idempotente
-            const { data: updatedRows, error } = await supabase
-              .from("orders")
-              .update({
-                status: "paid",
-                updated_at: new Date().toISOString()
-              })
-              .eq("id", externalRef)
-              .eq("status", "pending_payment")
-              .select("id")
-
-            if (updatedRows && updatedRows.length > 0) {
-              console.log(`[Webhook MP] Order ${externalRef} paid! Starting composition...`)
-              await processComposeLyrics(externalRef).catch(e => console.error("Auto-compose error:", e))
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Webhook Async Process Error:", err)
-      }
+    setImmediate(() => {
+      settleMercadoPagoPaymentIfApproved(paymentId, "[Webhook MP]").catch(
+        (err) => console.error("Webhook Async Process Error:", err)
+      )
     })
   } catch (error) {
     console.error("Webhook Error:", error)
     if (!res.headersSent) res.status(500).json({ error: "Webhook failed" })
+  }
+})
+
+// ─── Check a MercadoPago payment and settle the order if approved ─
+// Shared by the webhook above and the post-pause reconciliation job below
+// (P2.4): the webhook can be missed while the Railway service is scaled to
+// zero overnight, so we also poll for it on resume. Idempotent — the
+// `.eq("status", "pending_payment")` update only ever fires once.
+async function settleMercadoPagoPaymentIfApproved(
+  paymentId: string,
+  logPrefix: string
+): Promise<boolean> {
+  const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+  if (!mpToken) return false
+
+  const paymentRes = await fetch(
+    `https://api.mercadopago.com/v1/payments/${paymentId}`,
+    { headers: { Authorization: `Bearer ${mpToken}` } }
+  )
+  if (!paymentRes.ok) return false
+  const payment: any = await paymentRes.json()
+
+  if (!(payment.status === "approved" && payment.transaction_amount >= 1.0)) {
+    return false
+  }
+
+  const externalRef = payment.external_reference
+  if (!externalRef) return false
+
+  const { data: updatedRows } = await supabase
+    .from("orders")
+    .update({ status: "paid", updated_at: new Date().toISOString() })
+    .eq("id", externalRef)
+    .eq("status", "pending_payment")
+    .select("id")
+
+  if (updatedRows && updatedRows.length > 0) {
+    console.log(`${logPrefix} Order ${externalRef} paid! Starting composition...`)
+    await processComposeLyrics(externalRef).catch((e) =>
+      console.error("Auto-compose error:", e)
+    )
+    return true
+  }
+  return false
+}
+
+// ─── Reconcile pending payments after a pause/restart (P2.4) ─
+// The nightly Railway pause (00 replicas) can swallow MercadoPago webhook
+// deliveries. On resume, sweep orders left in `pending_payment` with a real
+// (numeric) payment_id from the last 12h and ask MercadoPago directly.
+async function reconcilePendingPayments(): Promise<{
+  checked: number
+  settled: number
+}> {
+  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
+  const { data: orders, error } = await supabase
+    .from("orders")
+    .select("id, payment_id")
+    .eq("status", "pending_payment")
+    .gte("created_at", since)
+    .limit(200)
+
+  if (error || !orders) return { checked: 0, settled: 0 }
+
+  const candidates = orders.filter((o) =>
+    isRealMercadoPagoPayment(o.payment_id)
+  )
+
+  let settled = 0
+  for (const order of candidates) {
+    try {
+      const didSettle = await settleMercadoPagoPaymentIfApproved(
+        order.payment_id,
+        "[Reconcile]"
+      )
+      if (didSettle) settled++
+    } catch (e: any) {
+      console.error(`[Reconcile] Order ${order.id} check failed:`, e?.message || e)
+    }
+  }
+  console.log(
+    `[Reconcile] Checked ${candidates.length}/${orders.length} pending orders with real payment_id, settled ${settled}.`
+  )
+  return { checked: candidates.length, settled }
+}
+
+// Admin-triggered: called by the railway-resume workflow right after the
+// service is scaled back up, so no notification lost during the pause
+// window goes unnoticed. Also safe to call manually / on a cron.
+app.post("/api/admin/reconcile-pending-payments", async (req, res) => {
+  try {
+    if (!(await isAuthorizedAdmin(req))) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+    const result = await reconcilePendingPayments()
+    res.json({ success: true, ...result })
+  } catch (error: any) {
+    console.error("[Reconcile] Error:", error?.message || error)
+    res.status(500).json({ error: "Erro ao reconciliar pagamentos" })
   }
 })
 
@@ -3580,6 +3672,12 @@ async function performProcessingReaper() {
 // Run reaper on startup and then every 5 minutes
 performProcessingReaper()
 setInterval(performProcessingReaper, 5 * 60 * 1000)
+
+// Reconcile pending payments on boot too — covers a manual restart or a
+// resume that happens before the railway-resume workflow's own call lands.
+reconcilePendingPayments().catch((e) =>
+  console.error("[Reconcile] Startup run failed:", e?.message || e)
+)
 
 // ============================================================
 // HEALTH CHECK (usado pelo Railway e outros load balancers)
