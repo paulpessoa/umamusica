@@ -138,7 +138,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ## P1 — Robustez do fluxo (o que mais dói para o usuário hoje)
 
-### P1.1 — Geração de áudio síncrona: tirar do request
+### [x] P1.1 — Geração de áudio síncrona: tirar do request
 
 **Problema:** `POST /api/orders/:id/generate` (`server.ts:2485-2660`) chama a Lyria, faz upload no Storage, atualiza o banco e envia e-mail — tudo dentro do HTTP. Consequências reais:
 - **Timeout.** Railway/Cloud Run cortam o request antes da Lyria terminar; o cliente vê erro enquanto o servidor talvez conclua.

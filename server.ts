@@ -2643,7 +2643,11 @@ app.post("/api/orders/:id/generate", async (req, res) => {
     // Set order status to processing conditionally (atomic update)
     const { data: updatedRows, error: updateError } = await supabase
       .from("orders")
-      .update({ status: "processing", updated_at: new Date().toISOString() })
+      .update({ 
+        status: "processing", 
+        processing_started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString() 
+      })
       .eq("id", order.id)
       .in("status", ["paid", "failed_safety", "lyrics_review"])
       .select()
@@ -2654,12 +2658,20 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         .json({ error: "A geração já foi iniciada por outra requisição." })
     }
 
-    // Determine metadata and lyrics
-    if (
-      customLyrics &&
-      typeof customLyrics === "string" &&
-      customLyrics.trim()
-    ) {
+    res.status(202).json({
+      status: "processing",
+      message: "Geração de música iniciada em segundo plano."
+    })
+
+    // Processamento Assíncrono (solto no node loop)
+    setImmediate(async () => {
+      try {
+        // Determine metadata and lyrics
+        if (
+          customLyrics &&
+          typeof customLyrics === "string" &&
+          customLyrics.trim()
+        ) {
       // Bypassing Gemini: User updated lyrics directly
       console.log(
         `[Music Generation] Bypassing Gemini. Using user-supplied edited lyrics.`
@@ -2752,19 +2764,7 @@ app.post("/api/orders/:id/generate", async (req, res) => {
       `
     })
 
-    const { data: updatedOrder } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", order.id)
-      .single()
-
-    res.json(
-      updatedOrder || {
-        ...order,
-        song_metadata: songMetadata,
-        status: "completed"
-      }
-    )
+    // Removed synchronous res.json as we already responded 202
   } catch (error: any) {
     const errorMsg = error.message || String(error)
     let errorType: "SAFETY_BLOCK" | "QUOTA_EXCEEDED" | "UNKNOWN" = "UNKNOWN"
@@ -2804,13 +2804,7 @@ app.post("/api/orders/:id/generate", async (req, res) => {
           })
           .eq("id", fetchedOrder.id)
 
-        return res.status(400).json({
-          error:
-            "A letra foi bloqueada pelo filtro de segurança da IA. Você pode ajustá-la e tentar novamente.",
-          errorType: "SAFETY_BLOCK",
-          ticketId,
-          songMetadata: songMetadata || fetchedOrder.song_metadata
-        })
+        return // Async early return
       }
 
       // For quota or unknown issues: Mark as failed and trigger standard refund process
@@ -2825,10 +2819,7 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         console.log(
           `[Refund] Order ${fetchedOrder.id} status was already updated. Skipping refund to prevent duplicates.`
         )
-        return res.status(500).json({
-          error: "Erro ao compor a música. Estorno já processado.",
-          ticketId
-        })
+        return // Async early return
       }
 
       // A real Mercado Pago payment id is purely numeric. Everything else
@@ -2919,12 +2910,10 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         htmlContent: emailHtml
       })
     }
-
-    res.status(500).json({
-      error: "Erro ao compor a música. Estorno processado automaticamente.",
-      errorType,
-      ticketId
-    })
+  }) // End of setImmediate
+  } catch (error: any) {
+    console.error("[Generate] Initial setup error:", error)
+    if (!res.headersSent) res.status(500).json({ error: "Erro ao iniciar geração." })
   }
 })
 
@@ -3443,6 +3432,61 @@ async function performHardDeleteCleanup() {
 // Run cleanup on startup and then every 24 hours
 performHardDeleteCleanup()
 setInterval(performHardDeleteCleanup, 24 * 60 * 60 * 1000)
+
+// ============================================================
+// REAPER: Clean up stuck processing orders
+// ============================================================
+async function performProcessingReaper() {
+  try {
+    console.log("[Reaper] Checking for stuck orders in 'processing' state...");
+    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+    const { data: stuckOrders } = await supabase
+      .from("orders")
+      .select("id, attempts, payment_id, user_id")
+      .eq("status", "processing")
+      .lt("processing_started_at", tenMinsAgo);
+
+    if (!stuckOrders || stuckOrders.length === 0) return;
+
+    for (const order of stuckOrders) {
+      const attempts = order.attempts || 0;
+      if (attempts >= 3) {
+        console.log(`[Reaper] Order ${order.id} stuck and max attempts reached. Marking as failed.`);
+        await supabase
+          .from("orders")
+          .update({ status: "failed", updated_at: new Date().toISOString() })
+          .eq("id", order.id);
+
+        if (order.payment_id?.startsWith("bonus_balance_") && order.user_id) {
+          await supabase.rpc("increment_free_songs", { p_user_id: order.user_id })
+        } else if (order.payment_id?.startsWith("coupon_")) {
+          const couponMatch = order.payment_id.match(/^coupon_([^_]+)_/)
+          if (couponMatch) {
+            await supabase.rpc("decrement_coupon_uses", { p_code: couponMatch[1] })
+          }
+        }
+      } else {
+        console.log(`[Reaper] Order ${order.id} stuck. Reverting to lyrics_review (attempt ${attempts + 1}).`);
+        await supabase
+          .from("orders")
+          .update({
+            status: "lyrics_review",
+            processing_started_at: null,
+            attempts: attempts + 1,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", order.id);
+      }
+    }
+  } catch (err) {
+    console.error("[Reaper] Error:", err)
+  }
+}
+
+// Run reaper on startup and then every 5 minutes
+performProcessingReaper()
+setInterval(performProcessingReaper, 5 * 60 * 1000)
 
 // ============================================================
 // HEALTH CHECK (usado pelo Railway e outros load balancers)
