@@ -171,7 +171,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P1.3 — Estado do checkout não sobrevive a um refresh
+### [x] P1.3 — Estado do checkout não sobrevive a um refresh
 
 **Problema:** `CheckoutRoute` (`src/App.tsx:93-113`) lê `paymentQr`/`paymentCopiaCola` de `location.state`. Ao dar F5 em `/checkout/:id`, o QR desaparece, o polling nem começa (depende de `localQr`, `CheckoutSection.tsx:62`) e o usuário vê o botão "Pagar R$ 1,00 via Pix" como se nada tivesse acontecido — inclusive quando o pedido já está pago. O contador de 10 minutos (`CheckoutSection.tsx:25`) é puramente cosmético e não corresponde à expiração real do Pix no MercadoPago.
 

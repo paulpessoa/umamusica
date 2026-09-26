@@ -35,6 +35,36 @@ export default function CheckoutSection({
   const [isGeneratingPix, setIsGeneratingPix] = useState(false)
   const [pixError, setPixError] = useState<string | null>(null)
 
+  // Fetch true state from server on mount
+  useEffect(() => {
+    apiFetch(`/api/orders/${orderId}`)
+      .then(res => {
+        if (res.ok) return res.json()
+        throw new Error("Failed to fetch order")
+      })
+      .then(order => {
+        if (["paid", "completed", "lyrics_review", "processing"].includes(order.status)) {
+          onPaymentConfirmed()
+          return
+        }
+        if (order.payment_qr && !order.payment_id?.startsWith("pending_mp")) {
+          setLocalQr(order.payment_qr)
+          setLocalCopiaCola(order.payment_copia_e_cola)
+        }
+        if (order.payment_expires_at) {
+          const exp = new Date(order.payment_expires_at).getTime()
+          const now = Date.now()
+          if (exp > now) {
+            setSecondsLeft(Math.floor((exp - now) / 1000))
+          } else {
+            setSecondsLeft(0)
+            setLocalQr("") // Expired, clear QR to show generate button
+          }
+        }
+      })
+      .catch(err => console.error("Hydration error:", err))
+  }, [orderId, onPaymentConfirmed])
+
   const handleGeneratePix = async () => {
     setIsGeneratingPix(true)
     setPixError(null)
@@ -47,6 +77,15 @@ export default function CheckoutSection({
         const data = await res.json()
         setLocalQr(data.paymentQr)
         setLocalCopiaCola(data.paymentCopiaCola)
+        if (data.paymentExpiresAt) {
+          const exp = new Date(data.paymentExpiresAt).getTime()
+          const now = Date.now()
+          if (exp > now) {
+            setSecondsLeft(Math.floor((exp - now) / 1000))
+          }
+        } else {
+          setSecondsLeft(600)
+        }
       } else {
         setPixError("Erro ao gerar chave Pix. Tente novamente.")
       }
@@ -93,12 +132,18 @@ export default function CheckoutSection({
 
   // Expiration countdown
   useEffect(() => {
-    if (secondsLeft <= 0) return
+    if (secondsLeft <= 0) {
+      if (localQr) {
+        setLocalQr("") // Offer generate new pix
+        setPixError("Pix expirado. Por favor, gere um novo.")
+      }
+      return
+    }
     const timer = setInterval(() => {
       setSecondsLeft((prev) => prev - 1)
     }, 1000)
     return () => clearInterval(timer)
-  }, [secondsLeft])
+  }, [secondsLeft, localQr])
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60)

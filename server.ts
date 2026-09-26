@@ -1921,6 +1921,7 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
     let paymentId = "pay_" + Math.random().toString(36).substr(2, 15)
     let paymentQr = ""
     let paymentCopiaCola = ""
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
 
     const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
     if (mpToken) {
@@ -1940,7 +1941,8 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
               description: "Música Personalizada — 1Música",
               payment_method_id: "pix",
               payer: { email: order.email },
-              external_reference: id
+              external_reference: id,
+              date_of_expiration: expiresAt.toISOString()
             })
           }
         )
@@ -1975,14 +1977,16 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
       .update({
         payment_id: paymentId,
         payment_qr: paymentQr,
-        payment_copia_e_cola: paymentCopiaCola
+        payment_copia_e_cola: paymentCopiaCola,
+        payment_expires_at: expiresAt.toISOString()
       })
       .eq("id", id)
 
     res.json({
       paymentId,
       paymentQr,
-      paymentCopiaCola
+      paymentCopiaCola,
+      paymentExpiresAt: expiresAt.toISOString()
     })
   } catch (error) {
     console.error("Generate Pix error:", error)
@@ -2015,7 +2019,7 @@ app.get("/api/orders/:id", async (req, res) => {
     const { data: order, error } = await supabase
       .from("orders")
       .select(
-        "id, email, user_id, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, created_at"
+        "id, email, user_id, status, song_metadata, audio_storage_path, payment_id, payment_qr, payment_copia_e_cola, payment_expires_at, created_at"
       )
       .eq("id", req.params.id)
       .single()
