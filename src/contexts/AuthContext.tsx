@@ -21,25 +21,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
+    // Note: there used to be an auto-login mock user here for localhost.
+    // The mock session_token was never accepted by the server, so every
+    // API call under it failed anyway — a confusing "logged in but broken"
+    // state. Removed; local dev now goes through the same OTP login flow
+    // as production.
     const savedUser = localStorage.getItem("umamusica_user");
     if (savedUser) return JSON.parse(savedUser);
-
-    // Auto-login mock user for local testing on localhost
-    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-      const path = window.location.pathname;
-      if (path !== "/" && path !== "/login") {
-        const mockUser = {
-          id: "mock-dev-id",
-          email: "dev@qisites.com.br",
-          name: "Desenvolvedor Local",
-          referral_code: "DEV123",
-          free_songs_balance: 5,
-          session_token: "mock-dev-session-token"
-        };
-        localStorage.setItem("umamusica_user", JSON.stringify(mockUser));
-        return mockUser;
-      }
-    }
     return null;
   });
   const location = useLocation()
