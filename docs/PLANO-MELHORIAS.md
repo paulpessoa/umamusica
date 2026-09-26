@@ -260,17 +260,19 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 
 ---
 
-### P2.4 — Pause noturno do Railway derruba a API por 6h
+### [x] P2.4 — Pause noturno do Railway derruba a API por 6h
 
 **Problema:** `railway-pause.yml` zera as réplicas às 02:00 BRT e `railway-resume.yml` restaura às 08:00. O frontend na Vercel continua no ar, então das 02:00 às 08:00 o usuário entra, faz login... e tudo falha. Pior: pedidos em `processing` na hora do pause ficam órfãos (ver P1.1), e pagamentos Pix confirmados nessa janela **perdem a notificação do webhook** — o MP reenvia por um tempo, mas não indefinidamente.
 
 **Ação:**
-- Se a economia é necessária, exibir uma tela de manutenção: um health check no frontend que, ao falhar, mostra "voltamos às 8h" em vez de erros genéricos.
-- Bloquear a geração de novos Pix a partir de ~01:30 (o pagamento não seria processado).
-- O reaper do P1.1 rodando no boot cobre os pedidos órfãos.
-- Reconciliação: job no resume que varre pedidos em `pending_payment` das últimas 12h e consulta o status real no MercadoPago — fecha o buraco do webhook perdido.
+- `src/components/MaintenanceOverlay.tsx`: health check periódico (`/api/health` a cada 30s) montado no `App.tsx`; depois de 2 falhas seguidas, substitui a tela quebrada por "Estamos em manutenção noturna... voltamos às 8h" em vez de erros genéricos por toda a UI.
+- `POST /api/orders/:id/generate-pix` agora recusa (503 `MAINTENANCE_WINDOW`) a partir de ~01:30 BRT até as 08:00 (`isInNightlyMaintenanceWindow()`, desligável via `MAINTENANCE_WINDOW_ENABLED=false`) — não gera Pix que não teria como ser processado antes da pausa.
+- O reaper do P1.1 (já rodava no boot) continua cobrindo os pedidos órfãos em `processing`.
+- Reconciliação: nova função `reconcilePendingPayments()` varre pedidos `pending_payment` com `payment_id` real (numérico) das últimas 12h e consulta o pagamento na API do MercadoPago, reaproveitando a mesma lógica idempotente do webhook (extraída para `settleMercadoPagoPaymentIfApproved()`). Roda automaticamente no boot do servidor **e** é exposta em `POST /api/admin/reconcile-pending-payments` (protegida por `isAuthorizedAdmin`), que o `railway-resume.yml` chama depois de escalar o serviço de volta e confirmar o health check.
 
-**Aceite:** pagamento feito às 03:00 tem a música entregue depois do resume, sem intervenção manual.
+  Pendente de configuração manual (fora do que dá para fazer só no código): o secret `ADMIN_DASHBOARD_KEY` precisa existir no GitHub (`Settings → Secrets and variables → Actions`) com o mesmo valor usado no Railway, para o passo de reconciliação do `railway-resume.yml` funcionar; e a variável `APP_URL` (ou o fallback hardcoded no workflow) precisa apontar para a URL pública correta do serviço.
+
+**Aceite:** pagamento feito às 03:00 tem a música entregue depois do resume, sem intervenção manual (via reconciliação no boot ou no `railway-resume.yml`).
 
 ---
 
