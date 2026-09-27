@@ -17,11 +17,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci || {
+            # Known npm bug (npm/cli#4828): npm ci sometimes fails to
+            # install a platform-specific optionalDependency (e.g. the
+            # rollup/lightningcss native binaries), even with a good
+            # lockfile. Retrying with a clean install works around it
+            # instead of leaving every deploy permanently blocked.
+            echo "npm ci failed, retrying with a clean npm install..."
+            rm -rf node_modules
+            npm install
+          }
 
       - name: Lint (tsc --noEmit)
         run: npm run lint
@@ -62,11 +72,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci || {
+            echo "npm ci failed, retrying with a clean npm install..."
+            rm -rf node_modules
+            npm install
+          }
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
