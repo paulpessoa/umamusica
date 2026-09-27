@@ -23,12 +23,12 @@ test.describe("Login Flow - umamusica.vercel.app", () => {
 
     await expect(page.getByRole("heading", { name: "Qual seu e-mail?" })).toBeVisible();
     await expect(page.locator("input[type=email]")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Receber Codigo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Receber Código" })).toBeVisible();
 
     await page.locator("input[type=email]").fill("teste@playwright.com");
-    await page.getByRole("button", { name: "Receber Codigo" }).click();
+    await page.getByRole("button", { name: "Receber Código" }).click();
 
-    await expect(page.getByRole("heading", { name: "Insira o codigo" })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("heading", { name: "Insira o código" })).toBeVisible({ timeout: 8000 });
     await expect(page.locator("text=teste@playwright.com")).toBeVisible();
 
     const otpInputs = page.locator("input[inputmode=numeric]");
@@ -51,9 +51,9 @@ test.describe("Login Flow - umamusica.vercel.app", () => {
 
     await page.goto(BASE_URL + "/login");
     await page.locator("input[type=email]").fill("teste@playwright.com");
-    await page.getByRole("button", { name: "Receber Codigo" }).click();
+    await page.getByRole("button", { name: "Receber Código" }).click();
 
-    await expect(page.getByRole("heading", { name: "Insira o codigo" })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("heading", { name: "Insira o código" })).toBeVisible({ timeout: 8000 });
 
     const otpInputs = page.locator("input[inputmode=numeric]");
     for (let i = 0; i < 6; i++) {
@@ -74,9 +74,9 @@ test.describe("Login Flow - umamusica.vercel.app", () => {
 
     await page.goto(BASE_URL + "/login");
     await page.locator("input[type=email]").fill("teste@playwright.com");
-    await page.getByRole("button", { name: "Receber Codigo" }).click();
+    await page.getByRole("button", { name: "Receber Código" }).click();
 
-    await expect(page.getByRole("heading", { name: "Insira o codigo" })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("heading", { name: "Insira o código" })).toBeVisible({ timeout: 8000 });
 
     const otpInputs = page.locator("input[inputmode=numeric]");
     for (let i = 0; i < 6; i++) {
