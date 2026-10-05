@@ -25,3 +25,9 @@ e critério de aceite. Ao concluir um item, marque-o no arquivo.
 - Alvo: Lyria ~R$ 0,20/música. Preço de venda MVP: R$ 1,00.
 - Instrumentação: `logCost` em `/api/chat`, `/api/speech-to-text`, `/api/orders/:id/compose-lyrics`, `/api/orders/:id/generate`, `/api/orders/:id/revise`.
 - Dashboard: `/admin/custos` (AdminCosts.tsx) com filtros e breakdown por etapa.
+
+## Deploy (custo zero)
+- **Frontend**: Vercel (estático, não dorme). `VITE_API_URL` aponta para o backend.
+- **Backend**: Render free via [`render.yaml`](render.yaml) — builda só a API (`npm run build:server`) e só redeploya quando `server.ts`/`src/types.ts`/`package*.json` mudam.
+- O Render free dorme após 15 min sem tráfego. [`keep-alive.yml`](.github/workflows/keep-alive.yml) faz ping em `/api/health` a cada 10 min (var `RENDER_API_URL` no GitHub).
+- No frontend, `waitForBackend()` (`src/lib/api.ts`) é aguardado por `apiFetch`; use `useBackendReady()` para mostrar estado de "acordando" em botões.

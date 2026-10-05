@@ -10,6 +10,57 @@ const STORAGE_KEY = "umamusica_user"
 
 export const API_BASE: string = (import.meta.env.VITE_API_URL as string) || ""
 
+// Backend wake-up.
+//
+// The API runs on Render's free tier, which sleeps after 15 min without
+// traffic and takes ~30-60s to cold start. Instead of blocking the whole app,
+// we ping /api/health in the background as soon as the page loads and make
+// API calls wait for it, so only the action the user triggered shows a
+// "waking up" state — and usually the user is still reading the page.
+
+const WAKE_TIMEOUT_MS = 90_000
+const WAKE_RETRY_MS = 3_000
+
+let backendReady = false
+let wakePromise: Promise<void> | null = null
+const readyListeners = new Set<() => void>()
+
+export function isBackendReady(): boolean {
+  return backendReady
+}
+
+export function onBackendReady(cb: () => void): () => void {
+  readyListeners.add(cb)
+  return () => readyListeners.delete(cb)
+}
+
+// Resolves once /api/health answers, or after WAKE_TIMEOUT_MS so callers never
+// hang forever (the real request then fails with its own error).
+export function waitForBackend(): Promise<void> {
+  if (backendReady) return Promise.resolve()
+  if (!wakePromise) {
+    wakePromise = (async () => {
+      const deadline = Date.now() + WAKE_TIMEOUT_MS
+      while (Date.now() < deadline) {
+        try {
+          const res = await fetch(`${API_BASE}/api/health`, { cache: "no-store" })
+          if (res.ok) {
+            backendReady = true
+            readyListeners.forEach((cb) => cb())
+            return
+          }
+        } catch {
+          // Still waking up (502/connection reset during cold start).
+        }
+        await new Promise((r) => setTimeout(r, WAKE_RETRY_MS))
+      }
+    })().finally(() => {
+      if (!backendReady) wakePromise = null
+    })
+  }
+  return wakePromise
+}
+
 export interface StoredUser {
   id: string
   email: string
@@ -63,5 +114,6 @@ export async function apiFetch(
   const isAbsolute = /^https?:\/\//i.test(path)
   const url = isAbsolute ? path : `${API_BASE}${path}`
 
+  await waitForBackend()
   return fetch(url, { ...rest, headers: finalHeaders })
 }

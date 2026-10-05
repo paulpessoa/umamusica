@@ -1,0 +1,59 @@
+# Render Blueprint — só a API. O frontend continua na Vercel.
+# Render → New → Blueprint → selecione este repositório.
+services:
+  - type: web
+    name: umamusica-api
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci --include=dev && npm run build:server
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    # Só faz deploy quando algo do backend muda. Push só de frontend (src/)
+    # não gasta minutos de build no Render — a Vercel cuida disso.
+    buildFilter:
+      paths:
+        - server.ts
+        - src/types.ts
+        - package.json
+        - package-lock.json
+        - render.yaml
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24"
+      # URLs públicas
+      - key: FRONTEND_URL # ex.: https://umamusica.vercel.app (ou seu domínio)
+        sync: false
+      - key: API_URL # a URL deste serviço, ex.: https://umamusica-api.onrender.com
+        sync: false
+      # Segredos — preencha no painel do Render (Environment)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ML_TOKEN
+        sync: false
+      - key: MP_WEBHOOK_SECRET
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: ADMIN_DASHBOARD_KEY
+        sync: false
+      # Rate limit de custo de IA
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: DAILY_AI_COST_LIMIT_BRL
+        value: "0.05"
+      - key: ALLOW_SIMULATED_PAYMENT
+        value: "FALSE"

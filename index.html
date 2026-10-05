@@ -28,6 +28,15 @@
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+  <!-- Acorda a API (Render free dorme após 15 min) antes mesmo do React carregar -->
+  <script>
+    (function () {
+      var base = "%VITE_API_URL%";
+      if (base.charAt(0) === "%") base = "";
+      try { fetch(base + "/api/health", { cache: "no-store" }).catch(function () {}); } catch (e) {}
+    })();
+  </script>
+
 </head>
 
 <body>

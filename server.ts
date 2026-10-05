@@ -1353,7 +1353,6 @@ app.post("/api/verify-otp", async (req, res) => {
     const sessionToken = crypto.randomUUID()
 
     // Check if user exists
-    const cleanEmail = email.toLowerCase().trim()
     let user: any = null
     const { data: userData, error: userError } = await supabase
       .from("users")
@@ -1901,10 +1900,7 @@ app.post("/api/checkout", async (req, res) => {
       console.log(
         `[Checkout] User ${cleanEmail} has balance. Using 1 free song.`
       )
-      await supabase
-        .from("users")
-        .update({ free_songs_balance: user.free_songs_balance - 1 })
-        .eq("id", user.id)
+      // consume_free_song já decrementou o saldo de forma atômica.
 
       paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9)
       status = "paid"
@@ -2988,6 +2984,7 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         htmlContent: emailHtml
       })
     }
+    }
   }) // End of setImmediate
   } catch (error: any) {
     console.error("[Generate] Initial setup error:", error)
@@ -3567,14 +3564,6 @@ performProcessingReaper()
 setInterval(performProcessingReaper, 5 * 60 * 1000)
 
 // ============================================================
-// HEALTH CHECK (usado pelo Railway e outros load balancers)
-// ============================================================
-
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({ status: "ok", uptime: process.uptime() })
-})
-
-// ============================================================
 // VITE DEV / PRODUCTION SERVING
 // ============================================================
 
@@ -3589,10 +3578,14 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist")
     app.use("/assets", express.static(path.join(process.cwd(), "assets")))
-    app.use(express.static(distPath))
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"))
-    })
+    // No Render só a API é buildada (o frontend fica na Vercel). Sem o
+    // index.html, não servimos o dist/ — senão o server.cjs ficaria público.
+    if (fs.existsSync(path.join(distPath, "index.html"))) {
+      app.use(express.static(distPath))
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"))
+      })
+    }
   }
 
   const server = http.createServer(app)

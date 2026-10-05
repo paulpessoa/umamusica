@@ -1,0 +1,24 @@
+name: Keep API awake
+
+# O Render free dorme após 15 min sem tráfego. Este ping a mantém acordada.
+# O agendamento do GitHub costuma atrasar alguns minutos, por isso a cada 10
+# (e não 14) — com folga para nunca passar dos 15. Repo público = minutos grátis.
+on:
+  schedule:
+    - cron: "3-59/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /api/health
+        env:
+          API_URL: ${{ vars.RENDER_API_URL }}
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "Defina a variável RENDER_API_URL em Settings → Secrets and variables → Actions → Variables"
+            exit 1
+          fi
+          curl -fsS --max-time 90 --retry 3 --retry-delay 10 "$API_URL/api/health"

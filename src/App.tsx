@@ -13,6 +13,7 @@ import MobileFrame from "./components/MobileFrame"
 import ChatSection from "./components/ChatSection"
 import CheckoutSection from "./components/CheckoutSection"
 import SuccessSection from "./components/SuccessSection"
+import BackendWakeup from "./components/BackendWakeup"
 
 // Pages
 import Home from "./pages/Home"
@@ -143,32 +144,34 @@ function SuccessRoute() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <PlayerProvider>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/menu" element={<Menu />} />
-          <Route path="/minhas-musicas" element={<RequireAuth><MySongs /></RequireAuth>} />
-          <Route path="/historico-chats" element={<RequireAuth><ChatHistory /></RequireAuth>} />
-          <Route path="/chats" element={<RequireAuth><ChatHistory /></RequireAuth>} />
-          <Route path="/historico-compras" element={<RequireAuth><PurchaseHistory /></RequireAuth>} />
-          <Route path="/amigos" element={<RequireAuth><Friends /></RequireAuth>} />
-          <Route path="/indicacoes" element={<RequireAuth><Friends /></RequireAuth>} />
-          <Route path="/admin/custos" element={<AdminCosts />} />
-          <Route path="/faq" element={<FAQ />} />
-          <Route path="/chat" element={<RequireAuth><ChatRoute /></RequireAuth>} />
-          <Route path="/checkout/:id" element={<CheckoutRoute />} />
-          <Route path="/musica/:id" element={<SuccessRoute />} />
-          <Route path="/convite/:code" element={<Invite />} />
-          <Route path="/termos" element={<Terms />} />
-          <Route path="/privacidade" element={<Privacy />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <MiniPlayer />
-        <CookieBanner />
-        <RouteLoader />
-      </PlayerProvider>
-    </AuthProvider>
+    <BackendWakeup>
+      <AuthProvider>
+        <PlayerProvider>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/menu" element={<Menu />} />
+            <Route path="/minhas-musicas" element={<RequireAuth><MySongs /></RequireAuth>} />
+            <Route path="/historico-chats" element={<RequireAuth><ChatHistory /></RequireAuth>} />
+            <Route path="/chats" element={<RequireAuth><ChatHistory /></RequireAuth>} />
+            <Route path="/historico-compras" element={<RequireAuth><PurchaseHistory /></RequireAuth>} />
+            <Route path="/amigos" element={<RequireAuth><Friends /></RequireAuth>} />
+            <Route path="/indicacoes" element={<RequireAuth><Friends /></RequireAuth>} />
+            <Route path="/admin/custos" element={<AdminCosts />} />
+            <Route path="/faq" element={<FAQ />} />
+            <Route path="/chat" element={<RequireAuth><ChatRoute /></RequireAuth>} />
+            <Route path="/checkout/:id" element={<CheckoutRoute />} />
+            <Route path="/musica/:id" element={<SuccessRoute />} />
+            <Route path="/convite/:code" element={<Invite />} />
+            <Route path="/termos" element={<Terms />} />
+            <Route path="/privacidade" element={<Privacy />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          <MiniPlayer />
+          <CookieBanner />
+          <RouteLoader />
+        </PlayerProvider>
+      </AuthProvider>
+    </BackendWakeup>
   )
 }

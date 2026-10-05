@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import MobileFrame from "../components/MobileFrame";
+import { useBackendReady } from "../components/BackendWakeup";
+import { waitForBackend } from "../lib/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -15,6 +17,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes (600 seconds)
   const { login } = useAuth();
+  const backendReady = useBackendReady();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const referralCode = searchParams.get("ref");
@@ -138,6 +141,7 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
+      await waitForBackend();
       const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -169,6 +173,7 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
+      await waitForBackend();
       const res = await fetch(`${import.meta.env.VITE_API_URL || ""}/api/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -228,7 +233,7 @@ export default function Login() {
                   disabled={loading}
                   className="w-full max-w-xs mx-auto py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
                 >
-                  {loading ? "Enviando..." : "Receber Código"}
+                  {loading ? (backendReady ? "Enviando..." : "Afinando os instrumentos...") : "Receber Código"}
                   {!loading && <ArrowRight className="w-5 h-5" />}
                 </button>
               </div>
@@ -301,7 +306,7 @@ export default function Login() {
                   disabled={loading || code.length !== 6 || timeLeft <= 0}
                   className="w-full max-w-xs mx-auto py-4 bg-[#FF5A5F] text-white rounded-xl font-medium shadow-[0_4px_14px_rgba(255,90,95,0.3)] hover:shadow-[0_6px_20px_rgba(255,90,95,0.4)] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center disabled:shadow-none"
                 >
-                  {loading ? "Verificando..." : "Entrar"}
+                  {loading ? (backendReady ? "Verificando..." : "Afinando os instrumentos...") : "Entrar"}
                 </button>
               </div>
             </motion.div>
