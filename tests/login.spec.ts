@@ -1,6 +1,8 @@
 ﻿import { test, expect } from "@playwright/test";
 
-const BASE_URL = "https://umamusica.vercel.app";
+// Smoke test contra produção por padrão; pode ser apontado para outro
+// ambiente (preview, staging) via env var em CI.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "https://umamusica.vercel.app";
 
 const MOCK_USER = {
   id: "test-user-id-123",
@@ -12,6 +14,14 @@ const MOCK_USER = {
 };
 
 test.describe("Login Flow - umamusica.vercel.app", () => {
+  // O Login espera o backend acordar (waitForBackend) antes de chamar a API.
+  // Simulamos o health check para o teste não depender do Render estar acordado.
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/health", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", json: { status: "ok" } })
+    );
+  });
+
   test("deve exibir tela de email e enviar codigo com sucesso", async ({ page }) => {
     await page.route("**/api/send-otp", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/json", json: { success: true } });
@@ -21,12 +31,12 @@ test.describe("Login Flow - umamusica.vercel.app", () => {
 
     await expect(page.getByRole("heading", { name: "Qual seu e-mail?" })).toBeVisible();
     await expect(page.locator("input[type=email]")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Receber Codigo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Receber Código" })).toBeVisible();
 
     await page.locator("input[type=email]").fill("teste@playwright.com");
-    await page.getByRole("button", { name: "Receber Codigo" }).click();
+    await page.getByRole("button", { name: "Receber Código" }).click();
 
-    await expect(page.getByRole("heading", { name: "Insira o codigo" })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("heading", { name: "Insira o código" })).toBeVisible({ timeout: 8000 });
     await expect(page.locator("text=teste@playwright.com")).toBeVisible();
 
     const otpInputs = page.locator("input[inputmode=numeric]");
@@ -49,9 +59,9 @@ test.describe("Login Flow - umamusica.vercel.app", () => {
 
     await page.goto(BASE_URL + "/login");
     await page.locator("input[type=email]").fill("teste@playwright.com");
-    await page.getByRole("button", { name: "Receber Codigo" }).click();
+    await page.getByRole("button", { name: "Receber Código" }).click();
 
-    await expect(page.getByRole("heading", { name: "Insira o codigo" })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("heading", { name: "Insira o código" })).toBeVisible({ timeout: 8000 });
 
     const otpInputs = page.locator("input[inputmode=numeric]");
     for (let i = 0; i < 6; i++) {
@@ -72,9 +82,9 @@ test.describe("Login Flow - umamusica.vercel.app", () => {
 
     await page.goto(BASE_URL + "/login");
     await page.locator("input[type=email]").fill("teste@playwright.com");
-    await page.getByRole("button", { name: "Receber Codigo" }).click();
+    await page.getByRole("button", { name: "Receber Código" }).click();
 
-    await expect(page.getByRole("heading", { name: "Insira o codigo" })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole("heading", { name: "Insira o código" })).toBeVisible({ timeout: 8000 });
 
     const otpInputs = page.locator("input[inputmode=numeric]");
     for (let i = 0; i < 6; i++) {

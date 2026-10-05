@@ -1,0 +1,77 @@
+name: CI
+
+# O deploy do backend é feito pelo próprio Render (render.yaml), que só
+# publica depois que este workflow passa (autoDeployTrigger: checksPass).
+# O frontend é publicado pela Vercel.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  # Gate: instala dependências e valida a build antes de deixar qualquer
+  # coisa chegar em produção.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
+
+      - name: Install dependencies
+        run: |
+          npm ci || {
+            # Known npm bug (npm/cli#4828): npm ci sometimes fails to
+            # install a platform-specific optionalDependency (e.g. the
+            # rollup/lightningcss native binaries), even with a good
+            # lockfile. Retrying with a clean install works around it
+            # instead of leaving every deploy permanently blocked.
+            echo "npm ci failed, retrying with a clean npm install..."
+            rm -rf node_modules
+            npm install
+          }
+
+      - name: Lint (tsc --noEmit)
+        run: npm run lint
+
+      - name: Build (vite + server bundle)
+        run: npm run build
+
+  # Smoke test contra produção (Vercel). Nunca bloqueia: falhas só avisam.
+  smoke-test:
+    needs: checks
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
+
+      - name: Install dependencies
+        run: |
+          npm ci || {
+            echo "npm ci failed, retrying with a clean npm install..."
+            rm -rf node_modules
+            npm install
+          }
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run production smoke tests
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: "https://umamusica.vercel.app"
+        run: npx playwright test tests/login.spec.ts

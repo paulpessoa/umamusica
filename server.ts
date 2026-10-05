@@ -141,6 +141,76 @@ function isRealMercadoPagoPayment(paymentId?: string) {
   return !!paymentId && /^\d+$/.test(paymentId)
 }
 
+// Generate a referral code that doesn't collide with an existing one.
+// crypto.randomBytes is used instead of Math.random (higher entropy per
+// char), and we still check + retry since a 6-char code has a real
+// birthday-paradox collision chance once there are a few thousand users.
+async function generateUniqueReferralCode(): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = crypto.randomBytes(6).toString("hex").toUpperCase().slice(0, 6)
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("referral_code", code)
+      .maybeSingle()
+    if (!existing) return code
+  }
+  // Extremely unlikely fallback: a UUID slice is unique for all practical
+  // purposes, at the cost of not being as easy to type/share.
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()
+}
+
+// Fetch an order and verify the caller owns it (by user_id, preferred, or
+// legacy e-mail match), replacing the isOwner block copy-pasted across 8
+// order routes. On any failure this already writes the response (404/403)
+// and returns null — callers just check for that and `return`.
+// Not used by the two routes that expose completed orders publicly before
+// requiring auth (GET /api/orders/:id, GET /api/orders/:id/download) —
+// those need the order fetched before deciding whether auth is required
+// at all, which doesn't fit this shape.
+async function loadOwnedOrder(
+  res: express.Response,
+  verified: { userId?: string | null; email: string },
+  orderId: string,
+  select: string = "*"
+): Promise<any | null> {
+  const { data: order, error } = await supabase
+    .from("orders")
+    .select(select)
+    .eq("id", orderId)
+    .single()
+
+  if (error || !order) {
+    res.status(404).json({ error: "Pedido não encontrado" })
+    return null
+  }
+
+  const isOwner =
+    ((order as any).user_id &&
+      verified.userId &&
+      (order as any).user_id === verified.userId) ||
+    (order as any).email === verified.email.toLowerCase().trim()
+
+  if (!isOwner) {
+    res.status(403).json({ error: "Acesso proibido" })
+    return null
+  }
+
+  return order
+}
+
+// Escape untrusted text before interpolating it into an HTML e-mail body
+// (song titles come from the LLM, endpoints/messages can contain user
+// input via query/body echoed back in error logs).
+function escapeHtml(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 // Build optimized structured prompt from chat transcript
 function buildStructuredPrompt(chatTranscript: ChatMessage[]): any {
   if (!chatTranscript || chatTranscript.length === 0) {
@@ -264,6 +334,32 @@ function parseSongMetadata(rawText: string): SongMetadata | null {
   } as SongMetadata
 }
 
+// ─── Admin alert e-mail (P2.5 observability) ──────────────────
+// Small, generic wrapper around sendEmailViaBrevo shared by
+// logErrorAndNotify (per-request errors, below) and the operational
+// alerts fired from background jobs (reaper, failure-rate monitor) that
+// have no `req` to log against.
+async function sendAdminAlert(params: {
+  subject: string
+  alertHeader: string
+  alertColor?: string
+  bodyHtml: string
+}): Promise<void> {
+  const adminEmail = "paulmspessoa@gmail.com"
+  const htmlContent = `
+    <div style="font-family: 'Segoe UI', sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #FF5A5F; text-align: center; margin-bottom: 20px;">1Música - Central de Alertas</h2>
+      <div style="background: ${params.alertColor || "#dd4b39"}; color: white; padding: 16px; border-radius: 8px; font-weight: bold; margin-bottom: 20px;">
+        ⚠️ ${params.alertHeader}
+      </div>
+      ${params.bodyHtml}
+      <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 24px 0;" />
+      <p style="font-size: 11px; color: #999; text-align: center;">Este é um e-mail automático enviado pela Central de Logs do 1Música.</p>
+    </div>
+  `
+  await sendEmailViaBrevo({ to: adminEmail, subject: params.subject, htmlContent })
+}
+
 // Global logger and Brevo notifier
 async function logErrorAndNotify(
   error: any,
@@ -310,7 +406,6 @@ async function logErrorAndNotify(
   }
 
   // 2. Notify Admin via Brevo
-  const adminEmail = "paulmspessoa@gmail.com"
   let subject = `[Ticket ${ticketId.substring(0, 8)}] Erro Crítico no Sistema`
   let alertHeader = "Erro Desconhecido"
   let alertColor = "#dd4b39"
@@ -320,7 +415,7 @@ async function logErrorAndNotify(
     subject = `[Ticket ${ticketId.substring(0, 8)}] URGENTE: Bloqueio de Filtro de Segurança (Lyria)`
     alertHeader = "Filtro de Segurança da Google (Lyria) Bloqueou a Geração"
     alertColor = "#ff9800"
-    actionText = `O usuário <strong>${userEmail || "desconhecido"}</strong> teve sua letra barrada pela política do Google. O sistema já liberou para que ele edite a letra sem custo adicional.`
+    actionText = `O usuário <strong>${escapeHtml(userEmail || "desconhecido")}</strong> teve sua letra barrada pela política do Google. O sistema já liberou para que ele edite a letra sem custo adicional.`
   } else if (errorType === "QUOTA_EXCEEDED") {
     subject = `[Ticket ${ticketId.substring(0, 8)}] URGENTE: Cotas de IA Excedidas! Recarregue a Conta!`
     alertHeader = "Cota de Créditos ou Limite do Google/Gemini Atingido"
@@ -329,26 +424,17 @@ async function logErrorAndNotify(
       "<strong>Atenção:</strong> Os limites da API do Google/Gemini foram atingidos. Recarregue a conta do Google Cloud Console o mais rápido possível para reprocessar os pedidos na fila."
   }
 
-  const htmlContent = `
-    <div style="font-family: 'Segoe UI', sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px; background: #ffffff;">
-      <h2 style="color: #FF5A5F; text-align: center; margin-bottom: 20px;">1Música - Central de Alertas</h2>
-      <div style="background: ${alertColor}; color: white; padding: 16px; border-radius: 8px; font-weight: bold; margin-bottom: 20px;">
-        ⚠️ ${alertHeader}
-      </div>
-      <p><strong>ID do Ticket:</strong> <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${ticketId}</code></p>
-      <p><strong>Endpoint:</strong> <code>${endpoint}</code></p>
-      <p><strong>Usuário Afetado:</strong> ${userEmail || "Não especificado"}</p>
-      <p><strong>Mensagem do Erro:</strong> <pre style="background: #f9f9f9; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; border: 1px solid #e1e1e1; overflow-x: auto; white-space: pre-wrap;">${errorMessage}</pre></p>
-      <p>${actionText}</p>
-      <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 24px 0;" />
-      <p style="font-size: 11px; color: #999; text-align: center;">Este é um e-mail automático enviado pela Central de Logs do 1Música.</p>
-    </div>
-  `
-
-  await sendEmailViaBrevo({
-    to: adminEmail,
+  await sendAdminAlert({
     subject,
-    htmlContent
+    alertHeader,
+    alertColor,
+    bodyHtml: `
+      <p><strong>ID do Ticket:</strong> <code style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${ticketId}</code></p>
+      <p><strong>Endpoint:</strong> <code>${escapeHtml(endpoint)}</code></p>
+      <p><strong>Usuário Afetado:</strong> ${escapeHtml(userEmail || "Não especificado")}</p>
+      <p><strong>Mensagem do Erro:</strong> <pre style="background: #f9f9f9; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; border: 1px solid #e1e1e1; overflow-x: auto; white-space: pre-wrap;">${escapeHtml(errorMessage)}</pre></p>
+      <p>${actionText}</p>
+    `
   })
 
   return ticketId
@@ -679,15 +765,19 @@ async function enforceAICostLimit(
 const PREFER_GROQ = true
 
 // ─── Google Gemini model (single, good cost-benefit) ─────────
-const GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"
+// "gemini-3.5-flash-lite" never existed on the Gemini API — every Gemini
+// call was silently failing and falling through to Groq, and logCost kept
+// recording that invalid name regardless of which provider actually ran.
+// "gemini-2.0-flash-lite" is a real, current, low-cost model id.
+const GEMINI_CHAT_MODEL = "gemini-2.0-flash-lite"
 
 // Legacy/deprecated Gemini names → map to the single current model
 const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
   "gemini-1.5-flash": GEMINI_CHAT_MODEL,
   "gemini-1.5-pro": GEMINI_CHAT_MODEL,
   "gemini-2.0-flash": GEMINI_CHAT_MODEL,
-  "gemini-2.0-flash-lite": GEMINI_CHAT_MODEL,
   "gemini-3.5-flash-lite": GEMINI_CHAT_MODEL,
+  "gemini-3.5-flash": GEMINI_CHAT_MODEL,
   "gemini-3.1-flash-lite": GEMINI_CHAT_MODEL
 }
 
@@ -709,6 +799,7 @@ async function callGroq(params: {
   text: string
   usage: { inputTokens: number | null; outputTokens: number | null }
   toolCalls?: any
+  model: string
 }> {
   const groqApiKey = process.env.GROQ_API_KEY
   if (!groqApiKey) throw new Error("GROQ_API_KEY not configured")
@@ -768,18 +859,20 @@ async function callGroq(params: {
     usage: {
       inputTokens: data.usage?.prompt_tokens ?? null,
       outputTokens: data.usage?.completion_tokens ?? null
-    }
+    },
+    model
   }
 }
 
 // ─── Single Gemini attempt ───────────────────────────────────
+// No model name is accepted from the caller: there is a single supported
+// Gemini model (GEMINI_CHAT_MODEL), so nothing can go hardcoded/stale here.
 async function callGemini(params: {
-  model: string
   contents: any[]
   config?: any
   tools?: any
 }) {
-  const modelName = normalizeGeminiModel(params.model)
+  const modelName = normalizeGeminiModel(GEMINI_CHAT_MODEL)
   console.log(`[AI] Trying Gemini model: ${modelName}...`)
   const result = await ai.models.generateContent({
     model: modelName,
@@ -792,15 +885,18 @@ async function callGemini(params: {
     usage: {
       inputTokens: result.usageMetadata?.promptTokenCount ?? null,
       outputTokens: result.usageMetadata?.candidatesTokenCount ?? null
-    }
+    },
+    model: modelName
   }
 }
 
 // ─── Main AI dispatcher ───────────────────────────────────────
 // Provisional order: Groq first (Gemini credits depleted), Gemini as fallback.
 // Flip PREFER_GROQ to false to restore Gemini-first when billing returns.
+// Callers no longer pass a `model` — this always runs GROQ_CHAT_MODEL or
+// GEMINI_CHAT_MODEL and reports back which one actually ran (`provider` +
+// `model`), so logCost records the truth instead of a hardcoded guess.
 async function generateContentWithFallback(params: {
-  model: string
   contents: any[]
   config?: any
   tools?: any
@@ -1050,13 +1146,56 @@ app.post("/api/feedback", async (req, res) => {
   }
 })
 
+// ─── Admin auth helper ────────────────────────────────────────
+// Accepts EITHER:
+// - `x-admin-key` matching ADMIN_DASHBOARD_KEY (constant-time compare —
+//   never the Supabase service role key, which grants full DB access and
+//   should never leave the server or be typed into a browser dashboard).
+// - a `session_token` (Bearer) belonging to a user in ADMIN_EMAILS.
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  // Compare against a fixed-length buffer first so the early return doesn't
+  // leak length information through timing, then do the real constant-time
+  // comparison only when lengths already match.
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
+}
+
+async function isAuthorizedAdmin(req: express.Request): Promise<boolean> {
+  const adminKey = req.headers["x-admin-key"]
+  const validKey = process.env.ADMIN_DASHBOARD_KEY || ""
+  if (typeof adminKey === "string" && validKey && timingSafeEqualStr(adminKey, validKey)) {
+    return true
+  }
+
+  const authHeader = req.headers["authorization"] || req.headers["Authorization"]
+  const bearer =
+    typeof authHeader === "string"
+      ? authHeader.replace(/^Bearer\s+/i, "").trim()
+      : ""
+  if (!bearer) return false
+
+  const adminEmails = (process.env.ADMIN_EMAILS || "paulmspessoa@gmail.com")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+
+  const { data: adminUser } = await supabase
+    .from("users")
+    .select("email")
+    .eq("session_token", bearer)
+    .single()
+
+  return !!(
+    adminUser && adminEmails.includes((adminUser.email || "").toLowerCase())
+  )
+}
+
 // ─── Admin: Migrate Orders to User ID ────────────────────────────────
 app.post("/api/admin/migrate-orders-userid", async (req, res) => {
   try {
-    const adminKey = req.headers["x-admin-key"]
-
-    // Simple protection: check for admin key
-    if (adminKey !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(await isAuthorizedAdmin(req))) {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 
@@ -1107,40 +1246,7 @@ app.post("/api/admin/migrate-orders-userid", async (req, res) => {
 // ─── Admin: Cost Logs (revenue vs spend monitor) ───────────
 app.get("/api/admin/cost-logs", async (req, res) => {
   try {
-    const adminKey = req.headers["x-admin-key"]
-    const authHeader =
-      req.headers["authorization"] || req.headers["Authorization"]
-    const bearer =
-      typeof authHeader === "string"
-        ? authHeader.replace(/^Bearer\s+/i, "").trim()
-        : ""
-
-    const validKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.ADMIN_DASHBOARD_KEY ||
-      ""
-    const adminEmails = (process.env.ADMIN_EMAILS || "paulmspessoa@gmail.com")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-
-    let authorized = !!adminKey && adminKey === validKey
-
-    if (!authorized && bearer) {
-      const { data: adminUser } = await supabase
-        .from("users")
-        .select("email")
-        .eq("session_token", bearer)
-        .single()
-      if (
-        adminUser &&
-        adminEmails.includes((adminUser.email || "").toLowerCase())
-      ) {
-        authorized = true
-      }
-    }
-
-    if (!authorized) {
+    if (!(await isAuthorizedAdmin(req))) {
       return res.status(403).json({ error: "Acesso proibido" })
     }
 
@@ -1203,6 +1309,24 @@ app.get("/api/admin/cost-logs", async (req, res) => {
 
     const revenue = paidOrders * 1.0
 
+    // Funil (P2.5): quantos chats viram checkout, quantos checkouts viram
+    // pagamento, quantos pagamentos viram música entregue, e a taxa de
+    // falha — derivado direto de orders.status + chat_sessions, sem
+    // precisar de uma tabela de eventos nova.
+    const [{ count: chatSessionsCount }, { data: allOrders, error: allOrdersErr }] =
+      await Promise.all([
+        supabase.from("chat_sessions").select("id", { count: "exact", head: true }),
+        supabase.from("orders").select("status")
+      ])
+
+    const byStatus: Record<string, number> = {}
+    for (const o of allOrders || []) {
+      byStatus[o.status] = (byStatus[o.status] || 0) + 1
+    }
+    const totalOrders = (allOrders || []).length
+    const pastCheckout = totalOrders - (byStatus["pending_payment"] || 0)
+    const failedCount = byStatus["failed"] || 0
+
     res.json({
       summary: {
         totalCost: Number(totalCost.toFixed(4)),
@@ -1220,6 +1344,17 @@ app.get("/api/admin/cost-logs", async (req, res) => {
         targetCostPerSong: LYRIA_API_COST,
         byStage
       },
+      funnel: allOrdersErr
+        ? null
+        : {
+            chatSessions: chatSessionsCount || 0,
+            checkouts: totalOrders,
+            pastCheckout,
+            completed: byStatus["completed"] || 0,
+            failed: failedCount,
+            failureRate: totalOrders > 0 ? Number((failedCount / totalOrders).toFixed(4)) : 0,
+            byStatus
+          },
       rows: rows || []
     })
   } catch (error: any) {
@@ -1406,13 +1541,18 @@ app.post("/api/verify-otp", async (req, res) => {
           startOfMonth.setDate(1)
           startOfMonth.setHours(0, 0, 0, 0)
 
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from("users")
             .select("id", { count: "exact" })
             .eq("referred_by", referredBy)
             .gte("created_at", startOfMonth.toISOString())
 
-          if (count === null || count < 5) {
+          if (countError) {
+            console.error(
+              "[Referral] Failed to check monthly referral count, skipping bonus:",
+              countError.message
+            )
+          } else if (count !== null && count < 5) {
             // Referrer gets 1 free song
             await supabase.rpc("increment_free_songs", { p_user_id: referredBy })
 
@@ -1436,10 +1576,7 @@ app.post("/api/verify-otp", async (req, res) => {
         }
       }
 
-      const newReferralCode = Math.random()
-        .toString(36)
-        .substr(2, 6)
-        .toUpperCase()
+      const newReferralCode = await generateUniqueReferralCode()
 
       const { data: newUser, error: createError } = await supabase
         .from("users")
@@ -1646,7 +1783,6 @@ Instruções:
     }))
 
     const response = await generateContentWithFallback({
-      model: "gemini-3.5-flash-lite",
       contents: chatContents,
       config: { systemInstruction, temperature: 0.8 },
       tools: PREFER_GROQ ? openaiTools : geminiTools
@@ -1701,7 +1837,6 @@ Instruções:
               }
             ]
             const r2 = await generateContentWithFallback({
-              model: "gemini-3.5-flash-lite",
               contents: followContents,
               config: { systemInstruction, temperature: 0.8 }
             })
@@ -1725,7 +1860,7 @@ Instruções:
       provider: response.provider || "groq",
       inputTokens: response.usage?.inputTokens ?? null,
       outputTokens: response.usage?.outputTokens ?? null,
-      model: "gemini-3.5-flash-lite",
+      model: response.model || GROQ_CHAT_MODEL,
       entryMode: "chat"
     })
 
@@ -1880,7 +2015,7 @@ app.post("/api/checkout", async (req, res) => {
     // Build optimized structured prompt
     const optimizedPrompt = buildStructuredPrompt(chatTranscript)
 
-    const orderId = "order_" + Math.random().toString(36).substr(2, 9)
+    const orderId = crypto.randomUUID()
     let paymentId = "pay_" + Math.random().toString(36).substr(2, 15)
     let paymentQr = ""
     let paymentCopiaCola = ""
@@ -1900,7 +2035,9 @@ app.post("/api/checkout", async (req, res) => {
       console.log(
         `[Checkout] User ${cleanEmail} has balance. Using 1 free song.`
       )
-      // consume_free_song já decrementou o saldo de forma atômica.
+      // consume_free_song() above already decremented free_songs_balance
+      // atomically — a second, non-atomic update here (against an undefined
+      // `user` variable) would double-decrement and never compiled.
 
       paymentId = "bonus_balance_" + Math.random().toString(36).substr(2, 9)
       status = "paid"
@@ -1950,24 +2087,8 @@ app.post("/api/orders/:id/generate-pix", async (req, res) => {
     if (!verified) return
 
     const { id } = req.params
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", id)
-      .single()
-
-    if (error || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    // Verify ownership by user_id (preferred) or email (legacy fallback)
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id)
+    if (!order) return
 
     if (order.status !== "pending_payment") {
       return res
@@ -2145,27 +2266,12 @@ app.post("/api/orders/:id/simulate-payment", async (req, res) => {
     if (!verified) return
 
     const { id } = req.params
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("id, email, user_id")
-      .eq("id", id)
-      .single()
-
-    if (error || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id, "id, email, user_id")
+    if (!order) return
 
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ 
+      .update({
         status: "paid", 
         updated_at: new Date().toISOString(),
         payment_id: "simulated_" + Date.now()
@@ -2213,27 +2319,15 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
     }
 
     // Fetch current order to verify ownership and see if it has a Mercado Pago payment to cancel
-    const { data: orderData, error: orderError } = await supabase
-      .from("orders")
-      .select("id, email, user_id, payment_id")
-      .eq("id", id)
-      .single()
+    const orderData = await loadOwnedOrder(
+      res,
+      verified,
+      id,
+      "id, email, user_id, payment_id"
+    )
+    if (!orderData) return
 
-    if (orderError || !orderData) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (orderData.user_id &&
-        verified.userId &&
-        orderData.user_id === verified.userId) ||
-      orderData.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
-
-    if (orderData && orderData.payment_id) {
+    if (orderData.payment_id) {
       const isMPPayment = isRealMercadoPagoPayment(orderData.payment_id)
       const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
       if (isMPPayment && mpToken) {
@@ -2327,46 +2421,112 @@ app.post("/api/webhook/mercadopago", async (req, res) => {
 
     res.json({ received: true }) // Fast ack
 
-    setImmediate(async () => {
-      try {
-        const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
-        if (!mpToken) return
-
-        const paymentRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/${paymentId}`,
-          { headers: { Authorization: `Bearer ${mpToken}` } }
-        )
-
-        if (!paymentRes.ok) return
-        const payment: any = await paymentRes.json()
-
-        if (payment.status === "approved" && payment.transaction_amount >= 1.0) {
-          const externalRef = payment.external_reference
-          if (externalRef) {
-            // Update idempotente
-            const { data: updatedRows, error } = await supabase
-              .from("orders")
-              .update({
-                status: "paid",
-                updated_at: new Date().toISOString()
-              })
-              .eq("id", externalRef)
-              .eq("status", "pending_payment")
-              .select("id")
-
-            if (updatedRows && updatedRows.length > 0) {
-              console.log(`[Webhook MP] Order ${externalRef} paid! Starting composition...`)
-              await processComposeLyrics(externalRef).catch(e => console.error("Auto-compose error:", e))
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Webhook Async Process Error:", err)
-      }
+    setImmediate(() => {
+      settleMercadoPagoPaymentIfApproved(paymentId, "[Webhook MP]").catch(
+        (err) => console.error("Webhook Async Process Error:", err)
+      )
     })
   } catch (error) {
     console.error("Webhook Error:", error)
     if (!res.headersSent) res.status(500).json({ error: "Webhook failed" })
+  }
+})
+
+// ─── Check a MercadoPago payment and settle the order if approved ─
+// Shared by the webhook above and the post-pause reconciliation job below
+// (P2.4): the webhook can be missed while the Railway service is scaled to
+// zero overnight, so we also poll for it on resume. Idempotent — the
+// `.eq("status", "pending_payment")` update only ever fires once.
+async function settleMercadoPagoPaymentIfApproved(
+  paymentId: string,
+  logPrefix: string
+): Promise<boolean> {
+  const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+  if (!mpToken) return false
+
+  const paymentRes = await fetch(
+    `https://api.mercadopago.com/v1/payments/${paymentId}`,
+    { headers: { Authorization: `Bearer ${mpToken}` } }
+  )
+  if (!paymentRes.ok) return false
+  const payment: any = await paymentRes.json()
+
+  if (!(payment.status === "approved" && payment.transaction_amount >= 1.0)) {
+    return false
+  }
+
+  const externalRef = payment.external_reference
+  if (!externalRef) return false
+
+  const { data: updatedRows } = await supabase
+    .from("orders")
+    .update({ status: "paid", updated_at: new Date().toISOString() })
+    .eq("id", externalRef)
+    .eq("status", "pending_payment")
+    .select("id")
+
+  if (updatedRows && updatedRows.length > 0) {
+    console.log(`${logPrefix} Order ${externalRef} paid! Starting composition...`)
+    await processComposeLyrics(externalRef).catch((e) =>
+      console.error("Auto-compose error:", e)
+    )
+    return true
+  }
+  return false
+}
+
+// ─── Reconcile pending payments after a pause/restart (P2.4) ─
+// The nightly Railway pause (00 replicas) can swallow MercadoPago webhook
+// deliveries. On resume, sweep orders left in `pending_payment` with a real
+// (numeric) payment_id from the last 12h and ask MercadoPago directly.
+async function reconcilePendingPayments(): Promise<{
+  checked: number
+  settled: number
+}> {
+  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
+  const { data: orders, error } = await supabase
+    .from("orders")
+    .select("id, payment_id")
+    .eq("status", "pending_payment")
+    .gte("created_at", since)
+    .limit(200)
+
+  if (error || !orders) return { checked: 0, settled: 0 }
+
+  const candidates = orders.filter((o) =>
+    isRealMercadoPagoPayment(o.payment_id)
+  )
+
+  let settled = 0
+  for (const order of candidates) {
+    try {
+      const didSettle = await settleMercadoPagoPaymentIfApproved(
+        order.payment_id,
+        "[Reconcile]"
+      )
+      if (didSettle) settled++
+    } catch (e: any) {
+      console.error(`[Reconcile] Order ${order.id} check failed:`, e?.message || e)
+    }
+  }
+  console.log(
+    `[Reconcile] Checked ${candidates.length}/${orders.length} pending orders with real payment_id, settled ${settled}.`
+  )
+  return { checked: candidates.length, settled }
+}
+
+// Admin-triggered: safe to call manually / on a cron to settle Pix payments
+// whose webhook was missed (it also runs automatically on boot).
+app.post("/api/admin/reconcile-pending-payments", async (req, res) => {
+  try {
+    if (!(await isAuthorizedAdmin(req))) {
+      return res.status(403).json({ error: "Acesso proibido" })
+    }
+    const result = await reconcilePendingPayments()
+    res.json({ success: true, ...result })
+  } catch (error: any) {
+    console.error("[Reconcile] Error:", error?.message || error)
+    res.status(500).json({ error: "Erro ao reconciliar pagamentos" })
   }
 })
 
@@ -2504,7 +2664,6 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
 `
 
   const modelResponse = await generateContentWithFallback({
-    model: "gemini-3.5-flash-lite",
     contents: [analysisPrompt],
     config: {
       responseMimeType: "application/json",
@@ -2547,7 +2706,7 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem texto extra) com EXATAM
       provider: modelResponse.provider || "groq",
       inputTokens: modelResponse.usage.inputTokens ?? null,
       outputTokens: modelResponse.usage.outputTokens ?? null,
-      model: "gemini-3.5-flash-lite"
+      model: modelResponse.model || GROQ_CHAT_MODEL
     })
     // Contabiliza no acumulado diário (não bloqueia: usuário já pagou).
     await addAICost(
@@ -2625,23 +2784,13 @@ app.post("/api/orders/:id/compose-lyrics", async (req, res) => {
     const verified = await verifySession(req, res)
     if (!verified) return
 
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("id, email, user_id, status")
-      .eq("id", req.params.id)
-      .single()
-
-    if (error || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(
+      res,
+      verified,
+      req.params.id,
+      "id, email, user_id, status"
+    )
+    if (!order) return
 
     if (order.status !== "paid") {
       return res
@@ -2671,24 +2820,9 @@ app.post("/api/orders/:id/generate", async (req, res) => {
 
     const { lyrics: customLyrics } = req.body
 
-    const { data: order, error: fetchError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", req.params.id)
-      .single()
-
-    if (fetchError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
+    const order = await loadOwnedOrder(res, verified, req.params.id)
+    if (!order) return
     fetchedOrder = order
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
 
     // Check current status before starting generation
     if (order.status === "completed") {
@@ -2822,10 +2956,10 @@ app.post("/api/orders/:id/generate", async (req, res) => {
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaea; border-radius: 12px;">
           <h2 style="color: #FF5A5F; text-align: center;">1Música</h2>
           <p>Olá!</p>
-          <p>Sua música personalizada <strong>"${songMetadata.title}"</strong> ficou pronta!</p>
+          <p>Sua música personalizada <strong>"${escapeHtml(songMetadata.title)}"</strong> ficou pronta!</p>
           <div style="background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
-            <h3 style="margin: 0; color: #333;">${songMetadata.title}</h3>
-            <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${songMetadata.style} • Por: ${songMetadata.artistName}</p>
+            <h3 style="margin: 0; color: #333;">${escapeHtml(songMetadata.title)}</h3>
+            <p style="margin: 5px 0; color: #666; font-size: 14px;">Estilo: ${escapeHtml(songMetadata.style)} • Por: ${escapeHtml(songMetadata.artistName)}</p>
           </div>
           <div style="text-align: center; margin: 30px 0;">
             <a href="${frontendUrl}/musica/${order.id}" style="background: #FF5A5F; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvir e Baixar Música</a>
@@ -3000,24 +3134,9 @@ app.post("/api/orders/:id/revise", async (req, res) => {
     const verified = await verifySession(req, res)
     if (!verified) return
 
-    const { data: order, error: fetchError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("id", req.params.id)
-      .single()
-
-    if (fetchError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
+    const order = await loadOwnedOrder(res, verified, req.params.id)
+    if (!order) return
     fetchedOrder = order
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
 
     if (!["paid", "completed", "failed_safety"].includes(order.status)) {
       return res
@@ -3075,7 +3194,6 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
 `
 
     const modelResponse = await generateContentWithFallback({
-      model: "gemini-3.5-flash",
       contents: [revisePrompt],
       config: {
         responseMimeType: "application/json",
@@ -3120,7 +3238,7 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
         provider: modelResponse.provider || "groq",
         inputTokens: modelResponse.usage.inputTokens ?? null,
         outputTokens: modelResponse.usage.outputTokens ?? null,
-        model: "gemini-3.5-flash"
+        model: modelResponse.model || GROQ_CHAT_MODEL
       })
       await addAICost(
         order.email,
@@ -3353,24 +3471,8 @@ app.delete("/api/orders/:id", async (req, res) => {
     const { reasonCategory, reasonDetails } = req.body
 
     // Get order to verify ownership
-    const { data: order, error: queryError } = await supabase
-      .from("orders")
-      .select("id, email, user_id")
-      .eq("id", id)
-      .single()
-
-    if (queryError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    // Verify user owns this order by user_id (preferred) or email (legacy)
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id, "id, email, user_id")
+    if (!order) return
 
     // Save feedback (required for deletion)
     await supabase.from("feedback").insert({
@@ -3411,23 +3513,8 @@ app.delete("/api/orders/:id/chat", async (req, res) => {
     const { id } = req.params
     const { reasonCategory, reasonDetails } = req.body
 
-    const { data: order, error: queryError } = await supabase
-      .from("orders")
-      .select("id, email, user_id")
-      .eq("id", id)
-      .single()
-
-    if (queryError || !order) {
-      return res.status(404).json({ error: "Pedido não encontrado" })
-    }
-
-    const isOwner =
-      (order.user_id && verified.userId && order.user_id === verified.userId) ||
-      order.email === verified.email.toLowerCase().trim()
-
-    if (!isOwner) {
-      return res.status(403).json({ error: "Acesso proibido" })
-    }
+    const order = await loadOwnedOrder(res, verified, id, "id, email, user_id")
+    if (!order) return
 
     await supabase.from("feedback").insert({
       user_email: verified.email.toLowerCase().trim(),
@@ -3524,6 +3611,8 @@ async function performProcessingReaper() {
 
     if (!stuckOrders || stuckOrders.length === 0) return;
 
+    const failedOrderIds: string[] = []
+
     for (const order of stuckOrders) {
       const attempts = order.attempts || 0;
       if (attempts >= 3) {
@@ -3532,6 +3621,7 @@ async function performProcessingReaper() {
           .from("orders")
           .update({ status: "failed", updated_at: new Date().toISOString() })
           .eq("id", order.id);
+        failedOrderIds.push(order.id)
 
         if (order.payment_id?.startsWith("bonus_balance_") && order.user_id) {
           await supabase.rpc("increment_free_songs", { p_user_id: order.user_id })
@@ -3554,6 +3644,22 @@ async function performProcessingReaper() {
           .eq("id", order.id);
       }
     }
+
+    // P2.5: um pedido travado em `processing` por >10min é sempre anômalo
+    // (timeout, deploy, ou pause noturno pegando o request no meio) —
+    // avisar o admin em vez de só deixar no console do Railway.
+    if (failedOrderIds.length > 0) {
+      await sendAdminAlert({
+        subject: `[Reaper] ${failedOrderIds.length} pedido(s) travado(s) marcado(s) como failed`,
+        alertHeader: "Pedidos presos em 'processing' esgotaram as tentativas",
+        alertColor: "#dd4b39",
+        bodyHtml: `
+          <p>Os pedidos abaixo ficaram presos em <code>processing</code> por mais de 10 minutos, 3 vezes seguidas, e foram marcados como <code>failed</code> (crédito/cupom já devolvido quando aplicável):</p>
+          <ul>${failedOrderIds.map((id) => `<li><code>${escapeHtml(id)}</code></li>`).join("")}</ul>
+          <p>Verifique os logs do Railway em torno desses horários — normalmente indica timeout na Lyria, deploy no meio da geração, ou a pausa noturna pegando um request em andamento.</p>
+        `
+      }).catch((e) => console.error("[Reaper] Alert email failed:", e?.message || e))
+    }
   } catch (err) {
     console.error("[Reaper] Error:", err)
   }
@@ -3562,6 +3668,78 @@ async function performProcessingReaper() {
 // Run reaper on startup and then every 5 minutes
 performProcessingReaper()
 setInterval(performProcessingReaper, 5 * 60 * 1000)
+
+// ============================================================
+// FAILURE RATE MONITOR (P2.5 observability)
+// ============================================================
+// Watches the last 24h of orders and alerts (once per day) if the share
+// that ended up `failed` crosses a threshold — a signal that something
+// systemic broke (Lyria quota, MercadoPago, a bad deploy), not just the
+// occasional stuck order the reaper above already handles.
+const FAILURE_RATE_ALERT_THRESHOLD = Number(
+  process.env.FAILURE_RATE_ALERT_THRESHOLD || "0.2"
+)
+const FAILURE_RATE_MIN_SAMPLE = 5
+let lastFailureRateAlertDay = ""
+
+async function checkDailyFailureRate() {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { data: recentOrders, error } = await supabase
+      .from("orders")
+      .select("status")
+      .gte("created_at", since)
+
+    if (error || !recentOrders || recentOrders.length < FAILURE_RATE_MIN_SAMPLE) {
+      return
+    }
+
+    const failedCount = recentOrders.filter((o) => o.status === "failed").length
+    const rate = failedCount / recentOrders.length
+    if (rate < FAILURE_RATE_ALERT_THRESHOLD) return
+
+    const today = new Date().toISOString().slice(0, 10)
+    if (lastFailureRateAlertDay === today) return // no máximo 1 alerta/dia
+    lastFailureRateAlertDay = today
+
+    await sendAdminAlert({
+      subject: `[Alerta] Taxa de falha de ${(rate * 100).toFixed(0)}% nas últimas 24h`,
+      alertHeader: "Taxa de pedidos falhados acima do normal",
+      alertColor: "#e91e63",
+      bodyHtml: `
+        <p><strong>${failedCount}</strong> de <strong>${recentOrders.length}</strong> pedidos das últimas 24h terminaram como <code>failed</code> (${(rate * 100).toFixed(1)}%, limite configurado: ${(FAILURE_RATE_ALERT_THRESHOLD * 100).toFixed(0)}%).</p>
+        <p>Confira o funil em <code>/admin/custos</code> e os logs do Railway — pode ser cota da Lyria/Gemini esgotada, MercadoPago fora do ar, ou uma regressão no último deploy.</p>
+      `
+    })
+  } catch (err: any) {
+    console.error("[FailureRateMonitor] Error:", err?.message || err)
+  }
+}
+
+checkDailyFailureRate()
+setInterval(checkDailyFailureRate, 30 * 60 * 1000)
+
+// Reconcile pending payments on boot too — covers webhooks missed while
+// the service was asleep or restarting (Render free tier).
+reconcilePendingPayments().catch((e) =>
+  console.error("[Reconcile] Startup run failed:", e?.message || e)
+)
+
+// ============================================================
+// GLOBAL ERROR HANDLER (P2.5 observability)
+// ============================================================
+// Catches anything a route forwards via next(err) instead of handling
+// itself, so it still gets a ticket + admin e-mail via logErrorAndNotify
+// instead of just a console.error swallowed by the Railway logs.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logErrorAndNotify(err, req, "UNKNOWN", (req as any).userEmail || null).catch(
+    (e) => console.error("[GlobalErrorHandler] logErrorAndNotify failed:", e)
+  )
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Erro interno no servidor." })
+  }
+})
 
 // ============================================================
 // VITE DEV / PRODUCTION SERVING

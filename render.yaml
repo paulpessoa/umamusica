@@ -9,7 +9,8 @@ services:
     buildCommand: npm ci --include=dev && npm run build:server
     startCommand: npm start
     healthCheckPath: /api/health
-    autoDeployTrigger: commit
+    # Só publica depois que o workflow de CI (typecheck + build) passar.
+    autoDeployTrigger: checksPass
     # Só faz deploy quando algo do backend muda. Push só de frontend (src/)
     # não gasta minutos de build no Render — a Vercel cuida disso.
     buildFilter:
@@ -50,6 +51,8 @@ services:
         sync: false
       - key: ADMIN_DASHBOARD_KEY
         sync: false
+      - key: FAILURE_RATE_ALERT_THRESHOLD
+        value: "0.2"
       # Rate limit de custo de IA
       - key: RATE_LIMIT_ENABLED
         value: "true"

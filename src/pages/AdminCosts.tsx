@@ -6,7 +6,8 @@ import {
   TrendingUp,
   Music2,
   Coins,
-  Filter
+  Filter,
+  GitBranch
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import MobileFrame from "../components/MobileFrame"
@@ -24,6 +25,16 @@ interface CostRow {
   model: string | null
   entry_mode: string | null
   created_at: string
+}
+
+interface Funnel {
+  chatSessions: number
+  checkouts: number
+  pastCheckout: number
+  completed: number
+  failed: number
+  failureRate: number
+  byStatus: Record<string, number>
 }
 
 interface Summary {
@@ -45,6 +56,7 @@ export default function AdminCosts() {
   const { user } = useAuth()
   const [rows, setRows] = useState<CostRow[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
+  const [funnel, setFunnel] = useState<Funnel | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [adminKey, setAdminKey] = useState(
@@ -89,6 +101,7 @@ export default function AdminCosts() {
       }
       const data = await res.json()
       setSummary(data.summary)
+      setFunnel(data.funnel || null)
       setRows(data.rows)
     } catch (e: any) {
       setError(e.message || "Erro ao carregar custos.")
@@ -249,6 +262,46 @@ export default function AdminCosts() {
                   </div>
                 </div>
               )}
+
+              {/* Funnel (P2.5) */}
+              {funnel && (
+                <div className="space-y-2">
+                  <h2 className="text-xs font-bold text-gray-500 tracking-wider">
+                    Funil (todo o histórico)
+                  </h2>
+                  <div className="bg-white border border-gray-100 rounded-2xl divide-y divide-gray-50">
+                    <FunnelRow
+                      icon={<GitBranch className="w-3.5 h-3.5" />}
+                      label="Chats iniciados"
+                      value={funnel.chatSessions}
+                    />
+                    <FunnelRow
+                      label="Checkouts (pedidos criados)"
+                      value={funnel.checkouts}
+                    />
+                    <FunnelRow
+                      label="Passaram do pagamento"
+                      value={funnel.pastCheckout}
+                    />
+                    <FunnelRow
+                      label="Músicas entregues"
+                      value={funnel.completed}
+                    />
+                    <FunnelRow
+                      label="Falharam"
+                      value={funnel.failed}
+                      highlight={funnel.failureRate >= 0.2}
+                    />
+                  </div>
+                  <p
+                    className={`text-[11px] text-center font-bold ${
+                      funnel.failureRate >= 0.2 ? "text-rose-600" : "text-gray-400"
+                    }`}
+                  >
+                    Taxa de falha: {(funnel.failureRate * 100).toFixed(1)}%
+                  </p>
+                </div>
+              )}
             </>
           )}
 
@@ -355,5 +408,33 @@ export default function AdminCosts() {
         </div>
       </div>
     </MobileFrame>
+  )
+}
+
+function FunnelRow({
+  icon,
+  label,
+  value,
+  highlight
+}: {
+  icon?: React.ReactNode
+  label: string
+  value: number
+  highlight?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
+        {icon}
+        {label}
+      </div>
+      <span
+        className={`text-xs font-mono font-bold ${
+          highlight ? "text-rose-600" : "text-gray-900"
+        }`}
+      >
+        {value.toLocaleString("pt-BR")}
+      </span>
+    </div>
   )
 }
