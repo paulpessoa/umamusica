@@ -56,7 +56,7 @@ O projeto é estruturado em duas partes principais servidas de forma integrada o
 
 ### Banco de Dados & Serviços
 - **Supabase (PostgreSQL):** Gerenciamento de usuários, tokens de sessão, histórico de pedidos (`orders`), músicas criadas e dados de indicação.
-- **Inteligência Artificial (Google Gemini SDK):** Utiliza o modelo `gemini-3.5-flash` para guiar a conversa interativa, transcrever áudios enviados no chat e revisar rascunhos de histórias.
+- **Inteligência Artificial (Google Gemini SDK):** Utiliza o modelo `gemini-3.8-flash` para guiar a conversa interativa, transcrever áudios enviados no chat e revisar rascunhos de histórias.
 - **Nodemailer / SMTP:** Envio de e-mails para validação OTP de login sem senha (passwordless).
 
 ---

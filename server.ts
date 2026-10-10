@@ -765,7 +765,7 @@ async function enforceAICostLimit(
 const PREFER_GROQ = true
 
 // ─── Google Gemini model (single, good cost-benefit) ─────────
-// "gemini-3.5-flash-lite" never existed on the Gemini API — every Gemini
+// "gemini-3.8-flash-lite" never existed on the Gemini API — every Gemini
 // call was silently failing and falling through to Groq, and logCost kept
 // recording that invalid name regardless of which provider actually ran.
 // "gemini-2.0-flash-lite" is a real, current, low-cost model id.
@@ -776,8 +776,8 @@ const DEPRECATED_GEMINI_MODELS: Record<string, string> = {
   "gemini-1.5-flash": GEMINI_CHAT_MODEL,
   "gemini-1.5-pro": GEMINI_CHAT_MODEL,
   "gemini-2.0-flash": GEMINI_CHAT_MODEL,
-  "gemini-3.5-flash-lite": GEMINI_CHAT_MODEL,
-  "gemini-3.5-flash": GEMINI_CHAT_MODEL,
+  "gemini-3.8-flash-lite": GEMINI_CHAT_MODEL,
+  "gemini-3.8-flash": GEMINI_CHAT_MODEL,
   "gemini-3.1-flash-lite": GEMINI_CHAT_MODEL
 }
 
