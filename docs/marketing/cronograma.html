@@ -1,0 +1,248 @@
+<title>Cronograma 1Música</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap">
+<style>
+  /* Layout: uma coluna de semanas; cada semana é um bloco com tema + linhas de post (data | arte | ação) */
+  :root {
+    --bg: #FFF9F7;
+    --surface: #FFFFFF;
+    --fg: #241E29;
+    --muted: #6E6574;
+    --line: #F0E4E1;
+    --accent: #E9474C;
+    --accent-soft: #FFE9E8;
+    --feed: #E9474C;
+    --reels: #7A4DD6;
+    --stories: #D88A12;
+    --carrossel: #1F8A70;
+    --font-display: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17131A; --surface: #211B25; --fg: #F4EEF2; --muted: #B3A8B5; --line: #342B38;
+      --accent: #FF7378; --accent-soft: #3A2228; --feed: #FF7378; --reels: #B193FF; --stories: #F2B348; --carrossel: #4CC9A4;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17131A; --surface: #211B25; --fg: #F4EEF2; --muted: #B3A8B5; --line: #342B38;
+    --accent: #FF7378; --accent-soft: #3A2228; --feed: #FF7378; --reels: #B193FF; --stories: #F2B348; --carrossel: #4CC9A4;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 32px 64px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
+  header { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--font-display); font-weight: 900; font-size: clamp(32px, 7vw, 52px); line-height: 1; letter-spacing: -.03em; margin: 0; text-wrap: balance; }
+  h2 { font-size: 20px; font-weight: 900; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 65ch; }
+  .lead { color: var(--muted); font-size: 16px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; color: var(--muted); }
+  .summary b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+  .filters button {
+    font: inherit; font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--line); background: var(--surface); color: var(--fg);
+  }
+  .filters button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .filters button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .week { display: flex; flex-direction: column; gap: 12px; }
+  .week-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 2px solid var(--fg); padding-bottom: 6px; }
+  .week-head span { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .slot {
+    display: grid; grid-template-columns: 64px 72px 1fr; gap: 14px; align-items: center;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
+  }
+  .slot.key { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .date { text-align: center; font-variant-numeric: tabular-nums; }
+  .date b { display: block; font-size: 24px; font-weight: 900; line-height: 1; }
+  .date small { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .thumb { width: 72px; aspect-ratio: 4 / 5; max-width: 100%; border-radius: 8px; object-fit: cover; background: var(--accent-soft); display: block; }
+  .info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .info .top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .info strong { font-size: 15px; }
+  .info p { font-size: 14px; color: var(--muted); }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1.5px solid currentColor; }
+  .tag.feed { color: var(--feed); } .tag.reels { color: var(--reels); } .tag.stories { color: var(--stories); } .tag.carrossel { color: var(--carrossel); }
+  .date-key { font-size: 11px; font-weight: 700; color: var(--accent); }
+  section.box { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  code { font-size: 13px; background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .gallery figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .gallery img { width: 100%; aspect-ratio: 4 / 5; max-width: 100%; object-fit: cover; border-radius: 10px; }
+  .gallery figcaption { font-size: 12px; color: var(--muted); }
+  @media (max-width: 480px) {
+    .slot { grid-template-columns: 52px 56px 1fr; gap: 10px; padding: 10px; }
+    .thumb { width: 56px; }
+    .date b { font-size: 20px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .slot { transition: opacity .2s; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Campanha · 3 nov → 31 dez 2026</span>
+    <h1>Um amigo, uma música</h1>
+    <p class="lead">27 postagens em 9 semanas, montadas a partir dos 10 posts base. Ritmo: terça, quinta e sábado, com datas fortes no lugar quando caem fora disso. O objetivo de cada post é levar a pessoa a convidar 1 amigo; o Pix aparece só como alternativa.</p>
+    <div class="summary" id="summary"></div>
+  </header>
+
+  <div class="filters" role="group" aria-label="Filtrar por formato">
+    <button type="button" data-f="all" aria-pressed="true">Tudo</button>
+    <button type="button" data-f="feed" aria-pressed="false">Feed</button>
+    <button type="button" data-f="carrossel" aria-pressed="false">Carrossel</button>
+    <button type="button" data-f="reels" aria-pressed="false">Reels</button>
+    <button type="button" data-f="stories" aria-pressed="false">Stories</button>
+  </div>
+
+  <div id="weeks" class="wrap" style="gap:28px"></div>
+
+  <section class="box">
+    <h2>Rotina diária (5 min)</h2>
+    <ul>
+      <li>1 Story por dia, mesmo sem post no feed: repost de quem marcou, print de feedback positivo ou enquete.</li>
+      <li>Responder todo comentário e DM em até 24h com o link de convite da pessoa (menu → amigos).</li>
+      <li>Sexta: escolher os vídeos do desafio #MinhaMúsica1 e creditar +3 músicas aos escolhidos.</li>
+    </ul>
+  </section>
+
+  <section class="box">
+    <h2>O que medir toda segunda</h2>
+    <ul>
+      <li><b>Cadastros por convite</b>: <code>select count(*) from users where referred_by is not null and created_at &gt; now() - interval '7 days'</code></li>
+      <li><b>Músicas grátis geradas</b>: pedidos com <code>payment_id like 'bonus_balance_%'</code> e <code>status = 'completed'</code></li>
+      <li><b>Satisfação</b>: <code>feedback</code> com <code>category = 'song_rating'</code>, proporção de <code>like</code></li>
+      <li><b>Custo</b>: <code>/admin/custos</code>, etapa <code>music_generation</code> (≈ R$ 0,20 por música real)</li>
+      <li><b>Pagantes</b>: pedidos com <code>payment_id</code> numérico (MercadoPago)</li>
+    </ul>
+  </section>
+
+  <section class="box">
+    <h2>Os 10 posts base</h2>
+    <div class="gallery" id="gallery"></div>
+    <p class="lead" style="font-size:14px">Textos completos, legendas e hashtags em <code>docs/marketing/POSTS.md</code>. GIFs em <code>docs/marketing/gif/</code>.</p>
+  </section>
+</div>
+
+<script>
+  const POSTS = {
+    "01": ["Lançamento", "post-01-lancamento"],
+    "02": ["Como funciona", "post-02-como-funciona"],
+    "03": ["Da história pra letra", "post-03-historia-vira-letra"],
+    "04": ["Bastidores do chat", "post-04-bastidores-chat"],
+    "05": ["Desafio #MinhaMúsica1", "post-05-mostre-a-reacao"],
+    "06": ["Feedback", "post-06-feedback"],
+    "07": ["Dia do Músico", "post-07-dia-do-musico"],
+    "08": ["Black Friday", "post-08-black-friday"],
+    "09": ["Amigo secreto e Natal", "post-09-amigo-secreto-natal"],
+    "10": ["Retrospectiva 2026", "post-10-retrospectiva-2026"]
+  }
+
+  // [data, post, formato, ação, data-chave?]
+  const WEEKS = [
+    ["Lançamento", [
+      ["2026-11-03", "01", "feed", "Post de lançamento + GIF nos Stories. Fixar no topo do perfil.", true],
+      ["2026-11-05", "02", "carrossel", "Arte + 3 prints do app (chat, letra, player)."],
+      ["2026-11-07", "04", "reels", "Reels de 15s com o GIF do app (assets/demo-umamusica.gif)."]
+    ]],
+    ["Prova social", [
+      ["2026-11-10", "03", "carrossel", "Arte + vídeo com o áudio de Bodas de Diamante."],
+      ["2026-11-12", "06", "feed", "Feed + enquete nos Stories: \"Sua música ficou perfeita ou dá pra melhorar?\""],
+      ["2026-11-14", "05", "feed", "Lança o desafio #MinhaMúsica1. Criar destaque \"Reações\"."]
+    ]],
+    ["Dia do Músico", [
+      ["2026-11-17", "01", "reels", "Você narrando como pegar o link de convite (gravar a tela de /amigos)."],
+      ["2026-11-19", "03", "carrossel", "Novo exemplo: O Sertanejo do Paizão."],
+      ["2026-11-22", "07", "feed", "Dia do Músico e de Santa Cecília.", true]
+    ]],
+    ["Black Friday", [
+      ["2026-11-24", "08", "stories", "Teaser: \"sexta tem desconto de 100%\"."],
+      ["2026-11-27", "08", "feed", "Black Friday: feed + GIF nos Stories + status do WhatsApp.", true],
+      ["2026-11-28", "05", "stories", "Repost das reações e anúncio dos ganhadores do desafio."]
+    ]],
+    ["Amigo secreto", [
+      ["2026-12-01", "09", "carrossel", "Ideias de música por tipo de amigo secreto (chefe, tia do pavê, colega do café)."],
+      ["2026-12-03", "02", "reels", "Como funciona, versão animada (gif/post-02)."],
+      ["2026-12-05", "06", "feed", "\"Vocês pediram, a gente mudou\": 2 ou 3 ajustes feitos a partir do feedback."]
+    ]],
+    ["Família", [
+      ["2026-12-08", "03", "feed", "Dia Nacional da Família: uma música pra família toda.", true],
+      ["2026-12-10", "09", "reels", "Reels: a reação de quem recebeu a música no amigo secreto."],
+      ["2026-12-12", "05", "stories", "Repost das reações da semana."]
+    ]],
+    ["Reta final do Natal", [
+      ["2026-12-15", "09", "stories", "Contagem: faltam 10 dias pro Natal."],
+      ["2026-12-17", "04", "reels", "Bastidores, versão Natal: o chat contando a história da ceia da família."],
+      ["2026-12-19", "08", "feed", "Reaproveita a arte de Black Friday: \"R$ 0 no Natal também\"."]
+    ]],
+    ["Natal", [
+      ["2026-12-21", "09", "stories", "Última semana: \"fica pronta em minutos\"."],
+      ["2026-12-23", "09", "stories", "Ainda dá tempo. Mandar também nos grupos de WhatsApp."],
+      ["2026-12-24", "09", "feed", "Feliz Natal.", true]
+    ]],
+    ["Ano novo", [
+      ["2026-12-28", "10", "feed", "Retrospectiva: 2026 em uma música."],
+      ["2026-12-30", "10", "reels", "Reels da retrospectiva com trechos de músicas reais (pedir autorização)."],
+      ["2026-12-31", "10", "stories", "Feliz 2027. Agradecer a quem usou e deu feedback.", true]
+    ]]
+  ]
+
+  const DOW = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"]
+  const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+  const parse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d) }
+  const fmt = (d) => `${d.getDate()} ${MON[d.getMonth()]}`
+  const LABEL = { feed: "Feed", carrossel: "Carrossel", reels: "Reels", stories: "Stories" }
+
+  const weeksEl = document.getElementById("weeks")
+  const counts = { feed: 0, carrossel: 0, reels: 0, stories: 0 }
+  WEEKS.forEach(([theme, slots], i) => {
+    const first = parse(slots[0][0]), last = parse(slots[slots.length - 1][0])
+    const sec = document.createElement("section")
+    sec.className = "week"
+    sec.innerHTML = `<div class="week-head"><h2>Semana ${i + 1} · ${theme}</h2><span>${fmt(first)} – ${fmt(last)}</span></div>`
+    slots.forEach(([date, id, format, action, key]) => {
+      counts[format]++
+      const d = parse(date)
+      const [name, file] = POSTS[id]
+      const row = document.createElement("article")
+      row.className = "slot" + (key ? " key" : "")
+      row.dataset.format = format
+      row.innerHTML = `
+        <div class="date"><small>${DOW[d.getDay()]}</small><b>${d.getDate()}</b><small>${MON[d.getMonth()]}</small></div>
+        <img class="thumb" src="img/${file}.png" alt="Arte do post ${id}, ${name}" loading="lazy">
+        <div class="info">
+          <div class="top"><strong>Post ${id} · ${name}</strong><span class="tag ${format}">${LABEL[format]}</span>${key ? '<span class="date-key">data-chave</span>' : ""}</div>
+          <p>${action}</p>
+        </div>`
+      sec.appendChild(row)
+    })
+    weeksEl.appendChild(sec)
+  })
+
+  const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  document.getElementById("summary").innerHTML =
+    `<span><b>${total}</b> postagens</span>` +
+    Object.entries(counts).map(([k, v]) => `<span><b>${v}</b> ${LABEL[k]}</span>`).join("")
+
+  document.getElementById("gallery").innerHTML = Object.entries(POSTS).map(([id, [name, file]]) =>
+    `<figure><img src="img/${file}.png" alt="Arte do post ${id}, ${name}" loading="lazy"><figcaption>${id} · ${name}</figcaption></figure>`
+  ).join("")
+
+  const buttons = document.querySelectorAll(".filters button")
+  buttons.forEach((b) => b.addEventListener("click", () => {
+    buttons.forEach((x) => x.setAttribute("aria-pressed", String(x === b)))
+    const f = b.dataset.f
+    document.querySelectorAll(".slot").forEach((s) => { s.hidden = f !== "all" && s.dataset.format !== f })
+    document.querySelectorAll(".week").forEach((w) => { w.hidden = !w.querySelector(".slot:not([hidden])") })
+  }))
+</script>
