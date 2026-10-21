@@ -2417,9 +2417,15 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
       res,
       verified,
       id,
-      "id, email, user_id, payment_id"
+      "id, email, user_id, payment_id, status"
     )
     if (!orderData) return
+
+    if (orderData.status !== "pending_payment") {
+      return res
+        .status(409)
+        .json({ error: "Este pedido não está aguardando pagamento." })
+    }
 
     if (orderData.payment_id) {
       const isMPPayment = isRealMercadoPagoPayment(orderData.payment_id)
@@ -2459,6 +2465,7 @@ app.post("/api/orders/:id/apply-coupon", async (req, res) => {
         updated_at: new Date().toISOString()
       })
       .eq("id", id)
+      .eq("status", "pending_payment")
 
     // Increment usage
     const { error: incrementError } = await supabase.rpc("increment_coupon_uses", {

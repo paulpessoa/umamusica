@@ -311,6 +311,7 @@ Login (OTP 6 díg.) ──► /chat (Groq/Gemini, N turnos) ──► POST /api/
 - [x] **Contagem de indicações usa `count === null || count < 5`** (`server.ts:1359`) — erro na query virava "pode premiar". Agora trata `error` explicitamente (loga e **não** premia em caso de falha na consulta) em vez de tratar `null` como "sem limite".
 - [ ] **Só 2 migrations no repo** (`supabase/migrations/`) para um schema com `users`, `orders`, `coupons`, `cost_logs`, `feedback`, `otp_codes`, `ai_usage_daily`. O README cita um `supabase_schema.sql` que não existe. Versionar o schema completo — hoje não é possível recriar o ambiente do zero.
   **Não executado** — eu não tenho acesso ao Supabase deste projeto para extrair o schema real (`pg_dump`/introspecção); escrever as migrations de memória, sem conferir contra o banco de verdade, arriscaria documentar um schema errado, que é pior que não ter nenhum. Alguém com acesso ao painel do Supabase precisa rodar o dump e eu (ou qualquer assistente) posso formatar isso em migrations a partir daí.
+- [x] **apply-coupon não verificava o status do pedido** — agora exige pending_payment (409 caso contrário) e o update é condicional.
 
 ---
 
