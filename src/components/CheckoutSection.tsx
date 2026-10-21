@@ -3,9 +3,12 @@ import {
   Check,
   Copy,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Gift
 } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { apiFetch } from "../lib/api"
+import { useAuth } from "../contexts/AuthContext"
 
 interface CheckoutSectionProps {
   orderId: string
@@ -34,6 +37,12 @@ export default function CheckoutSection({
   const [isFetchingQr, setIsFetchingQr] = useState(false)
   const [isGeneratingPix, setIsGeneratingPix] = useState(false)
   const [pixError, setPixError] = useState<string | null>(null)
+  const [isUsingFreeSong, setIsUsingFreeSong] = useState(false)
+  const [freeSongError, setFreeSongError] = useState<string | null>(null)
+
+  const navigate = useNavigate()
+  const { user, updateUser } = useAuth()
+  const freeSongsBalance = user?.free_songs_balance ?? 0
 
   // Fetch true state from server on mount
   useEffect(() => {
@@ -187,6 +196,28 @@ export default function CheckoutSection({
     }
   }
 
+  // "Um amigo, uma música": pay this order with a referral credit
+  const handleUseFreeSong = async () => {
+    setIsUsingFreeSong(true)
+    setFreeSongError(null)
+    try {
+      const res = await apiFetch(`/api/orders/${orderId}/use-free-song`, {
+        method: "POST"
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        updateUser({ free_songs_balance: data.freeSongsBalance ?? 0 })
+        onPaymentConfirmed()
+      } else {
+        setFreeSongError(data.error || "Não foi possível usar a música grátis")
+      }
+    } catch (e) {
+      setFreeSongError("Erro de conexão. Tente novamente.")
+    } finally {
+      setIsUsingFreeSong(false)
+    }
+  }
+
   // Trigger simulated paid state on the server
   const handleSimulatePayment = async () => {
     setIsSimulating(true)
@@ -227,6 +258,52 @@ export default function CheckoutSection({
             : "Escolha como deseja liberar sua música personalizada para prosseguir."}
         </p>
       </div>
+
+      {/* "Um amigo, uma música": free path first, Pix stays as an option */}
+      {freeSongsBalance > 0 ? (
+        <div className="bg-emerald-50 border border-emerald-100 rounded-3xl p-5 flex flex-col items-center space-y-3 shadow-sm w-full">
+          <p className="text-xs text-emerald-800 text-center leading-relaxed">
+            Você tem <strong>{freeSongsBalance}</strong>{" "}
+            {freeSongsBalance === 1 ? "música grátis" : "músicas grátis"} de
+            indicação.
+          </p>
+          <button
+            onClick={handleUseFreeSong}
+            disabled={isUsingFreeSong}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-4 rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 text-sm"
+          >
+            {isUsingFreeSong ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Gift className="w-4 h-4" />
+            )}
+            <span>Usar minha música grátis</span>
+          </button>
+          {freeSongError && (
+            <p className="text-[10px] text-rose-500 font-mono text-center">
+              {freeSongError}
+            </p>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={() => navigate("/amigos")}
+          className="w-full bg-[#FFF0F0] border border-[#FF5A5F]/20 rounded-3xl p-4 flex items-center gap-3 text-left cursor-pointer hover:bg-[#FFE4E4] transition-all"
+        >
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[#FF5A5F] shrink-0">
+            <Gift className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-900">
+              Um amigo, uma música
+            </p>
+            <p className="text-xs text-gray-600 leading-snug">
+              Convide 1 amigo e vocês dois ganham 1 música grátis. Esta música
+              fica salva aqui esperando você.
+            </p>
+          </div>
+        </button>
+      )}
 
       {/* Main QR Code Card / Generate Button */}
       {!localQr ? (

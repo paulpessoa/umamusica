@@ -8,7 +8,10 @@ import {
   Waves,
   AlertCircle,
   RefreshCw,
-  ChevronRight
+  ChevronRight,
+  Gift,
+  ThumbsUp,
+  ThumbsDown
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { useNavigate, useLocation } from "react-router-dom"
@@ -21,6 +24,104 @@ interface SuccessSectionProps {
   orderId: string
   onRestart: () => void
   isSharedView?: boolean
+}
+
+// Quick 👍/👎 after the song is delivered — the free phase exists to collect
+// feedback, so ask at the moment people have just listened.
+function SongFeedback({ orderId }: { orderId: string }) {
+  const storageKey = `umamusica_feedback_${orderId}`
+  const [rating, setRating] = useState<"like" | "dislike" | null>(null)
+  const [details, setDetails] = useState("")
+  const [sent, setSent] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) === "1"
+    } catch {
+      return false
+    }
+  })
+
+  const submit = async (value: "like" | "dislike", text = "") => {
+    try {
+      await apiFetch("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({
+          category: "song_rating",
+          relatedOrderId: orderId,
+          reasonCategory: value,
+          reasonDetails: text || null
+        })
+      })
+    } catch (e) {
+      console.error("Falha ao enviar feedback (não bloqueia):", e)
+    }
+    try {
+      localStorage.setItem(storageKey, "1")
+    } catch {
+      // Storage blocked — the widget just shows again next visit.
+    }
+  }
+
+  if (sent) {
+    return (
+      <p className="text-xs text-gray-500 text-center">
+        Obrigado pelo feedback! 💛
+      </p>
+    )
+  }
+
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 space-y-3">
+      <p className="text-xs font-bold text-gray-700 text-center">
+        O que achou da sua música?
+      </p>
+      <div className="flex justify-center gap-3">
+        {(["like", "dislike"] as const).map((value) => (
+          <button
+            key={value}
+            onClick={() => {
+              setRating(value)
+              if (value === "like") {
+                submit(value)
+                setSent(true)
+              }
+            }}
+            className={`w-12 h-12 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+              rating === value
+                ? "bg-[#FF5A5F] border-[#FF5A5F] text-white"
+                : "bg-white border-gray-200 text-gray-500 hover:border-[#FF5A5F]/40"
+            }`}
+            aria-label={value === "like" ? "Gostei" : "Não gostei"}
+          >
+            {value === "like" ? (
+              <ThumbsUp className="w-5 h-5" />
+            ) : (
+              <ThumbsDown className="w-5 h-5" />
+            )}
+          </button>
+        ))}
+      </div>
+      {rating === "dislike" && (
+        <div className="space-y-2">
+          <textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            placeholder="Conta pra gente o que podia ser melhor (letra, voz, estilo...)"
+            rows={3}
+            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#FF5A5F]"
+          />
+          <button
+            onClick={() => {
+              submit("dislike", details.trim())
+              setSent(true)
+            }}
+            className="w-full bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold py-2.5 rounded-xl cursor-pointer"
+          >
+            Enviar
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function SuccessSection({
@@ -545,6 +646,29 @@ export default function SuccessSection({
                 hasAudio={order.hasAudio ?? false}
                 onDeleted={() => navigate("/minhas-musicas")}
               />
+            )}
+
+            {!isSharedView && user && (
+              <>
+                <SongFeedback orderId={order.id} />
+                <button
+                  onClick={() => navigate("/amigos")}
+                  className="w-full bg-[#FFF0F0] border border-[#FF5A5F]/20 rounded-2xl p-4 flex items-center gap-3 text-left cursor-pointer hover:bg-[#FFE4E4] transition-all"
+                >
+                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[#FF5A5F] shrink-0">
+                    <Gift className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-gray-900">
+                      Quer outra música grátis?
+                    </p>
+                    <p className="text-xs text-gray-600 leading-snug">
+                      Um amigo, uma música: convide alguém e vocês dois ganham.
+                    </p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </button>
+              </>
             )}
 
             {/* CTA */}
