@@ -9,7 +9,11 @@ export default function FAQ() {
   const faqData = [
     {
       q: "Como funciona o 1Música?",
-      a: "Basta responderes a algumas perguntas simples sobre a pessoa homenageada e a ocasião no nosso chat, escolheres um género musical, e nossa inteligência artificial cria uma canção personalizada em minutos. O pagamento é feito via Pix e custa apenas R$ 1,00. Assim que o pagamento é confirmado, a composição é gerada imediatamente."
+      a: "Você responde algumas perguntas simples no chat sobre a pessoa homenageada e a ocasião, escolhe um estilo musical, e nossa inteligência artificial cria uma canção personalizada em minutos. Você pode liberar a música de graça convidando um amigo, ou pagar R$ 1,00 via Pix."
+    },
+    {
+      q: "Como ganho músicas grátis?",
+      a: "Um amigo, uma música! No menu, em \"amigos · músicas grátis\", você encontra seu link de convite. Quando um amigo cria a conta pelo seu link, vocês dois ganham 1 música grátis (até 5 amigos por mês). Se você já criou uma música e ela está aguardando pagamento, é só abrir o pedido e tocar em \"Usar minha música grátis\"."
     },
     {
       q: "Posso partilhar as minhas canções?",

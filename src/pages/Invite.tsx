@@ -76,7 +76,7 @@ export default function Invite() {
               <ArrowRight className="w-6 h-6" />
             </button>
             <p className="text-xs text-gray-400 mt-6 max-w-[280px] text-center">
-              Ao criar sua conta, seu amigo ganhará saldo para criar mais músicas gratuitas.
+              Ao criar sua conta, você ganha 1 música grátis — e seu amigo também. Um amigo, uma música.
             </p>
           </div>
         )}

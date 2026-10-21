@@ -71,7 +71,10 @@ export default function Menu() {
       try {
         await fetch(`${import.meta.env.VITE_API_URL || ""}/api/feedback`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${user.session_token}`
+          },
           body: JSON.stringify({
             email: user.email,
             category: "account_deletion",

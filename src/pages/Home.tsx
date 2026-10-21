@@ -50,9 +50,9 @@ const featureItems = [
   },
   {
     icon: <IllustrationPix />,
-    title: "Liberação Pix Imediata",
-    sub1: "Pague via Pix",
-    sub2: "Pagamento seguro via MercadoPago",
+    title: "Um amigo, uma música",
+    sub1: "Convide 1 amigo e ganhe",
+    sub2: "Vocês dois ganham 1 música grátis — ou pague R$ 1,00 via Pix",
   },
   {
     icon: <IllustrationDownload />,
