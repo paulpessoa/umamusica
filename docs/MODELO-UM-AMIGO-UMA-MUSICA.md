@@ -28,6 +28,18 @@ Você ──(link /convite/SEU_CODIGO)──► Amigo cria conta (OTP)
 2. **Custo do demo não é mais contabilizado.** `logCost(stage=music_generation)` só roda quando
    a Lyria é chamada de fato — o `/admin/custos` deixa de mostrar R$ 0,20 fantasma por cupom/demo.
 
+3. **Usar a música grátis num pedido que já está aguardando Pix.** Novo endpoint
+   `POST /api/orders/:id/use-free-song`: consome 1 crédito (RPC atômica `consume_free_song`),
+   muda o pedido de `pending_payment` → `paid` (update condicional; se o Pix já tiver sido pago,
+   devolve o crédito) e cancela o Pix do MercadoPago se já existia. Cobre o caso "criei a música,
+   não quis pagar, convidei um amigo, ganhei saldo".
+
+   ```bash
+   curl -X POST "$API/api/orders/<ORDER_ID>/use-free-song" -H "Authorization: Bearer <SESSION_TOKEN>"
+   # 200 {"success":true,"status":"paid","freeSongsBalance":0}
+   # 400 sem saldo · 409 pedido não está em pending_payment
+   ```
+
 Cupons (`coupon_*`) e pagamentos simulados continuam no demo, de propósito.
 
 ## Custo esperado

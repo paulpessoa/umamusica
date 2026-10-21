@@ -2301,6 +2301,87 @@ app.post("/api/orders/:id/simulate-payment", async (req, res) => {
 })
 
 // ─── Apply Coupon ──────────────────────────────────────────
+// ─── Use a free song (referral balance) on a pending order ──
+// Orders created while the user had no balance sit in pending_payment. If the
+// user earns a song afterwards (a friend signed up), they can pay that same
+// order with the balance instead of Pix.
+app.post("/api/orders/:id/use-free-song", async (req, res) => {
+  try {
+    const verified = await verifySession(req, res)
+    if (!verified) return
+
+    const order = await loadOwnedOrder(
+      res,
+      verified,
+      req.params.id,
+      "id, email, user_id, status, payment_id"
+    )
+    if (!order) return
+
+    if (order.status !== "pending_payment") {
+      return res
+        .status(409)
+        .json({ error: "Este pedido não está aguardando pagamento." })
+    }
+
+    const { data: balanceData, error: balanceError } = await supabase.rpc(
+      "consume_free_song",
+      { p_user_id: verified.userId }
+    )
+    if (balanceError || balanceData === null || balanceData < 0) {
+      return res
+        .status(400)
+        .json({ error: "Você não tem músicas grátis disponíveis." })
+    }
+
+    // Conditional update: if a Pix payment settled in the meantime, nothing
+    // changes and the credit goes back.
+    const { data: updated } = await supabase
+      .from("orders")
+      .update({
+        status: "paid",
+        payment_id: "bonus_balance_" + crypto.randomUUID().slice(0, 9),
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", order.id)
+      .eq("status", "pending_payment")
+      .select("id")
+
+    if (!updated || updated.length === 0) {
+      await supabase.rpc("increment_free_songs", { p_user_id: verified.userId })
+      return res
+        .status(409)
+        .json({ error: "Este pedido não está aguardando pagamento." })
+    }
+
+    // A Pix may already have been generated for this order — cancel it so the
+    // user can't pay for a song the balance already covered.
+    const mpToken = process.env.ML_TOKEN || process.env.ML_TOKEN_TEST
+    if (isRealMercadoPagoPayment(order.payment_id) && mpToken) {
+      fetch(`https://api.mercadopago.com/v1/payments/${order.payment_id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${mpToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ status: "cancelled" })
+      }).catch((err: any) =>
+        console.error("[UseFreeSong] Failed to cancel MP payment:", err?.message)
+      )
+    }
+
+    res.json({
+      success: true,
+      status: "paid",
+      freeSongsBalance: balanceData,
+      message: "Música grátis aplicada!"
+    })
+  } catch (error: any) {
+    console.error("[UseFreeSong] Error:", error?.message || error)
+    res.status(500).json({ error: "Erro ao usar música grátis" })
+  }
+})
+
 app.post("/api/orders/:id/apply-coupon", async (req, res) => {
   try {
     const verified = await verifySession(req, res)
