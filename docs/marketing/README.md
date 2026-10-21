@@ -3,7 +3,7 @@
 Objetivo: crescer por indicação até o fim do ano. Cada post leva a pessoa a **convidar 1 amigo**
 (vocês dois ganham 1 música grátis); o Pix de R$ 1,00 aparece só como alternativa.
 O modelo de produto está em [`../MODELO-UM-AMIGO-UMA-MUSICA.md`](../MODELO-UM-AMIGO-UMA-MUSICA.md)
-(chega com o PR de backend).
+(chega com o PR de backend, [#6](https://github.com/paulpessoa/umamusica/pull/6)).
 
 ## O que tem aqui
 
@@ -15,6 +15,7 @@ O modelo de produto está em [`../MODELO-UM-AMIGO-UMA-MUSICA.md`](../MODELO-UM-A
 | [`cronograma.html`](cronograma.html) | Calendário visual com filtros por formato (abra no navegador) |
 | [`gerador/posts.json`](gerador/posts.json) | Textos das artes — edite aqui |
 | [`gerador/render.mjs`](gerador/render.mjs) | Regera artes e GIFs a partir do JSON |
+| [`PROMPT-CONTINUIDADE.md`](PROMPT-CONTINUIDADE.md) | Prompt para retomar o trabalho em outra sessão/IDE |
 
 O vídeo do post 04 usa o GIF que já existe em `assets/demo-umamusica.gif`.
 
