@@ -21,6 +21,9 @@ Backlog técnico revisado e priorizado em [`docs/PLANO-MELHORIAS.md`](docs/PLANO
 auth ou geração de áudio — o item correspondente já traz diagnóstico, arquivo/linha
 e critério de aceite. Ao concluir um item, marque-o no arquivo.
 
+## Modelo de crescimento
+"Um amigo, uma música": indicação dá 1 música grátis **real** (Lyria) para quem indica e para o amigo; Pix R$ 1,00 segue como opção. Detalhes, custos e riscos em [`docs/MODELO-UM-AMIGO-UMA-MUSICA.md`](docs/MODELO-UM-AMIGO-UMA-MUSICA.md). Flag: `FREE_SONGS_REAL_AUDIO`.
+
 ## Custo por música
 - Alvo: Lyria ~R$ 0,20/música. Preço de venda MVP: R$ 1,00.
 - Instrumentação: `logCost` em `/api/chat`, `/api/speech-to-text`, `/api/orders/:id/compose-lyrics`, `/api/orders/:id/generate`, `/api/orders/:id/revise`.

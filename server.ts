@@ -141,6 +141,19 @@ function isRealMercadoPagoPayment(paymentId?: string) {
   return !!paymentId && /^\d+$/.test(paymentId)
 }
 
+// "Um amigo, uma música": songs earned through referrals (payment_id
+// bonus_balance_*) are real Lyria songs, not the sandbox demo file — the
+// free song IS the product while we grow. Set FREE_SONGS_REAL_AUDIO=false to
+// fall back to the demo file if referral cost gets out of hand. Coupons and
+// simulated payments stay on the demo file.
+const FREE_SONGS_REAL_AUDIO =
+  (process.env.FREE_SONGS_REAL_AUDIO ?? "true").toLowerCase() !== "false"
+
+function shouldUseRealLyria(paymentId?: string) {
+  if (isRealMercadoPagoPayment(paymentId)) return true
+  return FREE_SONGS_REAL_AUDIO && !!paymentId?.startsWith("bonus_balance_")
+}
+
 // Generate a referral code that doesn't collide with an existing one.
 // crypto.randomBytes is used instead of Math.random (higher entropy per
 // char), and we still check + retry since a 6-char code has a real
@@ -2535,7 +2548,7 @@ async function generateLyriaForOrder(
   order: any,
   metadata: SongMetadata
 ): Promise<string> {
-  const isMockPayment = !isRealMercadoPagoPayment(order.payment_id)
+  const isMockPayment = !shouldUseRealLyria(order.payment_id)
   let audioStoragePath: string | null = null
 
   if (isMockPayment) {
@@ -2914,14 +2927,17 @@ app.post("/api/orders/:id/generate", async (req, res) => {
     const audioStoragePath = await generateLyriaForOrder(order, songMetadata)
 
     // Cost logging: flat API cost per Lyria music generation (~R$ 0,20).
-    await logCost({
-      orderId: order.id,
-      email: order.email,
-      stage: "music_generation",
-      provider: "lyria",
-      apiCost: LYRIA_API_COST,
-      model: "lyria-3-pro-preview"
-    })
+    // Sandbox/demo generations cost nothing and would inflate /admin/custos.
+    if (shouldUseRealLyria(order.payment_id)) {
+      await logCost({
+        orderId: order.id,
+        email: order.email,
+        stage: "music_generation",
+        provider: "lyria",
+        apiCost: LYRIA_API_COST,
+        model: "lyria-3-pro-preview"
+      })
+    }
 
     // Save metadata and path, set status to completed
     await supabase
@@ -3252,14 +3268,16 @@ Retorne APENAS um objeto JSON válido (sem markdown) com EXATAMENTE estas chaves
 
     const audioStoragePath = await generateLyriaForOrder(order, songMetadata)
 
-    await logCost({
-      orderId: order.id,
-      email: order.email,
-      stage: "music_generation",
-      provider: "lyria",
-      apiCost: LYRIA_API_COST,
-      model: "lyria-3-pro-preview"
-    })
+    if (shouldUseRealLyria(order.payment_id)) {
+      await logCost({
+        orderId: order.id,
+        email: order.email,
+        stage: "music_generation",
+        provider: "lyria",
+        apiCost: LYRIA_API_COST,
+        model: "lyria-3-pro-preview"
+      })
+    }
 
     const { data: updatedOrder } = await supabase
       .from("orders")

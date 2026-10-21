@@ -60,3 +60,6 @@ services:
         value: "0.05"
       - key: ALLOW_SIMULATED_PAYMENT
         value: "FALSE"
+      # Músicas ganhas por indicação usam a Lyria de verdade (FALSE = demo)
+      - key: FREE_SONGS_REAL_AUDIO
+        value: "TRUE"
