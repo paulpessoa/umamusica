@@ -1,0 +1,109 @@
+[
+  {
+    "id": "01",
+    "slug": "lancamento",
+    "layout": "hero",
+    "gif": true,
+    "kicker": "Novidade no 1Música",
+    "title": "Um amigo,\numa música.",
+    "body": "Convide 1 amigo. Vocês dois ganham 1 música personalizada grátis.",
+    "cta": "umamusica.com.br"
+  },
+  {
+    "id": "02",
+    "slug": "como-funciona",
+    "layout": "steps",
+    "gif": true,
+    "kicker": "Como funciona",
+    "title": "3 passos.\n3 minutos.",
+    "steps": [
+      "Conte a história no chat",
+      "A IA compõe letra e melodia",
+      "Ouça, baixe e mande pra quem você ama"
+    ],
+    "cta": "Comece grátis com 1 amigo"
+  },
+  {
+    "id": "03",
+    "slug": "historia-vira-letra",
+    "layout": "quote",
+    "gif": false,
+    "kicker": "Da sua história pra letra",
+    "quote": "\"Meus avós fazem 60 anos de casados. Ele ainda leva café na cama pra ela.\"",
+    "answer": "Sessenta anos de café na cama,\nde mão dada no portão...",
+    "caption": "Bodas de Diamante · Bossa Nova",
+    "cta": "Ouça o exemplo no site"
+  },
+  {
+    "id": "04",
+    "slug": "bastidores-chat",
+    "layout": "phone",
+    "gif": false,
+    "kicker": "Bastidores",
+    "title": "É só conversar.",
+    "body": "Sem cadastro chato, sem senha. Você responde umas perguntas e a música nasce.",
+    "cta": "Teste grátis com 1 amigo"
+  },
+  {
+    "id": "05",
+    "slug": "mostre-a-reacao",
+    "layout": "hero",
+    "gif": false,
+    "kicker": "Desafio #MinhaMúsica1",
+    "title": "Mostra a\nreação.",
+    "body": "Grave quem recebeu a música dando o play e marque a gente. Os vídeos mais bonitos ganham +3 músicas.",
+    "cta": "Repost toda sexta"
+  },
+  {
+    "id": "06",
+    "slug": "feedback",
+    "layout": "poll",
+    "gif": false,
+    "kicker": "Ouviu? Agora fala.",
+    "title": "Sua opinião\nafina a gente.",
+    "body": "Depois de ouvir sua música, toque em Gostei ou Não gostei no app. Cada comentário vira ajuste na próxima versão.",
+    "cta": "Responda a enquete nos stories"
+  },
+  {
+    "id": "07",
+    "slug": "dia-do-musico",
+    "layout": "hero",
+    "gif": false,
+    "kicker": "22/11 · Dia do Músico",
+    "title": "Todo mundo\nmerece uma\nmúsica.",
+    "body": "Hoje a gente celebra quem faz música — e quem nunca imaginou ganhar uma.",
+    "cta": "Crie a sua: um amigo, uma música"
+  },
+  {
+    "id": "08",
+    "slug": "black-friday",
+    "layout": "price",
+    "gif": true,
+    "kicker": "Black Friday",
+    "title": "Desconto de\n100%.",
+    "old": "R$ 1,00",
+    "new": "R$ 0",
+    "body": "Não tem cupom. Tem amigo. Convide 1 e a música sai de graça pros dois.",
+    "cta": "Vale o ano todo"
+  },
+  {
+    "id": "09",
+    "slug": "amigo-secreto-natal",
+    "layout": "gift",
+    "gif": false,
+    "kicker": "Amigo secreto · Natal",
+    "title": "O presente que\nninguém vai\nrepetir.",
+    "body": "Uma música com o nome, as manias e as histórias de quem você tirou. Grátis com 1 amigo ou R$ 1,00 no Pix.",
+    "cta": "Faça até 24/12"
+  },
+  {
+    "id": "10",
+    "slug": "retrospectiva-2026",
+    "layout": "hero",
+    "gif": false,
+    "kicker": "Retrospectiva",
+    "title": "2026 em\numa música.",
+    "body": "Conte o que esse ano teve de melhor e feche o ano com uma trilha só sua.",
+    "cta": "Mande pra quem esteve com você"
+  }
+]
